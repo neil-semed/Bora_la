@@ -320,55 +320,301 @@
                 <div id="prog5" class="h-1.5 flex-1 bg-slate-200 rounded"></div>
               </div>
 
-              <!-- STEP 1: ESCOLA -->
-              <div id="step1">
-                <h3 class="font-semibold mb-4">Unidade solicitante</h3>
-                <label class="block text-sm font-medium mb-1">Unidade</label>
-                <select id="wEscola" onchange="onWEscolaChange()" class="w-full px-3 py-2 border rounded-lg"></select>
-                <p class="text-xs text-slate-400 mt-2">A unidade define quem poderá acompanhar esta solicitação.</p>
+              <!-- STEP 1: TIPO E UNIDADE -->
+<div id="step1">
 
-                <div id="wOutraBox" class="hidden mt-4 space-y-3 bg-slate-50 border rounded-lg p-3">
-                  <p class="text-xs text-slate-500">Unidade avulsa (não cadastrada) - preencha os dados de quem está solicitando:</p>
-                  <div>
-                    <label class="block text-sm font-medium mb-1">Nome da unidade/solicitante</label>
-                    <input type="text" id="wOutraNome" class="w-full px-3 py-2 border rounded-lg" />
-                  </div>
-                  <div>
-                    <label class="block text-sm font-medium mb-1">Endereço</label>
-                    <input type="text" id="wOutraEndereco" class="w-full px-3 py-2 border rounded-lg" />
-                  </div>
-                  <div class="grid grid-cols-2 gap-3">
-                    <div>
-                      <label class="block text-sm font-medium mb-1">Telefone</label>
-                      <input type="text" id="wOutraTelefone" class="w-full px-3 py-2 border rounded-lg" />
-                    </div>
-                    <div>
-                      <label class="block text-sm font-medium mb-1">E-mail</label>
-                      <input type="email" id="wOutraEmail" class="w-full px-3 py-2 border rounded-lg" />
-                    </div>
-                  </div>
-                </div>
-              </div>
+  <h3 class="font-semibold mb-4">Tipo de solicitação</h3>
+
+  <!-- Tipo da solicitação -->
+  <div class="mb-5">
+    <label class="block text-sm font-medium mb-2">
+      Como esta solicitação chegou?
+    </label>
+
+    <div class="space-y-2 text-sm">
+
+      <label class="flex items-start gap-2 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
+        <input
+          type="radio"
+          name="wTipoSolicitacao"
+          value="excursao"
+          checked
+          onchange="onWTipoSolicitacaoChange()"
+          class="mt-1"
+        />
+
+        <span>
+          <span class="font-medium">Excursão da unidade</span>
+          <span class="block text-xs text-slate-500">
+            A escola solicita transporte para um destino externo.
+          </span>
+        </span>
+      </label>
+
+      <label class="flex items-start gap-2 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
+        <input
+          type="radio"
+          name="wTipoSolicitacao"
+          value="agendamento"
+          onchange="onWTipoSolicitacaoChange()"
+          class="mt-1"
+        />
+
+        <span>
+          <span class="font-medium">Agendamento recebido</span>
+          <span class="block text-xs text-slate-500">
+            Uma equipe, comitiva ou entidade solicita transporte
+            com origem externa e destino em uma unidade escolar.
+          </span>
+        </span>
+      </label>
+
+    </div>
+  </div>
+
+
+  <!-- Unidade vinculada à solicitação -->
+  <div>
+    <label class="block text-sm font-medium mb-1">
+      Unidade escolar vinculada
+    </label>
+
+    <select
+      id="wEscola"
+      onchange="onWEscolaChange()"
+      class="w-full px-3 py-2 border rounded-lg"
+    ></select>
+
+    <p class="text-xs text-slate-400 mt-2">
+      A unidade define quem poderá acompanhar esta solicitação.
+    </p>
+  </div>
+
+
+  <!-- Outra unidade -->
+  <div id="wOutraBox" class="hidden mt-4 space-y-3 bg-slate-50 border rounded-lg p-3">
+
+    <p class="text-xs text-slate-500">
+      Unidade avulsa (não cadastrada) - preencha os dados de quem está solicitando:
+    </p>
+
+    <div>
+      <label class="block text-sm font-medium mb-1">
+        Nome da unidade/solicitante
+      </label>
+
+      <input
+        type="text"
+        id="wOutraNome"
+        class="w-full px-3 py-2 border rounded-lg"
+      />
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium mb-1">
+        Endereço
+      </label>
+
+      <input
+        type="text"
+        id="wOutraEndereco"
+        class="w-full px-3 py-2 border rounded-lg"
+      />
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+
+      <div>
+        <label class="block text-sm font-medium mb-1">
+          Telefone
+        </label>
+
+        <input
+          type="text"
+          id="wOutraTelefone"
+          class="w-full px-3 py-2 border rounded-lg"
+        />
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium mb-1">
+          E-mail
+        </label>
+
+        <input
+          type="email"
+          id="wOutraEmail"
+          class="w-full px-3 py-2 border rounded-lg"
+        />
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- Origem do agendamento -->
+  <div
+    id="wAgendamentoOrigemBox"
+    class="hidden mt-5 space-y-3 bg-amber-50 border border-amber-200 rounded-lg p-4"
+  >
+
+    <div>
+      <h4 class="font-semibold text-sm text-amber-900">
+        Origem do transporte
+      </h4>
+
+      <p class="text-xs text-amber-800 mt-1">
+        Informe o local onde a equipe/comitiva deverá ser buscada.
+      </p>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium mb-1">
+        Nome da origem
+      </label>
+
+      <input
+        type="text"
+        id="wOrigemNome"
+        placeholder="Ex.: Equipe Pataxos"
+        class="w-full px-3 py-2 border rounded-lg"
+      />
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium mb-1">
+        Endereço da origem
+      </label>
+
+      <input
+        type="text"
+        id="wOrigemEndereco"
+        placeholder="Ex.: Rua X, nº 100, Centro"
+        class="w-full px-3 py-2 border rounded-lg"
+      />
+    </div>
+
+  </div>
+
+</div>
 
               <!-- STEP 2: DESTINO -->
-              <div id="step2" class="hidden">
-                <h3 class="font-semibold mb-4">Destino da excursão</h3>
-                <div class="space-y-4">
-                  <div>
-                    <label class="block text-sm font-medium mb-1">Destino</label>
-                    <input type="text" id="wDestino" placeholder="Ex: Museu de Ciências" class="w-full px-3 py-2 border rounded-lg" />
-                  </div>
-                  <div>
-                    <label class="block text-sm font-medium mb-1">Endereço do destino</label>
-                    <input type="text" id="wDestinoEndereco" placeholder="Ex: Av. Afonso Pena, 1500" class="w-full px-3 py-2 border rounded-lg" />
-                  </div>
-                  <div>
-                    <label class="block text-sm font-medium mb-1">Cidade</label>
-                    <input type="text" id="wCidade" placeholder="Ex: Nova Lima" class="w-full px-3 py-2 border rounded-lg" />
-                    <p class="text-xs text-slate-400 mt-1">Se for fora de Nova Lima, o sistema vai avisar sobre a necessidade de ATF.</p>
-                  </div>
-                </div>
-              </div>
+<div id="step2" class="hidden">
+
+  <h3 id="wDestinoTitulo" class="font-semibold mb-4">
+    Destino da excursão
+  </h3>
+
+  <!-- DESTINO NORMAL -->
+  <div id="wDestinoNormalBox" class="space-y-4">
+
+    <div>
+      <label class="block text-sm font-medium mb-1">
+        Destino
+      </label>
+
+      <input
+        type="text"
+        id="wDestino"
+        placeholder="Ex.: Museu de Ciências"
+        class="w-full px-3 py-2 border rounded-lg"
+      />
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium mb-1">
+        Endereço do destino
+      </label>
+
+      <input
+        type="text"
+        id="wDestinoEndereco"
+        placeholder="Ex.: Av. Afonso Pena, 1500"
+        class="w-full px-3 py-2 border rounded-lg"
+      />
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium mb-1">
+        Cidade
+      </label>
+
+      <input
+        type="text"
+        id="wCidade"
+        placeholder="Ex.: Nova Lima"
+        class="w-full px-3 py-2 border rounded-lg"
+      />
+
+      <p class="text-xs text-slate-400 mt-1">
+        Se for fora de Nova Lima, o sistema vai avisar sobre a necessidade de ATF.
+      </p>
+    </div>
+
+  </div>
+
+
+  <!-- DESTINO: AGENDAMENTO -->
+  <div
+    id="wDestinoAgendamentoBox"
+    class="hidden space-y-4 bg-emerald-50 border border-emerald-200 rounded-lg p-4"
+  >
+
+    <div>
+      <h4 class="font-semibold text-sm text-emerald-900">
+        Destino do transporte
+      </h4>
+
+      <p class="text-xs text-emerald-800 mt-1">
+        Selecione a escola que receberá a equipe/comitiva.
+        O endereço será preenchido automaticamente.
+      </p>
+    </div>
+
+
+    <div>
+      <label class="block text-sm font-medium mb-1">
+        Escola de destino
+      </label>
+
+      <select
+        id="wDestinoEscola"
+        onchange="onWDestinoEscolaChange()"
+        class="w-full px-3 py-2 border rounded-lg"
+      ></select>
+    </div>
+
+
+    <div>
+      <label class="block text-sm font-medium mb-1">
+        Endereço do destino
+      </label>
+
+      <input
+        type="text"
+        id="wDestinoEscolaEndereco"
+        readonly
+        class="w-full px-3 py-2 border rounded-lg bg-slate-100"
+      />
+    </div>
+
+
+    <div>
+      <label class="block text-sm font-medium mb-1">
+        Cidade
+      </label>
+
+      <input
+        type="text"
+        id="wCidadeAgendamento"
+        placeholder="Ex.: Nova Lima"
+        class="w-full px-3 py-2 border rounded-lg"
+      />
+    </div>
+
+  </div>
+
+</div>
 
               <!-- STEP 3: DATA/HORA -->
               <div id="step3" class="hidden">
