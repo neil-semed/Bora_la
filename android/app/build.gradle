@@ -1,0 +1,16 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'io.github.neil_semed.borala.motorista'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'io.github.neil_semed.borala.motorista'
+        minSdk 23
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+}

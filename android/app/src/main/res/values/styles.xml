@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.BoraLa" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:colorAccent">@color/bora_la_green</item>
+        <item name="android:navigationBarColor">@color/bora_la_green</item>
+        <item name="android:statusBarColor">@color/bora_la_green</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
