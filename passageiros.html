@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bora Lá - Cadastro de Passageiros</title>
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="apple-touch-icon" href="assets/favicon-192.png">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8"></script>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+</head>
+<body class="bg-slate-100 min-h-screen">
+<main class="max-w-5xl mx-auto p-4 sm:p-6">
+<div class="bg-white rounded-2xl border shadow-sm p-5 sm:p-7">
+<div class="flex items-center gap-3 mb-6"><img src="assets/icon-192.png" class="w-11 h-11 rounded-xl">
+<div><h1 class="text-xl font-bold text-slate-800">Bora Lá – Cadastro de Passageiros</h1><p class="text-sm text-slate-500">Cadastro da entidade/comitiva</p></div></div>
+<div id="loading" class="text-sm text-slate-500">Carregando...</div>
+<div id="app" class="hidden">
+<div id="info" class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mb-6"></div>
+<div id="alert" class="hidden rounded-lg p-3 mb-4 text-sm"></div>
+<div id="vehicleBlocks" class="space-y-6"></div>
+<div class="flex flex-col sm:flex-row gap-2 mt-5">
+<button id="save" class="px-5 py-3 rounded-lg bg-emerald-600 text-white font-semibold">Enviar cadastro</button>
+</div>
+<p class="text-xs text-slate-500 mt-4">Você não precisa preencher toda a capacidade dos veículos. A quantidade de passageiros não pode ultrapassar a capacidade dos veículos atribuídos. Para viagens fora de Nova Lima, nome completo, tipo e número do documento são obrigatórios.</p>
+</div></div></main>
+<script>
+const URL='https://rjuzhscynuleypaewgak.supabase.co';
+const KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJqdXpoc2N5bnVsZXlwYWV3Z2FrIiwicmVmIjoicmp1emhzY3ludWxlcHlhZXdnYWsiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTc4ODY1NDA0MCwiZXhwIjoyMTA0MjMwMDQwfQ.enT2gJB4dy2xz_Z91tPY4ysoJ-GEEn2dpo_RHiy5jAs';
+const sb=supabase.createClient(URL,KEY); const token=new URLSearchParams(location.search).get('token');
+let trip=null, rows=[]; const labels={cpf:'CPF',rg:'RG',certidao_nascimento:'Certidão de nascimento'};
+function esc(x){return String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function msg(t,error=true){const a=document.getElementById('alert');a.textContent=t;a.className=(error?'bg-red-50 text-red-700 border border-red-200':'bg-emerald-50 text-emerald-700 border border-emerald-200')+' rounded-lg p-3 mb-4 text-sm';a.classList.remove('hidden');}
+function rowsFor(did){return rows.filter(x=>x.driver_id===did);}
+function render(){
+ const box=document.getElementById('vehicleBlocks');
+ box.innerHTML=(trip.vehicles||[]).map(v=>{
+   const vr=rowsFor(v.driver_id);
+   let html=vr.map((p,i)=>`<div class="grid grid-cols-1 sm:grid-cols-[1fr_180px_1fr_40px] gap-2 items-end border rounded-xl p-3">
+   <div><label class="block text-xs font-medium mb-1">${i+1}. Nome completo</label><input data-i="${rows.indexOf(p)}" data-f="nome" value="${esc(p.nome)}" class="w-full px-3 py-2 border rounded-lg" placeholder="Nome completo"></div>
+   <div><label class="block text-xs font-medium mb-1">Tipo de documento</label><select data-i="${rows.indexOf(p)}" data-f="tipo_documento" class="w-full px-3 py-2 border rounded-lg">${Object.entries(labels).map(([x,l])=>`<option value="${x}" ${p.tipo_documento===x?'selected':''}>${l}</option>`).join('')}</select></div>
+   <div><label class="block text-xs font-medium mb-1">Número do documento</label><input data-i="${rows.indexOf(p)}" data-f="documento" value="${esc(p.documento)}" class="w-full px-3 py-2 border rounded-lg" placeholder="Número"></div>
+   <button data-del="${rows.indexOf(p)}" class="px-2 py-2 text-red-600">✕</button></div>`).join('');
+   return `<section class="border rounded-xl p-4"><div class="flex items-center justify-between gap-2 mb-3"><div><h2 class="font-semibold">${esc(v.driver_name||'Motorista')}</h2><p class="text-xs text-slate-500">Veículo ${esc(v.plate||'-')} · capacidade ${v.capacity||0} lugares</p></div><span class="text-xs text-slate-500">${vr.length}/${v.capacity||0}</span></div><div class="space-y-3">${html||'<p class="text-sm text-slate-400">Nenhum passageiro cadastrado.</p>'}</div><button data-add="${esc(v.driver_id)}" class="mt-3 px-3 py-2 border rounded-lg text-sm">+ Adicionar passageiro</button></section>`;
+ }).join('');
+ box.querySelectorAll('[data-i]').forEach(e=>e.oninput=()=>{rows[+e.dataset.i][e.dataset.f]=e.value});
+ box.querySelectorAll('[data-del]').forEach(e=>e.onclick=()=>{rows.splice(+e.dataset.del,1);render();});
+ box.querySelectorAll('[data-add]').forEach(e=>e.onclick=()=>{const did=e.dataset.add,v=(trip.vehicles||[]).find(x=>x.driver_id===did),count=rowsFor(did).length;if(v&&count>=v.capacity){msg(`Capacidade máxima do veículo (${v.capacity} lugares) atingida.`);return;}rows.push({driver_id:did,nome:'',tipo_documento:'cpf',documento:''});render();});
+}
+async function init(){
+ if(!token){document.getElementById('loading').textContent='Link inválido.';return;}
+ const {data,error}=await sb.rpc('get_passenger_portal',{p_token:token});
+ if(error||!data){document.getElementById('loading').textContent=error?.message||'Link inválido ou expirado.';return;}
+ trip=data;document.getElementById('loading').classList.add('hidden');document.getElementById('app').classList.remove('hidden');
+ document.getElementById('info').innerHTML=`<div><b>Origem:</b> ${esc(trip.origin_name||'-')}<br><span class="text-slate-500">${esc(trip.origin_city||'')}</span></div><div><b>Destino:</b> ${esc(trip.destination||'-')}<br><span class="text-slate-500">${esc(trip.city||'')}</span></div><div><b>Data:</b> ${new Date(trip.trip_date+'T00:00').toLocaleDateString('pt-BR')}</div><div><b>Capacidade:</b> ${(trip.vehicles||[]).reduce((s,v)=>s+(v.capacity||0),0)} lugares · não é obrigatório preencher tudo</div>`;
+ const r=await sb.rpc('get_passenger_portal_rows',{p_token:token});rows=(r.data||[]).map(x=>({nome:x.nome||'',tipo_documento:x.tipo_documento||'cpf',documento:x.documento||'',driver_id:x.driver_id}));
+ if(!rows.length && (trip.vehicles||[]).length) rows.push({driver_id:trip.vehicles[0].driver_id,nome:'',tipo_documento:'cpf',documento:''});
+ if(trip.access_status==='enviado'){msg('Este cadastro já foi enviado e está bloqueado para edição.',false);document.getElementById('save').disabled=true;}
+ render();
+}
+document.getElementById('save').onclick=async()=>{
+ const clean=rows.filter(p=>p.nome.trim());
+ if(!clean.length){msg('Informe pelo menos um passageiro.');return;}
+ const capacity=(trip.vehicles||[]).reduce((s,v)=>s+(v.capacity||0),0);
+ if(clean.length>capacity){msg(`A quantidade informada (${clean.length}) ultrapassa a capacidade total dos veículos (${capacity}).`);return;}
+ if(clean.some(p=>!p.driver_id||!p.documento.trim()||!['cpf','rg','certidao_nascimento'].includes(p.tipo_documento))){msg('Preencha nome completo, tipo, número do documento e veículo para todos os passageiros.');return;}
+ for(const v of trip.vehicles||[]){if(rowsFor(v.driver_id).filter(p=>p.nome.trim()).length>(v.capacity||0)){msg(`A capacidade do veículo ${v.plate||''} foi ultrapassada.`);return;}}
+ const {error}=await sb.rpc('save_passenger_portal',{p_token:token,p_passengers:clean});
+ if(error){msg(error.message);return;}
+ msg('Cadastro enviado com sucesso. Obrigado!',false);document.getElementById('save').disabled=true;document.querySelectorAll('input,select,button').forEach(e=>e.disabled=true);
+};init();
+</script></body></html>
