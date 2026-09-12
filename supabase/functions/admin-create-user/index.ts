@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
 
     // 2) Lê os dados do novo usuário
     const body = await req.json();
-    const { email, password, full_name, role, school_id, driver_id, setor_pedagogico } = body || {};
+    const { email, password, full_name, phone, role, school_id, driver_id, setor_pedagogico } = body || {};
     if (!email || !password || !role) {
       return json({ error: 'Preencha e-mail, senha e perfil.' }, 400);
     }
@@ -81,6 +81,9 @@ Deno.serve(async (req) => {
       id: created.user.id,
       email,
       full_name: full_name || null,
+      // Motorista usa o telefone do cadastro de motorista; nos demais perfis o
+      // contato é o telefone que acompanha a solicitação e aparece na agenda.
+      phone: role === 'motorista' ? null : (phone || null),
       role,
       school_id: role === 'escola' ? school_id || null : null,
       driver_id: role === 'motorista' ? driver_id || null : null,
