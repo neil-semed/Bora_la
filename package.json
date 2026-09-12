@@ -1,0 +1,14 @@
+{
+  "name": "bora-la-excursoes",
+  "private": true,
+  "version": "1.0.0",
+  "type": "commonjs",
+  "scripts": {
+    "test:smoke": "node test/smoke.js",
+    "test:workflow": "node test/workflow.js",
+    "test:supabase-mode": "node test/supabase-mode.js"
+  },
+  "devDependencies": {
+    "playwright": "1.52.0"
+  }
+}
