@@ -58,12 +58,15 @@ Deno.serve(async (req) => {
 
     // 2) Lê os dados do novo usuário
     const body = await req.json();
-    const { email, password, full_name, phone, role, school_id, driver_id, setor_pedagogico } = body || {};
+    const { email, password, full_name, phone, role, school_id, driver_id, setor_pedagogico, access_profile_id } = body || {};
     if (!email || !password || !role) {
       return json({ error: 'Preencha e-mail, senha e perfil.' }, 400);
     }
-    if (!['admin', 'escola', 'pedagogia', 'motorista'].includes(role)) {
+    if (!['admin', 'escola', 'pedagogia', 'motorista', 'operacional'].includes(role)) {
       return json({ error: 'Perfil inválido.' }, 400);
+    }
+    if (role === 'operacional' && !access_profile_id) {
+      return json({ error: 'Selecione o perfil administrativo.' }, 400);
     }
 
     // 3) Cria o login (Auth) e o perfil (profiles), usando a chave de serviço
@@ -88,6 +91,7 @@ Deno.serve(async (req) => {
       school_id: role === 'escola' ? school_id || null : null,
       driver_id: role === 'motorista' ? driver_id || null : null,
       setor_pedagogico: role === 'pedagogia' ? setor_pedagogico || null : null,
+      access_profile_id: role === 'operacional' ? access_profile_id : null,
     });
     if (profileErr) return json({ error: profileErr.message }, 400);
 
