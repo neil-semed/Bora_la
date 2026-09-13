@@ -1,0 +1,1661 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#059669" />
+  <title>Bora Lá - Excursões</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" sizes="512x512" href="assets/favicon-512.png" />
+  <link rel="apple-touch-icon" href="assets/favicon-512.png" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8"></script>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://unpkg.com/lucide@0.468.0"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    /* Trava o scroll horizontal da página inteira - sem isso, no celular, um toque e
+       arrasto na tela conseguia "puxar" a lateral (que antes ficava sempre no fluxo
+       normal da página) por baixo do conteúdo, mesmo com ela posicionada fora da tela. */
+    html, body { max-width: 100%; margin: 0; }
+    /* Lateral (menu) no celular: gaveta escondida fora da tela por padrão, some com a
+       classe .sidebar-open. Escrito à mão (não como classes do Tailwind) pelo mesmo
+       motivo do ".hidden" acima - continua funcionando mesmo se o Tailwind (CDN) demorar
+       ou falhar pra carregar, o que numa conexão de celular é bem mais provável. A partir
+       de 768px (tablet/desktop) ela volta a ficar sempre visível do lado, como sempre foi. */
+    #sidebar {
+      position: fixed; top: 0; bottom: 0; left: 0; z-index: 40;
+      width: 16rem; max-width: 80vw;
+      transform: translateX(-100%);
+      transition: transform .2s ease-in-out;
+    }
+    #sidebar.sidebar-open { transform: translateX(0); }
+    #sidebarOverlay {
+      display: none;
+      position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 30;
+    }
+    #sidebarOverlay.sidebar-open { display: block; }
+    /* A navegação principal é a faixa superior. A lateral permanece no HTML apenas
+       por compatibilidade com atalhos antigos, mas não é exibida em nenhum perfil. */
+    #sidebar, #sidebarOverlay, #btnMenuMobile { display: none !important; }
+    /* Em qualquer largura o menu é uma gaveta: a Agenda fica com toda a largura útil. */
+    @media (min-width: 768px) {
+      #sidebar { position: fixed; width: 16rem; max-width: 80vw; transform: translateX(-100%); transition: transform .2s ease-in-out; }
+      #sidebar.sidebar-open { transform: translateX(0); }
+    }
+    /* Agenda: tabela (tablet/desktop) vira "cartões" empilhados no celular - escrito à
+       mão como o resto acima, e de propósito SEM usar a classe ".hidden" (ela já tem um
+       "!important" de reforço logo abaixo, que esconderia a tabela pra sempre mesmo no
+       tablet/desktop caso o Tailwind não tivesse carregado ainda). */
+    .agenda-table-wrap { display: block; }
+    .agenda-cards-wrap { display: none; }
+    /* Para o perfil motorista, Hoje usa os mesmos cartões tanto no celular quanto
+       no computador. A tabela extensa pertence à Agenda Mestra administrativa. */
+    body.driver-mobile .agenda-table-wrap { display: none; }
+    body.driver-mobile .agenda-cards-wrap { display: block; }
+    @media (max-width: 767px) {
+      .agenda-table-wrap { display: none; }
+      .agenda-cards-wrap { display: block; }
+    }
+    .hidden-screen { display: none; }
+    .active-screen { display: block; }
+    /* reforço: garante que modais escondam mesmo se o Tailwind (CDN) demorar/falhar para carregar */
+    .hidden { display: none !important; }
+    .sidebar-link.active { background: rgba(255,255,255,0.15); border-left: 3px solid #fff; }
+    .sidebar-link[hidden] { display: none; }
+    #topNav { overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; scrollbar-color:#059669 #e2e8f0; scrollbar-width:thin; }
+    .top-nav-link { display:inline-flex; align-items:center; padding:.78rem 1rem; font-size:.9rem; font-weight:600; color:#475569; border-bottom:3px solid transparent; cursor:pointer; }
+    .top-nav-link:hover,.top-nav-link.active { color:#047857; background:#ecfdf5; border-bottom-color:#059669; }
+    .top-nav-link[hidden] { display:none; }
+    .status-pending { background: #fef3c7; color: #92400e; }
+    .status-pedagogy_approved { background: #e0e7ff; color: #3730a3; }
+    .status-approved { background: #d1fae5; color: #065f46; }
+    .status-transit { background: #dbeafe; color: #1e40af; }
+    .status-in_transit { background: #dbeafe; color: #1e40af; }
+    .status-rejected { background: #fee2e2; color: #991b1b; }
+    .status-completed { background: #e2e8f0; color: #334155; }
+    .toast { position: fixed; top: 20px; right: 20px; z-index: 9999; max-width: 90vw; }
+    .card-hover { transition: box-shadow .15s ease, transform .15s ease; }
+    .card-hover:hover { box-shadow: 0 8px 24px rgba(0,0,0,.08); transform: translateY(-2px); }
+    .role-badge { font-size: 10px; letter-spacing: .04em; }
+    main > header { min-height: 64px; }
+    table { min-width: 680px; }
+    .agenda-table-wrap { max-height: calc(100vh - 270px); overflow: auto !important; border:1px solid #e2e8f0; border-radius:.75rem; scrollbar-color:#059669 #e2e8f0; scrollbar-width:auto; }
+    .agenda-table-wrap table { min-width: 1580px; }
+    /* Cabeçalhos ficam visíveis em qualquer tabela rolável do sistema. */
+    .agenda-table-wrap thead th, .sticky-table thead th, .overflow-x-auto thead th { position: sticky; top: 0; z-index: 10; background: #f8fafc; box-shadow: 0 1px 0 #e2e8f0; }
+    .overflow-x-auto { max-height: calc(100vh - 230px); overflow: auto !important; scrollbar-color:#059669 #e2e8f0; scrollbar-width:auto; }
+    /* Cada viagem é uma unidade visual completa. A faixa colorida diferencia viagens
+       sucessivas, mas a borda fina mantém o cartão inteiro bem definido. */
+    .driver-trip-card { border: 1px solid #dbe4ee; border-left: 5px solid #059669; box-shadow: 0 2px 8px rgba(15,23,42,.08); }
+    .driver-trip-card:nth-child(3n+2) { border-left-color:#2563eb; }
+    .driver-trip-card:nth-child(3n) { border-left-color:#d97706; }
+    /* Sair é uma ação importante, mas não destrutiva: usa o verde institucional em
+       vez de vermelho, reservado para cancelamentos e exclusões. */
+    .logout-button { background:#047857; color:#fff; border-color:#047857; box-shadow:0 2px 6px rgba(4,120,87,.22); }
+    .logout-button:hover { background:#065f46; border-color:#065f46; }
+    /* No motorista, o nome já aparece na linha "Motorista:" acima; não o repete
+       junto ao atalho de troca de senha. */
+    body.driver-mobile #topUserName { display: none; }
+    .dashboard-chart { height: 185px; }
+    .pedagogia-compact .grid.grid-cols-2.md\:grid-cols-6 { gap:.65rem; }
+    .pedagogia-compact .grid.grid-cols-2.md\:grid-cols-6 > div { padding:.8rem; }
+    .pedagogia-compact .text-3xl { font-size:1.55rem; }
+    .pedagogia-compact canvas { max-height:180px; }
+    @media (max-width: 767px) {
+      main { width: 100%; min-width: 0; }
+      main > header { padding: 12px; }
+      main > header #topUserName { max-width: 130px; }
+      section > div { max-width: 100%; }
+      .overflow-x-auto { -webkit-overflow-scrolling: touch; }
+      .grid.grid-cols-2 { grid-template-columns: 1fr; }
+      .grid.grid-cols-2 > .col-span-2 { grid-column: span 1 / span 1; }
+      .max-w-2xl { max-width: 100%; }
+
+      /* Dashboard no celular: indicadores menores, sempre em pares. */
+      #screen-dashboard > .grid.grid-cols-2.md\:grid-cols-6 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .55rem;
+        margin-bottom: .8rem;
+      }
+      #screen-dashboard > .grid.grid-cols-2.md\:grid-cols-6 > div { padding: .7rem; border-radius: .7rem; }
+      #screen-dashboard > .grid.grid-cols-2.md\:grid-cols-6 .text-sm { font-size: .68rem; line-height: 1rem; }
+      #screen-dashboard > .grid.grid-cols-2.md\:grid-cols-6 .text-3xl { font-size: 1.45rem; line-height: 1.65rem; }
+      #screen-dashboard .dashboard-chart { height: 150px; }
+      #kmDriverContent .km-period-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+      /* Navegação pensada para o polegar: somente no app do motorista. */
+      body.driver-mobile main { padding-bottom: 76px; }
+      body.driver-mobile #topNav { display: none; }
+      body.driver-mobile #notificationBell { display: none; }
+      body.driver-mobile .logout-button { padding: .38rem .55rem; font-size: .75rem; }
+      body.driver-mobile #notificationPanel {
+        position: fixed; top: auto; right: .75rem; bottom: 4.9rem;
+        width: min(360px, calc(100vw - 1.5rem));
+      }
+      body.driver-mobile .driver-bottom-nav {
+        display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: stretch;
+        position: fixed; right: 0; bottom: 0; left: 0; z-index: 60;
+        min-height: 68px; padding: .35rem .3rem calc(.35rem + env(safe-area-inset-bottom));
+        background: rgba(255,255,255,.98); border-top: 1px solid #dbe4ee;
+        box-shadow: 0 -5px 20px rgba(15,23,42,.10);
+      }
+      body.driver-mobile .driver-bottom-link {
+        position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: .18rem; min-width: 0; padding: .3rem .15rem; border-radius: .65rem;
+        color: #64748b; font-size: .55rem; font-weight: 700; line-height: .72rem;
+      }
+      body.driver-mobile .driver-bottom-link svg { width: 20px; height: 20px; }
+      body.driver-mobile .driver-bottom-link.active { background: #ecfdf5; color: #047857; }
+      body.driver-mobile .driver-bottom-count {
+        position: absolute; top: .05rem; right: calc(50% - 18px); min-width: 16px; height: 16px;
+        padding: 0 .2rem; border-radius: 999px; background: #ef4444; color: #fff;
+        font-size: 9px; line-height: 16px; text-align: center;
+      }
+
+      /* Próximas e Agenda geral: nada fica espremido na lateral. O selo e a ação
+         descem para uma linha própria, deixando origem, destino e endereço legíveis. */
+      body.driver-mobile .driver-trip-card.flex {
+        flex-direction: column;
+        align-items: stretch;
+        gap: .65rem;
+      }
+      body.driver-mobile .driver-trip-card.flex > .flex:last-child {
+        justify-content: flex-start;
+        flex-wrap: wrap;
+        padding-top: .65rem;
+        border-top: 1px solid #e2e8f0;
+      }
+    }
+    .driver-bottom-nav { display: none; }
+  </style>
+</head>
+<body class="bg-slate-200 min-h-screen" data-page="app">
+
+  <!-- PÁGINA DO SISTEMA (separada da página de login: veja index.html) -->
+  <div id="appScreen">
+    <div class="flex min-h-screen">
+      <!-- No celular a lateral vira uma gaveta (fechada por padrão, abre por cima do
+           conteúdo com o botão ☰) - a partir do tablet/desktop (md:) ela volta a ficar
+           sempre visível do lado, exatamente como era antes. -->
+      <div id="sidebarOverlay" onclick="closeSidebar()" class="bg-black/40"></div>
+      <aside id="sidebar" class="bg-emerald-700 text-white flex flex-col shrink-0">
+        <div class="p-5 border-b border-emerald-600">
+          <div class="flex items-center gap-2">
+            <img src="assets/icon-192.png" alt="" class="w-9 h-9 rounded-lg" onerror="this.style.display='none'" />
+            <div class="flex-1">
+              <h2 class="font-bold text-lg leading-tight">Bora Lá</h2>
+              <p class="text-xs text-emerald-200 role-badge" id="userRole">ADMIN</p>
+            </div>
+            <button id="btnFecharSidebar" onclick="closeSidebar()" class="md:hidden p-1 rounded hover:bg-emerald-800" aria-label="Fechar menu">
+              <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+          </div>
+        </div>
+
+        <nav class="flex-1 p-3 space-y-1">
+          <a data-screen="dashboard" data-roles="admin,escola,pedagogia,motorista" onclick="showScreen('dashboard', this)" class="sidebar-link active flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            📊 Dashboard
+          </a>
+          <a data-screen="agenda" data-roles="admin,escola,pedagogia,motorista" onclick="showScreen('agenda', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            📅 <span id="navAgendaLabel">Agenda</span>
+          </a>
+          <a data-screen="agendadata" data-roles="motorista" onclick="showScreen('agendadata', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            🗓️ Agenda por Data
+          </a>
+          <a data-screen="solicitacao" data-roles="admin,escola" onclick="showScreen('solicitacao', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            ➕ Nova Solicitação
+          </a>
+          <a data-screen="validacoes" data-roles="escola,pedagogia" onclick="showScreen('validacoes', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            🗂️ Validações
+          </a>
+          <a data-screen="km" data-roles="admin,motorista" onclick="showScreen('km', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            🛣️ KM Rodado
+          </a>
+          <a data-screen="unidades" data-roles="admin" onclick="showScreen('unidades', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            🏫 Unidades
+          </a>
+          <a data-screen="veiculos" data-roles="admin" onclick="showScreen('veiculos', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            🚌 Veículos
+          </a>
+          <a data-screen="motoristas" data-roles="admin" onclick="showScreen('motoristas', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            👥 Motoristas
+          </a>
+          <a data-screen="cooperativas" data-roles="admin" onclick="showScreen('cooperativas', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            📨 Cooperativas
+          </a>
+          <a data-screen="usuarios" data-roles="admin" onclick="showScreen('usuarios', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            🔑 Usuários
+          </a>
+          <a data-screen="perfisacesso" data-roles="admin" onclick="showScreen('perfisacesso', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            🛡️ Perfis de acesso
+          </a>
+          <a data-screen="relatorios" data-roles="admin,escola,pedagogia" onclick="showScreen('relatorios', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            🧾 Escala
+          </a>
+        </nav>
+
+        <div class="p-3 border-t border-emerald-600">
+          <div class="text-xs text-emerald-200 mb-2 px-2 truncate" id="userInfo">admin@sistema.com</div>
+          <!-- Atalho só do Motorista: registra o odômetro de qualquer tela, sem precisar
+               entrar em "🛣️ KM Rodado" primeiro - fica bem na lateral, perto do polegar,
+               logo acima do "Sair" (uso no celular, é a ação mais repetida do dia). -->
+          <button id="btnRegistrarOdometroSidebar" hidden onclick="closeSidebar(); openKmModal()" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-emerald-800 text-sm mb-1">
+            📟 Registrar odômetro
+          </button>
+          <button onclick="logout()" class="w-full flex items-center gap-2 px-3 py-3 rounded-lg hover:bg-emerald-800 text-base font-medium">
+            🚪 Sair
+          </button>
+        </div>
+      </aside>
+
+      <main class="flex-1 overflow-auto min-w-0">
+        <header class="bg-white border-b border-slate-200 shadow-sm px-4 md:px-6 py-4 flex items-center gap-3">
+          <button id="btnMenuMobile" onclick="toggleSidebar()" class="-ml-1 p-2 rounded-lg hover:bg-slate-100 shrink-0" aria-label="Abrir menu">
+            <i data-lucide="menu" class="w-6 h-6"></i>
+          </button>
+          <img src="assets/logo_bora-la.png" alt="Bora Lá" class="hidden sm:block h-9 w-auto shrink-0" />
+          <div class="min-w-0 flex-1"><h1 class="text-xl font-bold text-slate-800 truncate" id="pageTitle">Dashboard</h1><p class="text-sm text-slate-500 truncate" id="pageSubtitle">Visão geral do sistema</p><p id="pageRoleName" class="hidden text-xs font-semibold text-emerald-700 mt-0.5"></p></div><div class="relative shrink-0">
+            <button id="notificationBell" onclick="toggleNotificationPanel()" class="relative p-2 rounded-lg hover:bg-slate-100" aria-label="Notificações">
+              🔔<span id="notificationCount" class="hidden absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] leading-[18px] text-center">0</span>
+            </button>
+            <div id="notificationPanel" class="hidden absolute right-0 top-11 w-[min(360px,90vw)] bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden">
+              <div class="flex items-center justify-between px-3 py-2 border-b">
+                <strong class="text-sm">Notificações</strong>
+                <button onclick="markAllNotificationsRead()" class="text-xs text-emerald-700">Marcar todas como lidas</button>
+              </div>
+              <div id="notificationList" class="max-h-96 overflow-y-auto"></div>
+            </div>
+          </div>
+          <div class="shrink-0 text-right"><div id="driverHeaderName" class="hidden text-xs font-bold text-emerald-700 mb-0.5 max-w-[180px] truncate"></div><div class="text-xs text-slate-400">Usuário</div><div class="flex items-center justify-end gap-1"><div id="topUserName" class="text-sm font-semibold text-slate-700 max-w-[150px] truncate">—</div><button onclick="openChangePasswordModal()" class="text-slate-400 hover:text-emerald-700 p-1" title="Trocar minha senha" aria-label="Trocar minha senha"><i data-lucide="key-round" class="w-4 h-4"></i></button><button onclick="logout()" class="logout-button inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-bold" title="Sair do sistema"><i data-lucide="log-out" class="w-4 h-4"></i> Sair</button></div></div>
+        </header>
+        <nav id="topNav" class="bg-white border-b border-slate-200 px-3 shadow-sm">
+          <a data-screen="dashboard" data-roles="admin,escola,pedagogia,motorista" onclick="showScreen('dashboard',this)" class="top-nav-link"><i data-lucide="layout-dashboard" class="w-4 h-4 mr-1.5"></i>Dashboard</a>
+          <a data-screen="agenda" data-roles="admin,escola,pedagogia,motorista" onclick="showScreen('agenda',this)" class="top-nav-link"><i data-lucide="calendar-days" class="w-4 h-4 mr-1.5"></i><span id="navAgendaTopLabel">Agenda</span></a>
+          <a data-screen="pendencias" data-roles="admin,pedagogia" onclick="showScreen('pendencias',this)" class="top-nav-link"><i data-lucide="list-todo" class="w-4 h-4 mr-1.5 text-amber-600"></i>Pendências</a>
+          <a data-screen="agendadata" data-roles="motorista" onclick="showScreen('agendadata',this)" class="top-nav-link"><i data-lucide="calendar-clock" class="w-4 h-4 mr-1.5"></i>Próximas viagens</a>
+          <a data-screen="agendageral" data-roles="motorista" onclick="showScreen('agendageral',this)" class="top-nav-link"><i data-lucide="list-checks" class="w-4 h-4 mr-1.5"></i>Agenda Geral</a>
+          <a data-screen="solicitacao" data-roles="admin,escola" onclick="showScreen('solicitacao',this)" class="top-nav-link"><i data-lucide="circle-plus" class="w-4 h-4 mr-1.5"></i>Solicitação</a>
+          <a data-screen="validacoes" data-roles="escola,pedagogia" onclick="showScreen('validacoes',this)" class="top-nav-link"><i data-lucide="file-check-2" class="w-4 h-4 mr-1.5"></i>Validações</a>
+          <a data-screen="km" data-roles="admin,motorista" onclick="showScreen('km',this)" class="top-nav-link"><i data-lucide="gauge" class="w-4 h-4 mr-1.5"></i>KM</a>
+          <a data-screen="unidades" data-roles="admin" onclick="showScreen('unidades',this)" class="top-nav-link"><i data-lucide="school" class="w-4 h-4 mr-1.5"></i>Unidades</a>
+          <a data-screen="veiculos" data-roles="admin" onclick="showScreen('veiculos',this)" class="top-nav-link"><i data-lucide="bus-front" class="w-4 h-4 mr-1.5"></i>Veículos</a>
+          <a data-screen="motoristas" data-roles="admin" onclick="showScreen('motoristas',this)" class="top-nav-link"><i data-lucide="contact-round" class="w-4 h-4 mr-1.5"></i>Motoristas</a>
+          <a data-screen="usuarios" data-roles="admin" onclick="showScreen('usuarios',this)" class="top-nav-link"><i data-lucide="users-round" class="w-4 h-4 mr-1.5"></i>Usuários</a>
+          <a data-screen="perfisacesso" data-roles="admin" onclick="showScreen('perfisacesso',this)" class="top-nav-link"><i data-lucide="shield-check" class="w-4 h-4 mr-1.5"></i>Perfis de acesso</a>
+          <a data-screen="validadores" data-roles="admin" onclick="showScreen('validadores',this)" class="top-nav-link"><i data-lucide="badge-check" class="w-4 h-4 mr-1.5"></i>Validadores</a>
+          <a data-screen="cooperativas" data-roles="admin" onclick="showScreen('cooperativas',this)" class="top-nav-link"><i data-lucide="send" class="w-4 h-4 mr-1.5"></i>Cooperativas</a>
+          <a data-screen="relatorios" data-roles="admin,escola,pedagogia" onclick="showScreen('relatorios',this)" class="top-nav-link"><i data-lucide="clipboard-list" class="w-4 h-4 mr-1.5"></i>Escala</a>
+        </nav>
+
+        <div class="p-6">
+          <!-- DASHBOARD -->
+          <section id="screen-dashboard" class="active-screen">
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-3 mb-5">
+              <div class="bg-white rounded-xl p-4 border shadow-sm">
+                <div class="text-sm text-slate-500 mb-2">Viagens Hoje</div>
+                <div class="text-3xl font-bold text-emerald-600" id="statHoje">0</div>
+              </div>
+              <div class="bg-white rounded-xl p-4 border shadow-sm">
+                <div id="statPendentesLabel" class="text-sm text-slate-500 mb-2">Pendentes</div>
+                <div class="text-3xl font-bold text-amber-600" id="statPendentes">0</div>
+              </div>
+              <div class="bg-white rounded-xl p-4 border shadow-sm">
+                <div class="text-sm text-slate-500 mb-2">Aprovadas</div>
+                <div class="text-3xl font-bold text-blue-600" id="statAprovadas">0</div>
+              </div>
+              <div class="bg-white rounded-xl p-4 border shadow-sm">
+                <div class="text-sm text-slate-500 mb-2">Passageiros</div>
+                <div class="text-3xl font-bold text-purple-600" id="statAlunos">0</div>
+              </div>
+              <div class="bg-white rounded-xl p-4 border shadow-sm">
+                <div class="text-sm text-slate-500 mb-2">Canceladas</div>
+                <div class="text-3xl font-bold text-orange-600" id="statCanceladas">0</div>
+              </div>
+              <div class="bg-white rounded-xl p-4 border shadow-sm">
+                <div class="text-sm text-slate-500 mb-2">Desaprovadas</div>
+                <div class="text-3xl font-bold text-red-600" id="statDesaprovadas">0</div>
+                <div id="statDesaprovadasMotivos" class="text-xs text-slate-500 mt-1 space-y-0.5"></div>
+              </div>
+            </div>
+
+            <div class="bg-white rounded-xl border shadow-sm p-5 mb-6">
+              <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+                <h3 class="font-semibold">Viagens por mês e por unidade solicitante</h3>
+                <div class="flex flex-wrap gap-3">
+                  <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">Mês</label>
+                    <select id="dashFiltroMes" onchange="renderDashboard()" class="px-3 py-2 border rounded-lg text-sm">
+                      <option value="">Todos os meses</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">Data</label>
+                    <input type="date" id="dashFiltroData" onchange="renderDashboard()" class="px-3 py-2 border rounded-lg text-sm" />
+                  </div>
+                  <div id="dashFiltroUnidadeWrap">
+                    <label class="block text-xs font-medium text-slate-500 mb-1">Unidade</label>
+                    <select id="dashFiltroUnidade" onchange="renderDashboard()" class="px-3 py-2 border rounded-lg text-sm">
+                      <option value="">Todas</option>
+                    </select>
+                  </div>
+                  <button onclick="document.getElementById('dashFiltroMes').value='';document.getElementById('dashFiltroData').value='';document.getElementById('dashFiltroUnidade').value='';renderDashboard();" class="px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Limpar</button>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="dashboard-chart"><canvas id="chartPorMes"></canvas></div>
+                <div class="dashboard-chart"><canvas id="chartPorUnidade"></canvas></div>
+              </div>
+            </div>
+
+            <div id="dashboardSemValidacao" class="hidden bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+              <div class="flex items-center justify-between gap-3"><div><h3 class="font-semibold text-amber-950">Viagens sem validação</h3><p class="text-sm text-amber-800">Solicitações aguardando análise pedagógica.</p></div><button onclick="showScreen('validacoes')" class="px-3 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold">Ver validações</button></div>
+              <div id="dashboardSemValidacaoLista" class="mt-3 grid gap-2"></div>
+            </div>
+
+            <div id="dashboardValidacoes" class="hidden grid lg:grid-cols-2 gap-4 mb-4">
+              <div class="bg-amber-50 border border-amber-200 rounded-xl p-4"><h3 class="font-semibold text-amber-950">A validar</h3><div id="dashboardAValidarLista" class="mt-2 space-y-2"></div></div>
+              <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4"><h3 class="font-semibold text-emerald-950">Já validadas</h3><div id="dashboardValidadasLista" class="mt-2 space-y-2"></div></div>
+            </div>
+
+            <div class="bg-white rounded-xl border shadow-sm p-5">
+              <h3 class="font-semibold mb-4">Próximas Viagens</h3>
+              <div id="proximasViagens" class="space-y-2"></div>
+            </div>
+          </section>
+
+          <!-- PENDÊNCIAS (Admin: tratativa; Pedagogia: consulta) -->
+          <section id="screen-pendencias" class="hidden-screen">
+            <div class="max-w-6xl space-y-4">
+              <div class="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                <strong id="pendenciasIntroTitulo">Fila de tratativas</strong>
+                <span id="pendenciasIntroTexto" class="block mt-1 text-emerald-800">Solicitações mais recentes, em ordem cronológica.</span>
+              </div>
+              <div id="pendenciasLista" class="space-y-5"></div>
+            </div>
+          </section>
+
+          <!-- AGENDA -->
+          <section id="screen-agenda" class="hidden-screen">
+            <div class="bg-white rounded-xl border shadow-sm p-5">
+              <div id="agendaFilters" class="flex flex-wrap items-end gap-3 mb-4">
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Data de referência</label>
+                  <input type="date" id="filtroData" onchange="filtrarAgenda()" class="px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Período</label>
+                  <select id="filtroPeriodo" onchange="filtrarAgenda()" class="px-3 py-2 border rounded-lg text-sm">
+                    <option value="dia">Somente a data acima</option>
+                    <option value="semana">Semana inteira</option>
+                    <option value="mes">Mês inteiro</option>
+                  </select>
+                </div>
+                <div id="filtroSituacaoWrap">
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Situação</label>
+                  <select id="filtroSituacao" onchange="filtrarAgenda()" class="px-3 py-2 border rounded-lg text-sm">
+                    <option value="">Todas</option>
+                    <option value="sem_validacao">Sem Validação</option>
+                    <option value="aguarda_atf">Aguarda ATF</option>
+                    <option value="aprovada">Aprovada</option>
+                    <option value="confirmada">Confirmada</option>
+                    <option value="envio_coop">Envio Coop</option>
+                    <option value="reprovada">Reprovada</option>
+                    <option value="cancelada">Cancelada</option>
+                    <option value="sem_listagem">Sem Listagem</option>
+                  </select>
+                </div>
+                <button onclick="atualizarAgendaMestra()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm">🔄 Atualizar</button>
+                <div id="filtroUnidadeWrap" class="hidden">
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Origem</label>
+                  <select id="filtroUnidade" onchange="filtrarAgenda()" class="px-3 py-2 border rounded-lg text-sm">
+                    <option value="">Todas</option>
+                  </select>
+                </div>
+                <button onclick="document.getElementById('filtroData').value='';document.getElementById('filtroPeriodo').value='dia';document.getElementById('filtroSituacao').value='';document.getElementById('filtroUnidade').value='';filtrarAgenda();" class="px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Limpar filtros</button>
+              </div>
+              <!-- No celular a tabela vira "cartões" empilhados (mesma informação, sem
+                   precisar arrastar a tela pros lados); a partir do tablet/desktop (md:)
+                   volta a ser a tabela de sempre. -->
+              <div class="overflow-x-auto agenda-table-wrap">
+                <table class="w-full text-left sticky-table">
+                  <thead>
+                    <tr class="border-b border-slate-200 text-xs uppercase text-slate-500">
+                      <th class="px-4 py-2">Data Viagem</th>
+                      <th class="px-4 py-2">Saída</th>
+                      <th class="px-4 py-2">Retorno</th>
+                      <th class="px-4 py-2 min-w-[220px]">Origem</th>
+                      <th class="px-4 py-2 min-w-[220px]">Destino</th>
+                      <th class="px-4 py-2">Passageiros</th>
+                      <th class="px-4 py-2">Pedido</th>
+                      <th class="px-4 py-2">Validação Pedagógica</th>
+                      <th class="px-4 py-2">ATF</th>
+                      <th class="px-4 py-2">Situação</th>
+                      <th class="px-4 py-2">Motorista(s)</th>
+                      <th class="px-4 py-2">Ações</th>
+                      <th class="px-4 py-2">Lista Escola</th>
+                      <th class="px-4 py-2">Conferência de listas</th>
+                      <th class="px-4 py-2">Envio à cooperativa</th>
+                    </tr>
+                  </thead>
+                  <tbody id="agendaTable" class="divide-y divide-slate-100"></tbody>
+                </table>
+              </div>
+              <div id="agendaCardsList" class="agenda-cards-wrap space-y-3"></div>
+            </div>
+          </section>
+
+          <!-- AGENDA POR DATA (Motorista) - toda a semana OU só os próximos dias, agrupado por dia -->
+          <section id="screen-agendadata" class="hidden-screen">
+            <div class="bg-white rounded-xl border shadow-sm p-5">
+              <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <p class="text-sm text-slate-500 max-w-md">Veja a semana inteira de uma vez ou só os próximos dias - útil numa sexta-feira, pra já saber da segunda sem esperar a semana virar.</p>
+                <div class="flex gap-1 bg-slate-100 rounded-lg p-1 text-sm shrink-0">
+                  <button id="btnAgendaDataSemana" onclick="setAgendaPorDataModo('semana')" class="px-3 py-1.5 rounded-md font-medium">Semana</button>
+                  <button id="btnAgendaDataProximos" onclick="setAgendaPorDataModo('proximos')" class="px-3 py-1.5 rounded-md font-medium">Hoje + 3 dias</button>
+                </div>
+              </div>
+              <div id="agendaPorDataLista" class="space-y-5"></div>
+            </div>
+          </section>
+
+          <!-- AGENDA GERAL (Motorista): somente viagens confirmadas, de todos os condutores -->
+          <section id="screen-agendageral" class="hidden-screen">
+            <div class="bg-white rounded-xl border shadow-sm p-5">
+              <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div><h3 class="font-semibold">Agenda Geral</h3><p class="text-sm text-slate-500">Todas as viagens com motorista atribuído e confirmadas pelo Admin, em ordem de saída.</p></div>
+                <div class="flex gap-1 bg-slate-100 rounded-lg p-1 text-sm shrink-0">
+                  <button id="btnAgendaGeralHoje" onclick="setAgendaGeralModo('hoje')" class="px-3 py-1.5 rounded-md font-medium">Hoje</button>
+                  <button id="btnAgendaGeralProximos" onclick="setAgendaGeralModo('proximos')" class="px-3 py-1.5 rounded-md font-medium">Até 3 dias</button>
+                </div>
+              </div>
+              <div id="agendaGeralLista" class="space-y-5"></div>
+            </div>
+          </section>
+
+          <!-- NOVA SOLICITAÇÃO (WIZARD) -->
+          <section id="screen-solicitacao" class="hidden-screen">
+            <div class="bg-white rounded-xl border shadow-sm p-5 max-w-2xl">
+              <div class="flex items-center gap-2 mb-2 text-sm text-slate-500">
+                <span>Passo <span id="wizardStep">1</span> de 5</span>
+              </div>
+              <div class="flex gap-1 mb-6">
+                <div id="prog1" class="h-1.5 flex-1 bg-emerald-500 rounded"></div>
+                <div id="prog2" class="h-1.5 flex-1 bg-slate-200 rounded"></div>
+                <div id="prog3" class="h-1.5 flex-1 bg-slate-200 rounded"></div>
+                <div id="prog4" class="h-1.5 flex-1 bg-slate-200 rounded"></div>
+                <div id="prog5" class="h-1.5 flex-1 bg-slate-200 rounded"></div>
+              </div>
+
+              <!-- STEP 1: ESCOLA -->
+              <div id="step1">
+                <h3 class="font-semibold mb-4">Unidade solicitante</h3>
+                <div class="mb-4">
+                  <label class="block text-sm font-medium mb-1">Tipo de solicitação</label>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <label class="flex items-center gap-2 border rounded-lg p-3 cursor-pointer"><input type="radio" name="wTipoSolicitacao" value="excursao" checked onchange="onWTipoSolicitacaoChange()" /> Excursão da unidade</label>
+                    <label class="flex items-center gap-2 border rounded-lg p-3 cursor-pointer"><input type="radio" name="wTipoSolicitacao" value="agendamento" onchange="onWTipoSolicitacaoChange()" /> Agendamento recebido</label>
+                  </div>
+                </div>
+                <div id="wAgendamentoOrigemBox" class="hidden mb-4 space-y-3 bg-slate-50 border rounded-lg p-3">
+                  <p class="text-xs text-slate-500">No agendamento recebido, a entidade/comitiva é a <strong>origem</strong> e a escola selecionada é o <strong>destino</strong>.</p>
+                  <div><label class="block text-sm font-medium mb-1">Nome da origem</label><input type="text" id="wOrigemNome" class="w-full px-3 py-2 border rounded-lg" /></div>
+                  <div><label class="block text-sm font-medium mb-1">Endereço da origem</label><input type="text" id="wOrigemEndereco" class="w-full px-3 py-2 border rounded-lg" /></div>
+                  <div><label class="block text-sm font-medium mb-1">Cidade da origem</label><input type="text" id="wOrigemCidade" placeholder="Ex: Belo Horizonte" class="w-full px-3 py-2 border rounded-lg" /></div>
+                  <div><label class="block text-sm font-medium mb-1">E-mail da origem/comitiva</label><input type="email" id="wOrigemEmail" placeholder="contato@entidade.org.br" class="w-full px-3 py-2 border rounded-lg" /></div>
+                </div>
+                <label class="block text-sm font-medium mb-1">Unidade</label>
+                <select id="wEscola" onchange="onWEscolaChange()" class="w-full px-3 py-2 border rounded-lg"></select>
+                <p class="text-xs text-slate-400 mt-2">A unidade define quem poderá acompanhar esta solicitação.</p>
+
+                <div id="wOutraBox" class="hidden mt-4 space-y-3 bg-slate-50 border rounded-lg p-3">
+                  <p class="text-xs text-slate-500">Unidade avulsa (não cadastrada) - preencha os dados de quem está solicitando:</p>
+                  <div>
+                    <label class="block text-sm font-medium mb-1">Nome da unidade/solicitante</label>
+                    <input type="text" id="wOutraNome" class="w-full px-3 py-2 border rounded-lg" />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium mb-1">Endereço</label>
+                    <input type="text" id="wOutraEndereco" class="w-full px-3 py-2 border rounded-lg" />
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-sm font-medium mb-1">Cidade</label>
+                      <input type="text" id="wOutraCidade" class="w-full px-3 py-2 border rounded-lg" />
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium mb-1">Telefone</label>
+                      <input type="text" id="wOutraTelefone" class="w-full px-3 py-2 border rounded-lg" />
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium mb-1">E-mail</label>
+                      <input type="email" id="wOutraEmail" class="w-full px-3 py-2 border rounded-lg" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- STEP 2: DESTINO -->
+              <div id="step2" class="hidden">
+                <h3 id="wDestinoTitulo" class="font-semibold mb-4">Destino da excursão</h3>
+                <div id="wDestinoNormalBox" class="space-y-4">
+                  <div>
+                    <label class="block text-sm font-medium mb-1">Destino <span class="text-red-600">*</span></label>
+                    <input type="text" id="wDestino" required placeholder="Ex: Museu de Ciências" class="w-full px-3 py-2 border rounded-lg" />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium mb-1">Endereço do destino <span class="text-red-600">*</span></label>
+                    <input type="text" id="wDestinoEndereco" required placeholder="Ex: Av. Afonso Pena, 1500" class="w-full px-3 py-2 border rounded-lg" />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium mb-1">Cidade <span class="text-red-600">*</span></label>
+                    <input type="text" id="wCidade" required placeholder="Ex: Nova Lima" class="w-full px-3 py-2 border rounded-lg" />
+                    <p class="text-xs text-slate-400 mt-1">Se for fora de Nova Lima, o sistema vai avisar sobre a necessidade de ATF.</p>
+                  </div>
+                </div>
+                <div id="wDestinoAgendamentoBox" class="hidden space-y-4">
+                  <div><label class="block text-sm font-medium mb-1">Escola de destino</label><select id="wDestinoEscola" onchange="onWDestinoEscolaChange()" class="w-full px-3 py-2 border rounded-lg"></select></div>
+                  <div><label class="block text-sm font-medium mb-1">Endereço do destino</label><input type="text" id="wDestinoEscolaEndereco" readonly class="w-full px-3 py-2 border rounded-lg bg-slate-50" /></div>
+                  <div><label class="block text-sm font-medium mb-1">Cidade do destino</label><input type="text" id="wCidadeAgendamento" readonly class="w-full px-3 py-2 border rounded-lg bg-slate-50" /></div>
+                </div>
+              </div>
+
+              <!-- STEP 3: DATA/HORA -->
+              <div id="step3" class="hidden">
+                <h3 class="font-semibold mb-4">Data e horário</h3>
+                <p class="text-xs text-slate-400 mb-3">O turno (Manhã/Tarde/Noite) é calculado automaticamente pelo horário de saída e aparece na Agenda Mestra.</p>
+                <div class="grid grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm font-medium mb-1">Data <span class="text-red-600">*</span></label>
+                    <input type="date" id="wData" required class="w-full px-3 py-2 border rounded-lg" />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium mb-1">Horário de saída <span class="text-red-600">*</span></label>
+                    <input type="time" id="wHora" required class="w-full px-3 py-2 border rounded-lg" />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium mb-1">Horário de retorno (previsto) <span class="text-red-600">*</span></label>
+                    <input type="time" id="wHoraRetorno" required class="w-full px-3 py-2 border rounded-lg" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- STEP 4: PARTICIPANTES -->
+              <div id="step4" class="hidden">
+                <h3 class="font-semibold mb-4">Participantes e recorrência</h3>
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label class="block text-sm font-medium mb-1">Nº de Alunos <span class="text-red-600">*</span></label>
+                    <input type="number" id="wAlunos" min="0" required class="w-full px-3 py-2 border rounded-lg" />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium mb-1">Nº de Acompanhantes <span class="text-red-600">*</span></label>
+                    <input type="number" id="wAcompanhantes" min="0" required class="w-full px-3 py-2 border rounded-lg" />
+                  </div>
+                  <div class="col-span-2">
+                    <label class="block text-sm font-medium mb-1">Nº de Alunos PCD</label>
+                    <input type="number" id="wPCA" min="0" value="0" oninput="renderPcdRows()" class="w-full px-3 py-2 border rounded-lg" />
+                  </div>
+                  <div class="col-span-2">
+                    <label class="block text-sm font-medium mb-1">Público-alvo</label>
+                    <select id="wPublicoAlvo" class="w-full px-3 py-2 border rounded-lg">
+                      <option value="">— selecione —</option>
+                      <option value="educacao_infantil">Educação Infantil</option>
+                      <option value="fundamental_iniciais">Ens. Fundamental - Anos Iniciais</option>
+                      <option value="fundamental_finais">Ens. Fundamental - Anos Finais</option>
+                      <option value="ensino_medio">Ensino Médio</option>
+                      <option value="eja_adulto">EJA - Adulto</option>
+                    </select>
+                    <p class="text-xs text-slate-400 mt-1">Define pra qual setor pedagógico esta solicitação vai primeiro, na tela "Validações".</p>
+                  </div>
+                </div>
+
+                <div id="wPcdBox" class="hidden mb-4 space-y-3 bg-slate-50 border rounded-lg p-3">
+                  <p class="text-xs text-slate-500">Um aluno PCD é transportado em veículo adaptado - informe cada um:</p>
+                  <div id="wPcdRows" class="space-y-3"></div>
+                </div>
+
+                <label class="block text-sm font-medium mb-2">Tipo de evento</label>
+                <div class="space-y-2 text-sm">
+                  <label class="flex items-center gap-2"><input type="radio" name="wRecorrencia" value="unico" checked onchange="onWRecorrenciaChange()" /> Evento único</label>
+                  <label class="flex items-center gap-2"><input type="radio" name="wRecorrencia" value="semanal" onchange="onWRecorrenciaChange()" /> Continuado semanal</label>
+                  <label class="flex items-center gap-2"><input type="radio" name="wRecorrencia" value="quinzenal" onchange="onWRecorrenciaChange()" /> Continuado quinzenal</label>
+                  <label class="flex items-center gap-2"><input type="radio" name="wRecorrencia" value="mensal" onchange="onWRecorrenciaChange()" /> Continuado mensal</label>
+                </div>
+                <label class="mt-4 flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950"><input id="wAnexarProposta" type="checkbox" class="mt-1" /><span><strong>Enviar anexo da proposta pedagógica</strong><br/><span class="text-xs text-emerald-800">Após confirmar a solicitação, a tela de anexo será aberta para este evento.</span></span></label>
+
+                <div id="wRecorrenciaDetalhes" class="hidden mt-3 space-y-3 bg-slate-50 border rounded-lg p-3">
+                  <div>
+                    <label class="block text-sm font-medium mb-2">Repetir em quais dias da semana?</label>
+                    <div class="flex flex-wrap gap-3 text-sm">
+                      <label class="flex items-center gap-1"><input type="checkbox" name="wDiaSemana" value="0" /> Dom</label>
+                      <label class="flex items-center gap-1"><input type="checkbox" name="wDiaSemana" value="1" /> Seg</label>
+                      <label class="flex items-center gap-1"><input type="checkbox" name="wDiaSemana" value="2" /> Ter</label>
+                      <label class="flex items-center gap-1"><input type="checkbox" name="wDiaSemana" value="3" /> Qua</label>
+                      <label class="flex items-center gap-1"><input type="checkbox" name="wDiaSemana" value="4" /> Qui</label>
+                      <label class="flex items-center gap-1"><input type="checkbox" name="wDiaSemana" value="5" /> Sex</label>
+                      <label class="flex items-center gap-1"><input type="checkbox" name="wDiaSemana" value="6" /> Sáb</label>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium mb-1">Repetir até (data final)</label>
+                    <input type="date" id="wRecorrenciaFim" class="w-full px-3 py-2 border rounded-lg" />
+                  </div>
+                  <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                    <div class="flex items-center justify-between gap-3 mb-2"><div><label class="block text-sm font-semibold text-emerald-950">Datas adicionais</label><p class="text-xs text-emerald-800">Escolha até 3 datas específicas para esta mesma recorrência.</p></div><button type="button" onclick="addRecurrenceDateField()" class="shrink-0 px-3 py-1.5 rounded-lg border border-emerald-300 bg-white text-sm font-semibold text-emerald-700">+ Adicionar data</button></div>
+                    <div id="wDatasRecorrencia" class="grid grid-cols-1 sm:grid-cols-3 gap-2"></div>
+                  </div>
+                  <p class="text-xs text-slate-400">A viagem que você está cadastrando agora conta como a primeira ocorrência. As demais são criadas automaticamente, cada uma como uma linha independente na Agenda (pode cancelar uma sem afetar as outras).</p>
+                </div>
+
+                <div class="mt-4">
+                  <label class="block text-sm font-medium mb-1">Observações</label>
+                  <textarea id="wObservacoes" rows="2" class="w-full px-3 py-2 border rounded-lg"></textarea>
+                </div>
+              </div>
+
+              <!-- STEP 5: RESUMO -->
+              <div id="step5" class="hidden">
+                <h3 class="font-semibold mb-4">Confirmar solicitação</h3>
+                <div id="resumoSolicitacao" class="bg-slate-50 border rounded-lg p-4 text-sm space-y-1 mb-4"></div>
+                <div id="sugestaoVeiculos" class="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-sm text-emerald-900"></div>
+              </div>
+
+              <div class="flex justify-between mt-6">
+                <button id="btnPrev" onclick="wizardPrev()" class="hidden px-4 py-2 border rounded-lg text-sm">← Voltar</button>
+                <button id="btnNext" onclick="wizardNext()" class="ml-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-sm">Próximo →</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- VALIDAÇÕES (Escola envia o projeto pedagógico; Pedagogia dá o parecer) -->
+          <section id="screen-validacoes" class="hidden-screen">
+            <!-- vista da ESCOLA -->
+            <div id="validacoesEscola" class="hidden bg-white rounded-xl border p-5">
+              <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+                <div><h3 class="font-semibold mb-1">Validação pedagógica das suas solicitações</h3>
+                <p class="text-sm text-slate-500">Toda solicitação precisa do projeto pedagógico anexado para a Pedagogia avaliar. Se pedirem correções, é só reenviar o arquivo — o novo substitui o anterior.</p></div>
+                <div class="flex flex-wrap gap-2 items-end">
+                  <div><label class="block text-xs font-medium text-slate-500 mb-1">Destino</label><select id="validacaoFiltroDestinoEscola" onchange="renderValidacoesEscola()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todos os destinos</option></select></div>
+                  <div><label class="block text-xs font-medium text-slate-500 mb-1">Data</label><input type="date" id="validacaoFiltroDataEscola" onchange="renderValidacoesEscola()" class="px-3 py-2 border rounded-lg text-sm" /></div>
+                  <button onclick="atualizarValidacoesEscola()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm">🔄 Atualizar</button>
+                </div>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                  <thead>
+                    <tr class="border-b border-slate-200 text-xs uppercase text-slate-500">
+                      <th class="px-4 py-2">Data</th>
+                      <th class="px-4 py-2">Origem</th>
+                      <th class="px-4 py-2">Destino</th>
+                      <th class="px-4 py-2">Público-alvo</th>
+                      <th class="px-4 py-2">Documento</th>
+                      <th class="px-4 py-2 min-w-[220px]">Parecer da Pedagogia</th>
+                      <th class="px-4 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="validacoesEscolaTable" class="divide-y divide-slate-100"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- vista da PEDAGOGIA -->
+            <div id="validacoesPedagogia" class="hidden bg-white rounded-xl border p-5">
+              <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+                <div>
+                  <h3 class="font-semibold">Validação pedagógica das solicitações</h3>
+                  <p class="text-sm text-slate-500 mt-1">Qualquer setor pode analisar e, se a solicitação caiu no setor errado, encaminhar pro certo.</p>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Origem</label>
+                  <select id="validacaoFiltroOrigem" onchange="renderValidacoesPedagogia()" class="px-3 py-2 border rounded-lg text-sm">
+                    <option value="">Todas as origens</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Setor</label>
+                  <select id="validacaoFiltroSetor" onchange="renderValidacoesPedagogia()" class="px-3 py-2 border rounded-lg text-sm">
+                    <option value="">Todos os setores</option>
+                    <option value="educacao_infantil">Educação Infantil</option>
+                    <option value="ensino_fundamental">Ensino Fundamental</option>
+                    <option value="etnico_racial">Étnico-Racial</option>
+                    <option value="educacao_inclusiva">Educação Inclusiva</option>
+                    <option value="tempo_integral">Tempo Integral</option>
+                    <option value="administracao">Administração</option>
+                  </select>
+                </div>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                  <thead>
+                    <tr class="border-b border-slate-200 text-xs uppercase text-slate-500">
+                      <th class="px-4 py-2">Data</th>
+                      <th class="px-4 py-2">Origem</th>
+                      <th class="px-4 py-2">Destino</th>
+                      <th class="px-4 py-2">Público-alvo</th>
+                      <th class="px-4 py-2">Pessoas</th>
+                      <th class="px-4 py-2">Setor atual</th>
+                      <th class="px-4 py-2">Documento</th>
+                      <th class="px-4 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="validacoesPedagogiaTable" class="divide-y divide-slate-100"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- CONFIGURAÇÃO DE VALIDADORES (Admin) -->
+          <section id="screen-validadores" class="hidden-screen">
+            <div class="grid lg:grid-cols-2 gap-5">
+              <div class="bg-white rounded-xl border shadow-sm p-5">
+                <h3 class="font-semibold">Setores pedagógicos</h3><p class="text-sm text-slate-500 mt-1 mb-4">Crie os setores que receberão as validações.</p>
+                <div class="flex gap-2 mb-4"><input id="novoSetorValidacao" class="min-w-0 flex-1 px-3 py-2 border rounded-lg text-sm" placeholder="Ex.: Educação Ambiental" /><button onclick="criarSetorValidacao()" class="px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold">Adicionar</button></div>
+                <div id="listaSetoresValidacao" class="space-y-2"></div>
+              </div>
+              <div class="bg-white rounded-xl border shadow-sm p-5">
+                <h3 class="font-semibold">Públicos-alvo e destino da validação</h3><p class="text-sm text-slate-500 mt-1 mb-4">Defina qual setor recebe primeiro cada tipo de público.</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4"><input id="novoPublicoValidacao" class="px-3 py-2 border rounded-lg text-sm" placeholder="Ex.: Educação Integral" /><select id="novoPublicoSetor" class="px-3 py-2 border rounded-lg text-sm"></select></div><button onclick="criarPublicoValidacao()" class="mb-4 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold">Adicionar público-alvo</button>
+                <div id="listaPublicosValidacao" class="space-y-2"></div>
+              </div>
+              <div class="bg-white rounded-xl border shadow-sm p-5 lg:col-span-2">
+                <div class="flex flex-wrap justify-between gap-3 mb-4"><div><h3 class="font-semibold">Validadores pedagógicos</h3><p class="text-sm text-slate-500 mt-1">Vincule cada pessoa da Pedagogia aos setores em que ela tem prerrogativa para analisar.</p></div><button onclick="showScreen('usuarios')" class="px-3 py-2 border rounded-lg text-sm font-semibold text-emerald-700">+ Criar usuário validador</button></div>
+                <div id="listaValidadores" class="grid md:grid-cols-2 gap-3"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- KM RODADO (Motorista) -->
+          <section id="screen-km" class="hidden-screen">
+            <div id="kmDriverContent">
+            <button onclick="openKmModal()" class="w-full md:w-auto mb-4 px-4 py-3 bg-emerald-600 text-white rounded-lg text-sm font-semibold shadow-sm hover:bg-emerald-700 flex items-center justify-center gap-2">
+              📟 Registrar odômetro
+            </button>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div class="bg-white rounded-xl p-5 border shadow-sm">
+                <div class="text-sm text-slate-500 mb-2">Hoje</div>
+                <div id="kmHojeResumo" class="text-sm"></div>
+              </div>
+              <div class="km-period-cards grid grid-cols-2 gap-2 md:col-span-2">
+                <div class="bg-white rounded-xl p-3 border shadow-sm">
+                  <div class="text-xs text-slate-500 mb-1">KM na semana</div>
+                  <div class="text-xl font-bold text-emerald-600" id="kmStatSemana">0</div>
+                </div>
+                <div class="bg-white rounded-xl p-3 border shadow-sm">
+                  <div class="text-xs text-slate-500 mb-1">KM no mês</div>
+                  <div class="text-xl font-bold text-blue-600" id="kmStatMes">0</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-white rounded-xl border shadow-sm p-5 mb-6">
+              <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+                <h3 class="font-semibold">Km rodado por período</h3>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Agrupar por</label>
+                  <select id="kmChartPeriodo" onchange="renderKmChart()" class="px-3 py-2 border rounded-lg text-sm">
+                    <option value="semana">Últimos 7 dias</option>
+                    <option value="mes">Últimos 30 dias</option>
+                    <option value="ano">Últimos 12 meses</option>
+                  </select>
+                </div>
+              </div>
+              <canvas id="chartKm" height="90"></canvas>
+            </div>
+
+            <div class="bg-white rounded-xl border shadow-sm p-5">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="font-semibold">Registro diário</h3>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                  <thead>
+                    <tr class="border-b border-slate-200 text-xs uppercase text-slate-500">
+                      <th class="px-4 py-2">Data</th>
+                      <th class="px-4 py-2">Odômetro início</th>
+                      <th class="px-4 py-2">Odômetro fim</th>
+                      <th class="px-4 py-2">Km rodado</th>
+                      <th class="px-4 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="kmTable" class="divide-y divide-slate-100"></tbody>
+                </table>
+              </div>
+            </div>
+            </div>
+
+          <!-- Visão administrativa do KM: a mesma aba KM, sem item de menu duplicado. -->
+          <div id="kmAdminContent" class="hidden">
+            <div class="bg-white rounded-xl border shadow-sm p-5 mb-6">
+              <div class="flex flex-wrap items-end gap-3 mb-4">
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Motorista</label>
+                  <select id="kmAdminFiltroMotorista" onchange="renderKmAdmin()" class="px-3 py-2 border rounded-lg text-sm">
+                    <option value="">Todos</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Cooperativa</label>
+                  <select id="kmAdminFiltroCooperativa" onchange="renderKmAdmin()" class="px-3 py-2 border rounded-lg text-sm">
+                    <option value="">Todas</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">De</label>
+                  <input type="date" id="kmAdminFiltroInicio" onchange="renderKmAdmin()" class="px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Até</label>
+                  <input type="date" id="kmAdminFiltroFim" onchange="renderKmAdmin()" class="px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <button onclick="document.getElementById('kmAdminFiltroMotorista').value='';document.getElementById('kmAdminFiltroCooperativa').value='';document.getElementById('kmAdminFiltroInicio').value='';document.getElementById('kmAdminFiltroFim').value='';renderKmAdmin();" class="px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Limpar</button>
+                <div class="ml-auto flex gap-2">
+                  <button id="btnNovoKmAdmin" onclick="openKmModal()" class="px-3 py-2 bg-emerald-700 text-white rounded-lg text-sm">➕ Novo registro</button>
+                  <button onclick="exportKmPDF()" class="px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm">📄 PDF</button>
+                  <button onclick="exportKmExcel()" class="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm">📊 Excel</button>
+                </div>
+              </div>
+              <div id="kmAdminResumo" class="text-sm text-slate-600"></div>
+            </div>
+
+            <div class="bg-white rounded-xl border shadow-sm p-5">
+              <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                  <thead>
+                    <tr class="border-b border-slate-200 text-xs uppercase text-slate-500">
+                      <th class="px-4 py-2">Data</th>
+                      <th class="px-4 py-2">Motorista</th>
+                      <th class="px-4 py-2">Cooperativa</th>
+                      <th class="px-4 py-2">Odômetro início</th>
+                      <th class="px-4 py-2">Odômetro fim</th>
+                      <th class="px-4 py-2">Km rodado</th>
+                      <th class="px-4 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="kmAdminTable" class="divide-y divide-slate-100"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          </section>
+
+          <!-- UNIDADES -->
+          <section id="screen-unidades" class="hidden-screen">
+            <div class="bg-white rounded-xl border shadow-sm p-5">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="font-semibold">Unidades</h3>
+                <button onclick="openUnidadeModal()" class="px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm">+ Nova unidade</button>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                  <thead>
+                    <tr class="border-b border-slate-200 text-xs uppercase text-slate-500">
+                      <th class="px-4 py-2">Nome</th>
+                      <th class="px-4 py-2">Tipo</th>
+                      <th class="px-4 py-2">Endereço / Cidade</th>
+                      <th class="px-4 py-2">E-mail</th>
+                      <th class="px-4 py-2">Telefone</th>
+                      <th class="px-4 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="unidadesTable" class="divide-y divide-slate-100"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- VEÍCULOS -->
+          <section id="screen-veiculos" class="hidden-screen">
+            <div class="bg-white rounded-xl border shadow-sm p-5">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="font-semibold">Veículos</h3>
+                <button id="btnNovoVeiculo" onclick="openVehicleModal()" class="px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm">+ Adicionar veículo</button>
+              </div>
+              <div id="veiculosGrid" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+            </div>
+          </section>
+
+          <!-- MOTORISTAS -->
+          <section id="screen-motoristas" class="hidden-screen">
+            <div class="bg-white rounded-xl border shadow-sm p-5">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="font-semibold">Motoristas</h3>
+                <button id="btnNovoMotorista" onclick="openDriverModal()" class="px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm">+ Adicionar motorista</button>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                  <thead>
+                    <tr class="border-b border-slate-200 text-xs uppercase text-slate-500">
+                      <th class="px-4 py-2">Nome</th>
+                      <th class="px-4 py-2">CNH</th>
+                      <th class="px-4 py-2">Venc. CNH</th>
+                      <th class="px-4 py-2">Telefone</th>
+                      <th class="px-4 py-2">Cooperativa</th>
+                      <th class="px-4 py-2">Veículo</th>
+                      <th class="px-4 py-2">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="motoristasTable" class="divide-y divide-slate-100"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- COOPERATIVAS -->
+          <section id="screen-cooperativas" class="hidden-screen">
+            <div class="bg-white rounded-xl border shadow-sm p-5 mb-4">
+              <h3 class="font-semibold mb-1">Envio de e-mail</h3>
+              <p class="text-sm text-slate-500 mb-4">Nome e e-mail que aparecem na assinatura do e-mail preparado para a cooperativa (pedido de ATF ou de transporte PCD). Isso é só informativo/assinatura — o e-mail é enviado pelo seu próprio programa de e-mail, então quem realmente "envia de" é a conta que estiver logada nele.</p>
+              <div class="grid grid-cols-2 gap-3 max-w-xl">
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Nome do setor</label>
+                  <input type="text" id="settingsRemetenteNome" placeholder="Ex: Excursão Semed" class="w-full px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">E-mail do setor</label>
+                  <input type="email" id="settingsRemetenteEmail" placeholder="Ex: excursao.semed@pnl.mg.gov.br" class="w-full px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div class="col-span-2">
+                  <label class="block text-xs font-medium text-slate-500 mb-1">URL do Google Apps Script (upload dos projetos pedagógicos pro Drive)</label>
+                  <input type="text" id="settingsDriveUploadUrl" placeholder="Cole aqui a URL do Web App depois de publicar o script (veja google-apps-script/README.md)" class="w-full px-3 py-2 border rounded-lg text-sm" />
+                  <p class="text-xs text-slate-400 mt-1">Enquanto isso ficar em branco, a tela "Validações" da Escola registra o envio só localmente (sem mandar de verdade pro Drive).</p>
+                </div>
+              </div>
+              <button onclick="confirmSaveSettings()" class="mt-3 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm">Salvar</button>
+            </div>
+
+            <div class="bg-white rounded-xl border shadow-sm p-5">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="font-semibold">Cooperativas</h3>
+                <button onclick="openCooperativaModal()" class="px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm">+ Nova cooperativa</button>
+              </div>
+              <p class="text-sm text-slate-500 mb-4">Cadastre o e-mail de cada cooperativa aqui - é pra ele que vai o pedido de ATF ou de transporte PCD, de acordo com a cooperativa do motorista vinculado (ou escolhida na hora do envio, se ainda não tiver motorista).</p>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                  <thead>
+                    <tr class="border-b border-slate-200 text-xs uppercase text-slate-500">
+                      <th class="px-4 py-2">Nome</th>
+                      <th class="px-4 py-2">E-mail</th>
+                      <th class="px-4 py-2">Telefone</th>
+                      <th class="px-4 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="cooperativasTable" class="divide-y divide-slate-100"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- USUÁRIOS -->
+          <section id="screen-usuarios" class="hidden-screen">
+            <div class="bg-white rounded-xl border shadow-sm p-5">
+              <div class="flex items-start justify-between mb-4 gap-4">
+                <div>
+                  <h3 class="font-semibold">Usuários do sistema</h3>
+                  <p class="text-sm text-slate-500 mt-1">Crie o login (e-mail + senha) e defina o perfil (admin/escola/pedagogia/motorista) e, conforme o perfil, a unidade escolar, o motorista ou o setor pedagógico vinculado.</p>
+                </div>
+                <button onclick="openCreateUserModal()" class="px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm whitespace-nowrap">+ Novo usuário</button>
+              </div>
+              <div id="createUserUnavailableNotice" class="hidden bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-xs text-amber-800">
+                ℹ️ Criar login novo pela tela depende de uma função de servidor (Edge Function) publicada no Supabase (veja <code>supabase/functions/admin-create-user</code> no pacote) — enquanto isso, você ainda pode editar quem já acessou o sistema pelo menos uma vez.
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                  <thead>
+                    <tr class="border-b border-slate-200 text-xs uppercase text-slate-500">
+                      <th class="px-4 py-2">Nome</th>
+                      <th class="px-4 py-2">E-mail</th>
+                      <th class="px-4 py-2">Telefone</th>
+                      <th class="px-4 py-2">Perfil</th>
+                      <th class="px-4 py-2">Unidade / Motorista</th>
+                      <th class="px-4 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="usuariosTable" class="divide-y divide-slate-100"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- PERFIS DE ACESSO (somente administradores) -->
+          <section id="screen-perfisacesso" class="hidden-screen">
+            <div class="bg-white rounded-xl border shadow-sm p-5 max-w-4xl">
+              <div class="flex items-start justify-between gap-4 mb-4">
+                <div><h3 class="font-semibold">Perfis administrativos</h3><p class="text-sm text-slate-500 mt-1">Defina as telas que cada área administrativa pode consultar ou editar. Os perfis existentes mantêm suas regras próprias.</p></div>
+                <button onclick="openAccessProfileModal()" class="px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm whitespace-nowrap">+ Novo perfil</button>
+              </div>
+              <div id="accessProfilesList" class="space-y-3"></div>
+            </div>
+          </section>
+
+          <!-- RELATÓRIOS -->
+          <section id="screen-relatorios" class="hidden-screen">
+            <div class="bg-white rounded-xl border shadow-sm p-5 max-w-xl">
+              <h3 class="font-semibold mb-2">Escala</h3>
+              <p class="text-sm text-slate-500 mb-4">Viagens confirmadas e com motorista atribuído. Filtre por período e unidade solicitante, depois exporte.</p>
+              <div class="grid grid-cols-2 gap-3 mb-4">
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Data inicial</label>
+                  <input type="date" id="relFiltroInicio" class="w-full px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Data final</label>
+                  <input type="date" id="relFiltroFim" class="w-full px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div class="col-span-2">
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Unidade solicitante</label>
+                  <select id="relFiltroUnidade" class="w-full px-3 py-2 border rounded-lg text-sm">
+                    <option value="">Todas</option>
+                  </select>
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-3">
+                <button onclick="exportEscalaPDF()" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-sm">
+                  📄 Gerar Escala PDF
+                </button>
+                <button onclick="exportEscalaExcel()" class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-sm">
+                  📊 Gerar Escala Excel
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Atalhos do aplicativo móvel: exibidos somente para motorista em celular. -->
+  <nav id="driverBottomNav" class="driver-bottom-nav" aria-label="Navegação do motorista">
+    <button type="button" data-driver-screen="dashboard" onclick="showScreen('dashboard')" class="driver-bottom-link" aria-label="Dashboard">
+      <i data-lucide="layout-dashboard"></i><span>Painel</span>
+    </button>
+    <button type="button" data-driver-screen="agenda" onclick="showScreen('agenda')" class="driver-bottom-link active" aria-label="Viagens de hoje">
+      <i data-lucide="calendar-check"></i><span>Hoje</span>
+    </button>
+    <button type="button" data-driver-screen="agendadata" onclick="showScreen('agendadata')" class="driver-bottom-link" aria-label="Próximas viagens">
+      <i data-lucide="calendar-clock"></i><span>Próximas</span>
+    </button>
+    <button type="button" data-driver-screen="agendageral" onclick="showScreen('agendageral')" class="driver-bottom-link" aria-label="Agenda geral">
+      <i data-lucide="list-checks"></i><span>Geral</span>
+    </button>
+    <button type="button" data-driver-screen="km" onclick="showScreen('km')" class="driver-bottom-link" aria-label="Quilometragem">
+      <i data-lucide="gauge"></i><span>KM</span>
+    </button>
+    <button type="button" onclick="toggleNotificationPanel()" class="driver-bottom-link" aria-label="Notificações">
+      <i data-lucide="bell-ring"></i><span>Alertas</span><span id="driverBottomNotificationCount" class="driver-bottom-count hidden">0</span>
+    </button>
+  </nav>
+
+  <!-- TOAST -->
+  <div id="toast" class="toast hidden bg-white border rounded-lg shadow-xl px-4 py-3">
+    <span id="toastMsg" class="text-sm font-medium"></span>
+  </div>
+
+  <!-- MODAL ATRIBUIR MOTORISTA(S) (aprovação final do admin) -->
+  <div id="assignModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-md w-full">
+      <h3 class="font-bold text-lg mb-4">🚌 Aprovar e atribuir motorista(s)</h3>
+      <p class="text-xs text-slate-500 mb-2">Cada motorista dirige sempre o próprio veículo - a capacidade mostrada já é a dele. Marque um ou mais motoristas.</p>
+      <div id="assignMotoristasList" class="space-y-1 max-h-64 overflow-y-auto border rounded-lg p-3"></div>
+      <div id="assignCapacidadeTotal" class="text-sm text-slate-600 mt-2"></div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button onclick="closeAssignModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button>
+        <button onclick="confirmAssign()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">Confirmar aprovação</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL RECUSAR VIAGEM -->
+  <div id="rejectModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-md w-full">
+      <h3 class="font-bold text-lg mb-4">❌ Recusar solicitação</h3>
+      <label class="block text-sm font-medium mb-1">Motivo</label>
+      <select id="rejectMotivoSelect" onchange="onMotivoSelectChange('rejectMotivoSelect','rejectMotivoOutro')" class="w-full px-3 py-2 border rounded-lg text-sm mb-2">
+        <option>Falta de dados</option>
+        <option>Fora do calendário letivo</option>
+        <option>Falta de veículo/motorista disponível</option>
+        <option>Documentação pendente</option>
+        <option>Outro</option>
+      </select>
+      <textarea id="rejectMotivoOutro" rows="2" placeholder="Descreva o motivo" class="hidden w-full px-3 py-2 border rounded-lg text-sm"></textarea>
+      <div class="flex justify-end gap-2 mt-4">
+        <button onclick="closeRejectModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button>
+        <button onclick="confirmReject()" class="px-4 py-2 bg-red-600 text-white rounded-lg text-sm">Confirmar recusa</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CANCELAR VIAGEM (escola solicitante ou admin) -->
+  <div id="cancelModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-md w-full">
+      <h3 class="font-bold text-lg mb-4">🚫 Cancelar viagem</h3>
+      <label class="block text-sm font-medium mb-1">Motivo</label>
+      <select id="cancelMotivoSelect" onchange="onMotivoSelectChange('cancelMotivoSelect','cancelMotivoOutro')" class="w-full px-3 py-2 border rounded-lg text-sm mb-2">
+        <option>Não haverá mais a viagem</option>
+        <option>Mudança de data</option>
+        <option>Outro</option>
+      </select>
+      <textarea id="cancelMotivoOutro" rows="2" placeholder="Descreva o motivo" class="hidden w-full px-3 py-2 border rounded-lg text-sm"></textarea>
+      <div class="flex justify-end gap-2 mt-4">
+        <button onclick="closeCancelModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Voltar</button>
+        <button onclick="confirmCancel()" class="px-4 py-2 bg-orange-600 text-white rounded-lg text-sm">Confirmar cancelamento</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL EXCLUIR VIAGEM PERMANENTEMENTE (admin, diferente de Cancelar) -->
+  <div id="deleteExcursionModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-md w-full">
+      <h3 class="font-bold text-lg mb-4 text-red-600">🗑️ Excluir viagem permanentemente</h3>
+      <p class="text-sm text-slate-600 mb-2">Você está prestes a excluir de vez:</p>
+      <p id="deleteExcursionInfo" class="text-sm font-medium mb-3"></p>
+      <p class="text-sm text-red-600 mb-4">⚠️ Esta ação é <strong>permanente e não pode ser desfeita</strong> - é diferente de "Cancelar", que mantém a viagem no histórico. Todos os registros ligados a ela (listagens de passageiros, comentários de validação etc.) serão apagados junto.</p>
+      <div class="flex justify-end gap-2 mt-4">
+        <button onclick="closeDeleteExcursionModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Voltar</button>
+        <button onclick="confirmDeleteExcursion()" class="px-4 py-2 bg-red-600 text-white rounded-lg text-sm">Excluir permanentemente</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- EDIÇÃO COMPLETA DA AGENDA MESTRA (somente Admin) -->
+  <div id="excursionEditorModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-6xl w-full max-h-[94vh] overflow-y-auto">
+      <div class="flex items-center justify-between gap-3 mb-4"><h3 class="font-bold text-lg">✏️ Editar viagem</h3><button onclick="closeExcursionEditor()" class="text-slate-500">✕</button></div>
+      <p class="text-xs text-slate-500 mb-4">As alterações ficam registradas na ocorrência selecionada. Dados de participantes PCD e listagens são tratados em seus respectivos fluxos.</p>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <label class="text-sm">Data<input id="editTripDate" type="date" class="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
+        <label class="text-sm">Saída<input id="editDepartureTime" type="time" class="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
+        <label class="text-sm">Retorno<input id="editReturnTime" type="time" class="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
+        <label class="text-sm">Situação<select id="editSituacao" class="mt-1 w-full px-3 py-2 border rounded-lg"></select></label>
+        <label class="text-sm">Origem<input id="editOriginName" class="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
+        <label class="text-sm">Endereço da origem<input id="editOriginAddress" class="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
+        <label class="text-sm">Cidade da origem<input id="editOriginCity" class="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
+        <label class="text-sm">Destino<input id="editDestination" class="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
+        <label class="text-sm">Endereço do destino<input id="editDestinationAddress" class="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
+        <label class="text-sm">Cidade do destino<input id="editCity" class="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
+        <label class="text-sm">Alunos SEMED<input id="editStudentsCount" type="number" min="0" class="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
+        <label class="text-sm">Acompanhantes SEMED<input id="editCompanionsCount" type="number" min="0" class="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
+        <label class="text-sm">ATF<select id="editAtfStatus" class="mt-1 w-full px-3 py-2 border rounded-lg"></select></label>
+        <label class="text-sm">Telefone do solicitante<input id="editRequesterContact" class="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
+        <label class="text-sm md:col-span-2">Observações<textarea id="editNotes" rows="3" class="mt-1 w-full px-3 py-2 border rounded-lg"></textarea></label>
+      </div>
+      <div class="flex justify-end gap-2 mt-5"><button onclick="closeExcursionEditor()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button><button onclick="saveExcursionEditor()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">Salvar alterações</button></div>
+    </div>
+  </div>
+
+  <!-- ADICIONAR NOVA OCORRÊNCIA À RECORRÊNCIA (unidade solicitante) -->
+  <div id="addRecurrenceDateModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-md w-full">
+      <h3 class="font-bold text-lg text-emerald-900">Adicionar data à recorrência</h3>
+      <p class="mt-2 text-sm text-slate-600">Será criada uma nova ocorrência independente. Cancelamentos e decisões do Admin continuam separados por data.</p>
+      <label class="block mt-4 text-sm font-medium">Nova data <span class="text-red-600">*</span><input id="addRecurrenceDateInput" type="date" class="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
+      <div class="flex justify-end gap-2 mt-5"><button onclick="closeAddRecurrenceDateModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button><button onclick="saveAdditionalRecurrenceDate()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold">Adicionar data</button></div>
+    </div>
+  </div>
+
+  <!-- MODAL NOVA UNIDADE -->
+  <div id="unidadeModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-md w-full">
+      <h3 id="unidadeModalTitle" class="font-bold text-lg mb-4">🏫 Nova unidade</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm font-medium mb-1">Nome</label>
+          <input type="text" id="newUnidadeNome" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Tipo</label>
+          <select id="newUnidadeTipo" class="w-full px-3 py-2 border rounded-lg text-sm">
+            <option value="escola">Escola</option>
+            <option value="entidade">Entidade</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Endereço</label>
+          <input type="text" id="newUnidadeEndereco" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Cidade</label>
+          <input type="text" id="newUnidadeCidade" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Ex: Nova Lima" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">E-mail</label>
+          <input type="email" id="newUnidadeEmail" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Telefone</label>
+          <input type="text" id="newUnidadeTelefone" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button onclick="closeUnidadeModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button>
+        <button onclick="confirmSaveUnidade()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL VEÍCULO (novo/editar) -->
+  <div id="vehicleModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-md w-full">
+      <h3 id="vehicleModalTitle" class="font-bold text-lg mb-4">🚌 Novo veículo</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm font-medium mb-1">Placa</label>
+          <input type="text" id="newVeiculoPlaca" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Tipo</label>
+          <select id="newVeiculoTipo" class="w-full px-3 py-2 border rounded-lg text-sm">
+            <option value="micro-onibus">Micro-ônibus</option>
+            <option value="van">Van</option>
+            <option value="onibus">Ônibus</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Capacidade (lugares)</label>
+          <input type="number" id="newVeiculoCapacidade" min="1" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Cooperativa</label>
+          <input type="text" id="newVeiculoCooperativa" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button onclick="closeVehicleModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button>
+        <button onclick="confirmSaveVehicle()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL MOTORISTA (novo/editar) -->
+  <div id="driverModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-md w-full">
+      <h3 id="driverModalTitle" class="font-bold text-lg mb-4">👤 Novo motorista</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm font-medium mb-1">Nome</label>
+          <input type="text" id="newMotoristaNome" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">CNH</label>
+          <input type="text" id="newMotoristaCnh" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Vencimento da CNH</label>
+          <input type="date" id="newMotoristaCnhVencimento" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Telefone</label>
+          <input type="text" id="newMotoristaTelefone" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Cooperativa</label>
+          <select id="newMotoristaCooperativaId" class="w-full px-3 py-2 border rounded-lg text-sm">
+            <option value="">— nenhuma —</option>
+          </select>
+          <p class="text-xs text-slate-400 mt-1">Cadastre a cooperativa antes na tela "Cooperativas" (com o e-mail dela) se ainda não existir.</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Veículo (do motorista)</label>
+          <select id="newMotoristaVeiculo" class="w-full px-3 py-2 border rounded-lg text-sm">
+            <option value="">— nenhum —</option>
+          </select>
+          <p class="text-xs text-slate-400 mt-1">Cada motorista dirige sempre o próprio veículo.</p>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button onclick="closeDriverModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button>
+        <button onclick="confirmSaveDriver()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL COOPERATIVA (nova/editar) -->
+  <div id="cooperativaModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-md w-full">
+      <h3 id="cooperativaModalTitle" class="font-bold text-lg mb-4">📨 Nova cooperativa</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm font-medium mb-1">Nome</label>
+          <input type="text" id="newCooperativaNome" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">E-mail</label>
+          <input type="email" id="newCooperativaEmail" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Telefone</label>
+          <input type="text" id="newCooperativaTelefone" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button onclick="closeCooperativaModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button>
+        <button onclick="confirmSaveCooperativa()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL USUÁRIO (editar perfil) -->
+  <div id="changePasswordModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="changePasswordTitle">
+    <div class="bg-white rounded-2xl p-6 max-w-md w-full">
+      <h3 id="changePasswordTitle" class="font-bold text-lg mb-1">🔐 Trocar minha senha</h3>
+      <p class="text-xs text-slate-500 mb-4">Informe sua senha atual para confirmar a alteração. A nova senha não é exibida nem enviada ao administrador.</p>
+      <div class="space-y-3">
+        <div><label class="block text-sm font-medium mb-1">Senha atual</label><input id="currentPassword" type="password" autocomplete="current-password" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+        <div><label class="block text-sm font-medium mb-1">Nova senha</label><input id="newOwnPassword" type="password" autocomplete="new-password" minlength="8" class="w-full px-3 py-2 border rounded-lg text-sm" /><p class="text-xs text-slate-400 mt-1">Use ao menos 8 caracteres.</p></div>
+        <div><label class="block text-sm font-medium mb-1">Confirme a nova senha</label><input id="confirmOwnPassword" type="password" autocomplete="new-password" minlength="8" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+      </div>
+      <div class="flex justify-end gap-2 mt-4"><button onclick="closeChangePasswordModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button><button onclick="saveOwnPassword()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">Trocar senha</button></div>
+    </div>
+  </div>
+
+  <!-- MODAL USUÁRIO (editar perfil) -->
+  <div id="userModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-md w-full">
+      <h3 class="font-bold text-lg mb-1">🔑 Editar usuário</h3>
+      <p class="text-xs text-slate-500 mb-4" id="userModalEmail"></p>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm font-medium mb-1">Nome</label>
+          <input type="text" id="newUserNome" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Perfil</label>
+          <select id="newUserRole" onchange="onUserRoleChange()" class="w-full px-3 py-2 border rounded-lg text-sm">
+            <option value="admin">Admin</option>
+            <option value="escola">Escola</option>
+            <option value="pedagogia">Pedagogia</option>
+            <option value="motorista">Motorista</option>
+            <option value="operacional">Perfil administrativo</option>
+          </select>
+        </div>
+        <div id="userTelefoneWrap">
+          <label class="block text-sm font-medium mb-1">Telefone de contato</label>
+          <input type="tel" id="newUserTelefone" inputmode="tel" autocomplete="tel" placeholder="(31) 99999-9999" class="w-full px-3 py-2 border rounded-lg text-sm" />
+          <p class="text-xs text-slate-400 mt-1">Exibido ao motorista como contato do solicitante.</p>
+        </div>
+        <div id="userEscolaWrap">
+          <label class="block text-sm font-medium mb-1">Unidade escolar</label>
+          <select id="newUserSchoolId" class="w-full px-3 py-2 border rounded-lg text-sm">
+            <option value="">— selecione —</option>
+          </select>
+        </div>
+        <div id="userMotoristaWrap">
+          <label class="block text-sm font-medium mb-1">Motorista vinculado</label>
+          <select id="newUserDriverId" class="w-full px-3 py-2 border rounded-lg text-sm">
+            <option value="">— selecione —</option>
+          </select>
+        </div>
+        <div id="userAccessProfileWrap" class="hidden">
+          <label class="block text-sm font-medium mb-1">Perfil administrativo</label>
+          <select id="newUserAccessProfileId" class="w-full px-3 py-2 border rounded-lg text-sm"></select>
+        </div>
+      </div>
+      <div id="userSetorWrap" class="hidden">
+        <label class="block text-sm font-medium mb-1">Setor pedagógico</label>
+        <select id="newUserSetorPedagogico" class="w-full px-3 py-2 border rounded-lg text-sm">
+          <option value="">— selecione —</option>
+          <option value="educacao_infantil">Educação Infantil</option>
+          <option value="ensino_fundamental">Ensino Fundamental</option>
+          <option value="etnico_racial">Étnico-Racial</option>
+          <option value="educacao_inclusiva">Educação Inclusiva</option>
+          <option value="tempo_integral">Tempo Integral</option>
+          <option value="administracao">Administração</option>
+        </select>
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button onclick="closeUserModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button>
+        <button onclick="confirmSaveUser()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CRIAR USUÁRIO (novo login) -->
+  <div id="createUserModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-md w-full">
+      <h3 class="font-bold text-lg mb-1">🔑 Novo usuário</h3>
+      <p class="text-xs text-slate-500 mb-4">Cria o login (e-mail + senha) e já define o perfil, tudo de uma vez. Avise a pessoa da senha temporária por fora do sistema.</p>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm font-medium mb-1">Nome</label>
+          <input type="text" id="createUserNome" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">E-mail</label>
+          <input type="email" id="createUserEmail" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Senha temporária</label>
+          <input type="text" id="createUserSenha" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Mín. 6 caracteres" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Perfil</label>
+          <select id="createUserRole" onchange="onCreateUserRoleChange()" class="w-full px-3 py-2 border rounded-lg text-sm">
+            <option value="admin">Admin</option>
+            <option value="escola" selected>Escola</option>
+            <option value="pedagogia">Pedagogia</option>
+            <option value="motorista">Motorista</option>
+            <option value="operacional">Perfil administrativo</option>
+          </select>
+        </div>
+        <div id="createUserTelefoneWrap">
+          <label class="block text-sm font-medium mb-1">Telefone de contato</label>
+          <input type="tel" id="createUserTelefone" inputmode="tel" autocomplete="tel" placeholder="(31) 99999-9999" class="w-full px-3 py-2 border rounded-lg text-sm" />
+          <p class="text-xs text-slate-400 mt-1">Exibido ao motorista como contato do solicitante.</p>
+        </div>
+        <div id="createUserEscolaWrap">
+          <label class="block text-sm font-medium mb-1">Unidade escolar</label>
+          <select id="createUserSchoolId" class="w-full px-3 py-2 border rounded-lg text-sm">
+            <option value="">— selecione —</option>
+          </select>
+        </div>
+        <div id="createUserMotoristaWrap" class="hidden">
+          <label class="block text-sm font-medium mb-1">Motorista vinculado</label>
+          <select id="createUserDriverId" class="w-full px-3 py-2 border rounded-lg text-sm">
+            <option value="">— selecione —</option>
+          </select>
+        </div>
+        <div id="createUserAccessProfileWrap" class="hidden">
+          <label class="block text-sm font-medium mb-1">Perfil administrativo</label>
+          <select id="createUserAccessProfileId" class="w-full px-3 py-2 border rounded-lg text-sm"></select>
+        </div>
+        <div id="createUserSetorWrap" class="hidden">
+          <label class="block text-sm font-medium mb-1">Setor pedagógico</label>
+          <select id="createUserSetorPedagogico" class="w-full px-3 py-2 border rounded-lg text-sm">
+            <option value="">— selecione —</option>
+            <option value="educacao_infantil">Educação Infantil</option>
+            <option value="ensino_fundamental">Ensino Fundamental</option>
+            <option value="etnico_racial">Étnico-Racial</option>
+            <option value="educacao_inclusiva">Educação Inclusiva</option>
+            <option value="tempo_integral">Tempo Integral</option>
+            <option value="administracao">Administração</option>
+          </select>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button onclick="closeCreateUserModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button>
+        <button onclick="confirmCreateUser()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">Criar usuário</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL PERFIL ADMINISTRATIVO -->
+  <div id="accessProfileModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-lg w-full">
+      <h3 id="accessProfileModalTitle" class="font-bold text-lg mb-1">Novo perfil administrativo</h3>
+      <p class="text-xs text-slate-500 mb-4">As permissões abaixo valem apenas para usuários administrativos criados com este perfil.</p>
+      <label class="block text-sm font-medium mb-1">Nome do perfil</label>
+      <input id="accessProfileName" maxlength="80" class="w-full px-3 py-2 border rounded-lg text-sm mb-4" placeholder="Ex.: Agente do transporte" />
+      <div id="accessPermissionsEditor" class="space-y-2"></div>
+      <div class="flex justify-end gap-2 mt-5">
+        <button onclick="closeAccessProfileModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button>
+        <button onclick="saveAccessProfile()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">Salvar perfil</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL ANEXAR/REENVIAR PROJETO PEDAGÓGICO (Escola) -->
+  <div id="docUploadModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-md w-full">
+      <h3 class="font-bold text-lg mb-1">📎 Enviar projeto pedagógico</h3>
+      <p class="text-xs text-slate-500 mb-4" id="docUploadInfo"></p>
+      <div id="docUploadCorrecaoBox" class="hidden mb-3 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900"></div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Arquivo (PDF ou Word)</label>
+        <input type="file" id="docFileInput" accept=".pdf,.doc,.docx" class="w-full text-sm" />
+        <p class="text-xs text-slate-400 mt-1">Ao enviar, o arquivo é salvo com o nome "data_unidade" na pasta do Drive — um novo envio substitui o anterior.</p>
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button onclick="closeDocUploadModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button>
+        <button onclick="confirmUploadDoc()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">Enviar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL VALIDAÇÃO PEDAGÓGICA (Pedagogia dá parecer / encaminha) -->
+  <div id="validacaoModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+      <h3 class="font-bold text-lg mb-3">📋 Validação pedagógica</h3>
+      <div id="validacaoInfo" class="bg-slate-50 border rounded-lg p-3 text-sm mb-4 grid grid-cols-2 gap-1"></div>
+
+      <div class="mb-4">
+        <label class="block text-sm font-medium mb-1">Documento enviado pela unidade</label>
+        <div id="validacaoDocPreview" class="border rounded-lg overflow-hidden bg-slate-50" style="min-height:62vh"></div>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="border rounded-lg p-3">
+          <h4 class="font-semibold text-sm mb-2">Parecer</h4>
+          <select id="parecerSelect" class="w-full px-3 py-2 border rounded-lg text-sm mb-2">
+            <option value="aceito">✅ Aceitar</option>
+            <option value="correcoes">✏️ Solicitar correções</option>
+            <option value="rejeitado">🚫 Rejeitar</option>
+          </select>
+          <textarea id="parecerComentario" rows="3" placeholder="Comentário (obrigatório para correções/rejeição - explique o que falta ou o motivo)" class="w-full px-3 py-2 border rounded-lg text-sm"></textarea>
+          <button id="btnSalvarParecer" onclick="confirmParecer()" class="mt-2 w-full px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm">Salvar parecer</button>
+        </div>
+        <div class="border rounded-lg p-3">
+          <h4 class="font-semibold text-sm mb-2">Encaminhar para outro setor</h4>
+          <p class="text-xs text-slate-500 mb-2">Use isso se a solicitação caiu no setor errado (ex: é de Educação Infantil, não de Ensino Fundamental).</p>
+          <select id="encaminharSetor" class="w-full px-3 py-2 border rounded-lg text-sm mb-2">
+            <option value="educacao_infantil">Educação Infantil</option>
+            <option value="ensino_fundamental">Ensino Fundamental</option>
+            <option value="etnico_racial">Étnico-Racial</option>
+            <option value="educacao_inclusiva">Educação Inclusiva</option>
+            <option value="tempo_integral">Tempo Integral</option>
+            <option value="administracao">Administração</option>
+          </select>
+          <button id="btnEncaminharValidacao" onclick="confirmEncaminhar()" class="w-full px-3 py-2 bg-blue-600 text-white rounded-lg text-sm">↪️ Encaminhar</button>
+        </div>
+      </div>
+
+      <div class="flex justify-end mt-4">
+        <button onclick="closeValidacaoModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL KM (odômetro do motorista) -->
+  <div id="kmModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-md w-full">
+      <h3 id="kmModalTitle" class="font-bold text-lg mb-1">📟 Registrar odômetro</h3>
+      <p class="text-xs text-slate-500 mb-4" id="kmModalInfo"></p>
+      <div class="space-y-3">
+        <div id="kmModalMotoristaWrap" class="hidden">
+          <label class="block text-sm font-medium mb-1">Motorista</label>
+          <select id="kmMotoristaId" class="w-full px-3 py-2 border rounded-lg text-sm"></select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Data</label>
+          <input type="date" id="kmData" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm font-medium mb-1">Odômetro início do dia</label>
+            <input type="number" step="0.1" id="kmOdometroInicio" oninput="updateKmRodadoPreview()" class="w-full px-3 py-2 border rounded-lg text-sm" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Odômetro fim do dia</label>
+            <input type="number" step="0.1" id="kmOdometroFim" oninput="updateKmRodadoPreview()" class="w-full px-3 py-2 border rounded-lg text-sm" />
+          </div>
+        </div>
+        <div id="kmRodadoPreview" class="text-sm"></div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Observações</label>
+          <input type="text" id="kmObservacoes" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button onclick="closeKmModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button>
+        <button onclick="confirmSaveKm()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL LISTAGEM DE PASSAGEIROS -->
+  <div id="passengerModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[85vh] overflow-y-auto">
+      <h3 class="font-bold text-lg mb-1">📋 Listagem de passageiros</h3>
+      <p class="text-xs text-slate-500 mb-4">Nome e CI/CNH/CPF de cada passageiro - é essa lista que entra no e-mail de pedido de ATF para a cooperativa.</p>
+      <div id="passengerRows" class="space-y-2"></div>
+      <button onclick="addPassengerRow()" class="mt-2 px-3 py-1.5 border rounded-lg text-sm">+ Adicionar linha</button>
+      <div id="passengerModalFooter" class="flex justify-end gap-2 mt-4"></div>
+    </div>
+  </div>
+
+  <!-- MODAL LISTAGEM DE PASSAGEIROS POR VEÍCULO (viagens que precisam de cooperativa) -->
+  <div id="listagemVeiculoModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <h3 class="font-bold text-lg mb-1">📋 Listagem de passageiros por veículo</h3>
+      <p id="listagemVeiculoInfo" class="text-xs text-slate-500 mb-3"></p>
+      <div id="listagemStatusBox" class="mb-4"></div>
+      <div id="listagemVeiculoBlocos" class="space-y-5"></div>
+      <div id="listagemRejeitarBox" class="hidden mt-4 p-3 bg-red-50 rounded-lg">
+        <label class="block text-sm font-medium mb-1">Motivo da rejeição (obrigatório)</label>
+        <textarea id="listagemParecerComentario" rows="2" class="w-full px-3 py-2 border rounded-lg text-sm"></textarea>
+        <div class="flex justify-end mt-2">
+          <button onclick="confirmRejeitarListagem()" class="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs">Confirmar rejeição</button>
+        </div>
+      </div>
+      <div id="listagemVeiculoFooter" class="flex justify-end gap-2 mt-5"></div>
+    </div>
+  </div>
+
+  <!-- MODAL ENVIAR PARA COOPERATIVA -->
+  <div id="cooperativaEmailModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[85vh] overflow-y-auto">
+      <h3 class="font-bold text-lg mb-4">✉️ Enviar para a cooperativa</h3>
+      <div class="space-y-3">
+        <div id="emailTipoWrap" class="hidden">
+          <label class="block text-sm font-medium mb-1">Registro deste envio</label>
+          <select id="emailTipo" onchange="onEmailTipoChange()" class="w-full px-3 py-2 border rounded-lg text-sm"></select>
+          <p class="text-xs text-slate-500 mt-1">PCD e ATF são enviados e registrados separadamente quando ambos forem exigidos.</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Cooperativa</label>
+          <select id="emailCooperativaId" onchange="onEmailCooperativaChange()" class="w-full px-3 py-2 border rounded-lg text-sm">
+            <option value="">— selecione —</option>
+          </select>
+          <p id="emailCooperativaAviso" class="hidden text-xs text-amber-600 mt-1">⚠️ Essa cooperativa ainda não tem e-mail cadastrado (tela Cooperativas).</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Assunto</label>
+          <input type="text" id="emailAssunto" class="w-full px-3 py-2 border rounded-lg text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Mensagem</label>
+          <textarea id="emailCorpo" rows="12" class="w-full px-3 py-2 border rounded-lg text-sm font-mono text-xs"></textarea>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button onclick="closeCooperativaEmailModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button>
+        <button onclick="copyEmailText()" class="px-4 py-2 border rounded-lg text-sm">📋 Copiar texto</button>
+        <button onclick="sendCooperativaEmail()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">Abrir e-mail</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
