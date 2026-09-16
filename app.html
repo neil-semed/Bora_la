@@ -81,7 +81,8 @@
     .card-hover { transition: box-shadow .15s ease, transform .15s ease; }
     .card-hover:hover { box-shadow: 0 8px 24px rgba(0,0,0,.08); transform: translateY(-2px); }
     .role-badge { font-size: 10px; letter-spacing: .04em; }
-    main > header { min-height: 72px; background:linear-gradient(90deg,#ffffff 0%,#f8fffc 100%); }
+    main > header { position:sticky; top:0; z-index:45; min-height:72px; background:linear-gradient(90deg,#ffffff 0%,#f8fffc 100%); }
+    #topNav { position:sticky; top:72px; z-index:44; }
     .screen-shell { max-width: 1440px; margin:0 auto; }
     .screen-panel { background:rgba(255,255,255,.94); border:1px solid #dbe4ee; border-radius:1rem; box-shadow:0 10px 26px rgba(15,23,42,.06); }
     .screen-intro { border-left:4px solid #059669; background:linear-gradient(100deg,#ecfdf5,#f8fffc); }
@@ -147,6 +148,7 @@
       /* Navegação pensada para o polegar: somente no app do motorista. */
       body.driver-mobile main { padding-bottom: 76px; }
       body.driver-mobile #topNav { display: none; }
+      body.driver-mobile main > header { min-height:64px; }
       body.driver-mobile #notificationBell { display: none; }
       body.driver-mobile .logout-button { padding: .38rem .55rem; font-size: .75rem; }
       body.driver-mobile #notificationPanel {
