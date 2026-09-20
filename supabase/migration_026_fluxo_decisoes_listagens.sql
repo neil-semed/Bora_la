@@ -189,3 +189,22 @@ begin
 end; $$;
 revoke all on function public.school_resubmit_pcd_list(uuid,jsonb) from public;
 grant execute on function public.school_resubmit_pcd_list(uuid,jsonb) to authenticated;
+
+-- Grava a escala em uma única transação. Evita que uma tentativa de editar
+-- motorista apague a escala anterior se a inserção seguinte for bloqueada.
+create or replace function public.admin_set_excursion_drivers(p_excursion_id uuid, p_driver_ids uuid[])
+returns void language plpgsql security definer set search_path = public as $$
+declare v excursions%rowtype; begin
+  if not (public.current_role_name() = 'admin' or (public.current_role_name() = 'operacional' and public.has_access_permission('agenda', true))) then raise exception 'Perfil sem permissão para atribuir motoristas.'; end if;
+  if coalesce(array_length(p_driver_ids,1),0) = 0 then raise exception 'Selecione ao menos um motorista.'; end if;
+  select * into v from excursions where id=p_excursion_id for update;
+  if not found then raise exception 'Viagem não encontrada.'; end if;
+  if exists (select 1 from unnest(p_driver_ids) as x(driver_id) left join drivers d on d.id=x.driver_id where d.id is null or d.active=false) then raise exception 'Um dos motoristas selecionados não está ativo.'; end if;
+  delete from excursion_drivers where excursion_id=p_excursion_id;
+  insert into excursion_drivers(excursion_id,driver_id)
+  select p_excursion_id, driver_id from (select distinct unnest(p_driver_ids) as driver_id) selecionados;
+  perform set_config('app.bora_la_system_write','true',true);
+  update excursions set assigned_driver_id=p_driver_ids[1] where id=p_excursion_id;
+end; $$;
+revoke all on function public.admin_set_excursion_drivers(uuid,uuid[]) from public;
+grant execute on function public.admin_set_excursion_drivers(uuid,uuid[]) to authenticated;
