@@ -15,9 +15,12 @@
 // enxergar todas as excursões (bypassando RLS), mas nunca devolve mais do
 // que os campos listados abaixo.
 //
-// Considera "ocupando a van" (mesmo critério que a tela usa pro Admin):
-// status IN ('approved','in_transit','completed') - exclui pending/
-// pedagogy_approved (ainda não confirmada) e rejected.
+// Considera "ocupando a van" o mesmo critério que o próprio app já usa em
+// viagemConfirmadaParaMotorista() (app.js): status IN ('approved',
+// 'in_transit','completed') E situacao NÃO IN ('cancelada','reprovada') -
+// uma excursão pode continuar com status "approved" mesmo depois de
+// cancelada/reprovada na "situação" (o campo mais detalhado), então
+// checar só o status sozinho mostraria van ocupada por engano.
 //
 // Parâmetros (GET, querystring, ou POST com body JSON): desde, ate (datas
 // YYYY-MM-DD, obrigatórias, intervalo de no máximo 90 dias por chamada).
@@ -40,6 +43,7 @@ const CORS_HEADERS = {
 };
 
 const STATUS_OCUPA = ['approved', 'in_transit', 'completed'];
+const SITUACAO_NAO_OCUPA = ['cancelada', 'reprovada'];
 const LIMITE_DIAS = 90;
 
 function json(body: unknown, status = 200) {
@@ -92,13 +96,15 @@ Deno.serve(async (req) => {
         turno,
         destination,
         status,
+        situacao,
         excursion_drivers (
           drivers ( vehicle_id, vehicles ( plate ) )
         )
       `)
       .gte('trip_date', desde)
       .lte('trip_date', ate)
-      .in('status', STATUS_OCUPA);
+      .in('status', STATUS_OCUPA)
+      .not('situacao', 'in', `(${SITUACAO_NAO_OCUPA.join(',')})`);
 
     if (error) return json({ error: error.message }, 400);
 
