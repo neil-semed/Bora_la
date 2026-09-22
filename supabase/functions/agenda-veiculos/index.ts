@@ -6,14 +6,15 @@
 // mesmo dia - MarkCarro é outro projeto Supabase (login/tabelas
 // separados), então não tem como ele ler "excursions" direto por RLS.
 //
-// Só devolve o que é preciso pra evitar bater 2 vans no mesmo horário:
-// data, turno, horários, destino e a(s) PLACA(s) - nada de aluno, escola,
-// documento, telefone etc. Não recebe nem devolve nenhum dado sensível,
-// então não exige login: qualquer chamada com a anon key do projeto (que
-// já é pública, fica no código do site) e dentro do período pedido
-// funciona. Usa a chave de serviço (service_role) só INTERNAMENTE, pra
-// enxergar todas as excursões (bypassando RLS), mas nunca devolve mais do
-// que os campos listados abaixo.
+// Só devolve o que é preciso pra evitar bater 2 vans no mesmo horário e pra
+// identificar quem está escalado: data, turno, horários, destino, a(s)
+// PLACA(s) e o NOME do motorista - nada de aluno, escola, documento,
+// telefone etc. Não recebe nem devolve nenhum dado sensível, então não
+// exige login: qualquer chamada com a anon key do projeto (que já é
+// pública, fica no código do site) e dentro do período pedido funciona.
+// Usa a chave de serviço (service_role) só INTERNAMENTE, pra enxergar
+// todas as excursões (bypassando RLS), mas nunca devolve mais do que os
+// campos listados abaixo.
 //
 // Considera "ocupando a van" o mesmo critério que o próprio app já usa em
 // viagemConfirmadaParaMotorista() (app.js): status IN ('approved',
@@ -98,7 +99,7 @@ Deno.serve(async (req) => {
         status,
         situacao,
         excursion_drivers (
-          drivers ( vehicle_id, vehicles ( plate ) )
+          drivers ( name, vehicle_id, vehicles ( plate ) )
         )
       `)
       .gte('trip_date', desde)
@@ -108,18 +109,22 @@ Deno.serve(async (req) => {
 
     if (error) return json({ error: error.message }, 400);
 
-    // Achata: 1 linha por placa (uma excursão pode ter mais de um
-    // motorista/veículo atribuído) - só os campos não-sensíveis.
+    // Achata: 1 linha por motorista/veículo escalado (uma excursão pode ter
+    // mais de um) - só os campos não-sensíveis. O nome do motorista é
+    // incluído (pedido do usuário, mesmo espírito do relatório "Escala" que
+    // o próprio Bora Lá já expõe com nome de motorista) - não é um dado
+    // sensível, é só quem está de plantão naquele horário.
     const linhas: any[] = [];
     for (const ex of data || []) {
-      const veiculos = (ex.excursion_drivers || [])
-        .map((ed: any) => ed?.drivers?.vehicles?.plate)
-        .filter(Boolean);
-      const placas = veiculos.length ? [...new Set(veiculos)] : [null];
-      for (const placa of placas) {
+      const escalados = (ex.excursion_drivers || [])
+        .map((ed: any) => ({ motorista: ed?.drivers?.name || null, placa: ed?.drivers?.vehicles?.plate || null }))
+        .filter((e: any) => e.motorista || e.placa);
+      const linhasBase = escalados.length ? escalados : [{ motorista: null, placa: null }];
+      for (const { motorista, placa } of linhasBase) {
         linhas.push({
           sistema: 'bora_la',
           placa,
+          motorista,
           data_viagem: ex.trip_date,
           turno: ex.turno,
           hora_saida: ex.departure_time,
