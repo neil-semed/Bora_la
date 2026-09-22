@@ -155,7 +155,7 @@ create table if not exists excursions (
   -- botões de ação e o fluxo de execução em trânsito/concluída)
   atf_status text not null default 'nao_precisa' check (atf_status in ('nao_precisa','nao_emitida','emitida')),
   situacao text not null default 'sem_validacao'
-    check (situacao in ('sem_validacao','aguarda_atf','aprovada','confirmada','envio_coop','reprovada','cancelada','sem_listagem')),
+    check (situacao in ('sem_validacao','aguarda_motorista','aguarda_atf','aprovada','confirmada','envio_coop','reprovada','cancelada','sem_listagem')),
   envio_coop_data date,
   lista_escola boolean not null default false,
   solicitation_type text not null default 'excursao',
