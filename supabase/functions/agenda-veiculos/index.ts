@@ -88,20 +88,9 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const admin = createClient(supabaseUrl, serviceKey);
 
-    const { data, error } = await admin
+    const { data: excursions, error } = await admin
       .from('excursions')
-      .select(`
-        trip_date,
-        departure_time,
-        return_time,
-        turno,
-        destination,
-        status,
-        situacao,
-        excursion_drivers (
-          drivers ( name, vehicle_id, vehicles ( plate ) )
-        )
-      `)
+      .select('id, trip_date, departure_time, return_time, turno, destination, status, situacao')
       .gte('trip_date', desde)
       .lte('trip_date', ate)
       .in('status', STATUS_OCUPA)
@@ -109,16 +98,50 @@ Deno.serve(async (req) => {
 
     if (error) return json({ error: error.message }, 400);
 
+    // Motorista(s)/placa(s) de cada excursão: busca em 3 passos separados
+    // (excursion_drivers -> drivers -> vehicles) e junta tudo aqui, em vez de
+    // um único select com embed aninhado (excursions -> excursion_drivers ->
+    // drivers -> vehicles) - o próprio app.js do Bora Lá já faz exatamente
+    // assim (função loadExcursionDriversInto), então é o jeito comprovado de
+    // funcionar aqui, sem depender de o PostgREST resolver um embed de 3
+    // níveis através de uma tabela de junção.
+    const ids = (excursions || []).map((e: any) => e.id);
+    const excursionDrivers: any[] = ids.length
+      ? (await admin.from('excursion_drivers').select('excursion_id, driver_id').in('excursion_id', ids)).data || []
+      : [];
+
+    const driverIds = [...new Set(excursionDrivers.map((ed) => ed.driver_id))];
+    const driversData: any[] = driverIds.length
+      ? (await admin.from('drivers').select('id, name, vehicle_id').in('id', driverIds)).data || []
+      : [];
+    const driverById: Record<string, any> = {};
+    driversData.forEach((d) => { driverById[d.id] = d; });
+
+    const vehicleIds = [...new Set(driversData.map((d) => d.vehicle_id).filter(Boolean))];
+    const vehiclesData: any[] = vehicleIds.length
+      ? (await admin.from('vehicles').select('id, plate').in('id', vehicleIds)).data || []
+      : [];
+    const plateById: Record<string, string> = {};
+    vehiclesData.forEach((v) => { plateById[v.id] = v.plate; });
+
+    const driversByExcursion: Record<string, string[]> = {};
+    excursionDrivers.forEach((ed) => {
+      (driversByExcursion[ed.excursion_id] = driversByExcursion[ed.excursion_id] || []).push(ed.driver_id);
+    });
+
     // Achata: 1 linha por motorista/veículo escalado (uma excursão pode ter
     // mais de um) - só os campos não-sensíveis. O nome do motorista é
     // incluído (pedido do usuário, mesmo espírito do relatório "Escala" que
     // o próprio Bora Lá já expõe com nome de motorista) - não é um dado
     // sensível, é só quem está de plantão naquele horário.
     const linhas: any[] = [];
-    for (const ex of data || []) {
-      const escalados = (ex.excursion_drivers || [])
-        .map((ed: any) => ({ motorista: ed?.drivers?.name || null, placa: ed?.drivers?.vehicles?.plate || null }))
-        .filter((e: any) => e.motorista || e.placa);
+    for (const ex of excursions || []) {
+      const escalados = (driversByExcursion[ex.id] || [])
+        .map((driverId) => {
+          const d = driverById[driverId];
+          return { motorista: d?.name || null, placa: (d?.vehicle_id && plateById[d.vehicle_id]) || null };
+        })
+        .filter((e) => e.motorista || e.placa);
       const linhasBase = escalados.length ? escalados : [{ motorista: null, placa: null }];
       for (const { motorista, placa } of linhasBase) {
         linhas.push({
