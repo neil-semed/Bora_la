@@ -67,9 +67,9 @@ Deno.serve(async (req) => {
 
     // 2) Lê os dados do e-mail
     const body = await req.json();
-    const { to, subject, text } = body || {};
-    if (!to || !subject || !text) {
-      return json({ error: 'Faltam campos (to/subject/text).' }, 400);
+    const { to, subject, text, html } = body || {};
+    if (!to || !subject || (!text && !html)) {
+      return json({ error: 'Faltam campos (to/subject e texto ou HTML).' }, 400);
     }
 
     // 3) Envia via Resend (serviço de e-mail transacional)
@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
     const resp = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to: [to], subject, text }),
+      body: JSON.stringify({ from, to: [to], subject, text: text || undefined, html: html || undefined }),
     });
     const respJson = await resp.json().catch(() => ({}));
     if (!resp.ok) {
