@@ -872,7 +872,7 @@ function getVisibleAgenda() {
   if (currentUser.role === 'escola') return agenda.filter((a) => a.school_id === currentUser.schoolId);
   // A escala pode ser preparada antes da decisão administrativa, mas só é
   // publicada ao motorista depois da aprovação do Admin.
-  if (currentUser.role === 'motorista') return agenda.filter((a) => a.admin_decision === 'aprovada' && (a.driver_ids || []).includes(currentUser.driverId));
+  if (currentUser.role === 'motorista') return agenda.filter((a) => a.admin_decision === 'aprovada' && souEscaladoEm(a.driver_ids));
   if (currentUser.role === 'agente_externo') return agenda.filter((a) => tripBelongsToCurrentCoop(a));
   if (currentUser.role === 'operacional') return canViewScreen('agenda') || canViewScreen('dashboard') || canViewScreen('relatorios') || canViewScreen('validacoes') ? agenda : [];
   return [];
@@ -1678,7 +1678,11 @@ async function loadKmLogs() {
 // ---- MOTORISTA: registrar/ver o próprio KM + dashboard ----
 function myDriverKmLogs() {
   if (!currentUser || !currentUser.driverId) return [];
-  return kmLogs.filter((k) => k.driver_id === currentUser.driverId);
+  // Mesma robustez a cadastro duplicado de "meusDriverIds()" (ver comentário
+  // grande perto de souEscaladoEm) - KM registrado no cadastro duplicado não
+  // pode sumir da visão do próprio motorista no Bora Lá.
+  const meus = meusDriverIds();
+  return kmLogs.filter((k) => meus.includes(k.driver_id));
 }
 
 function todayKmLog(driverId) {
@@ -2485,7 +2489,7 @@ function filterAgenda() {
   if (currentUser?.role === 'motorista') {
     const hoje = fmtDate(new Date());
     const minhasViagens = agenda.filter((a) => a.admin_decision === 'aprovada' && !['cancelada', 'reprovada'].includes(a.situacao)
-      && (a.driver_ids || []).includes(currentUser.driverId));
+      && souEscaladoEm(a.driver_ids));
     const viagensHoje = minhasViagens.filter((a) => a.trip_date === hoje);
 
     motoristaHojeDataExibida = hoje;
@@ -2624,10 +2628,10 @@ function renderAgenda() {
         acoes = `<span class="text-xs text-blue-600" title="O parecer agora é dado na tela Validações">📋 Ver em Validações</span>`;
       } else if (a.status === 'pedagogy_approved' && isAgendaEditor) {
         acoes = `<button onclick="adminApprove('${a.id}')" class="text-emerald-600 hover:text-emerald-800 text-xs font-medium">✓ Aprovar</button> <button onclick="openRejectModal('${a.id}')" class="text-red-600 hover:text-red-800 text-xs font-medium">Reprovar</button>`;
-      } else if (a.status === 'approved' && (isAgendaEditor || (role === 'motorista' && (a.driver_ids || []).includes(currentUser.driverId)))) {
+      } else if (a.status === 'approved' && (isAgendaEditor || (role === 'motorista' && souEscaladoEm(a.driver_ids)))) {
         acoes = `<button onclick="startTransit('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-medium">Iniciar viagem</button>`;
         if (isAgendaEditor) acoes += ` <button onclick="openAssignModal('${a.id}')" class="text-slate-500 hover:text-slate-700 text-xs font-medium ml-2">Editar motorista(s)</button>`;
-      } else if (a.status === 'in_transit' && (isAgendaEditor || (role === 'motorista' && (a.driver_ids || []).includes(currentUser.driverId)))) {
+      } else if (a.status === 'in_transit' && (isAgendaEditor || (role === 'motorista' && souEscaladoEm(a.driver_ids)))) {
         acoes = `<button onclick="completeTrip('${a.id}')" class="text-slate-700 hover:text-slate-900 text-xs font-medium">Concluir viagem</button>`;
       } else if (a.status === 'rejected' && a.rejection_reason) {
         acoes = `<span class="text-xs text-red-500" title="${a.rejection_reason}">Motivo ⓘ</span>`;
@@ -2769,9 +2773,10 @@ function renderAgenda() {
       const temAcoes = !acoes.includes('text-slate-300');
       const exibeMotoristas = isAgendaEditor || a.admin_decision === 'aprovada';
       const motoristasCell = exibeMotoristas ? driversLabelHtml(a.driver_ids) : '<span class="text-slate-400">Aguardando aprovação</span>';
-      const motoristaVinculado = ehMotorista && (a.driver_ids || []).includes(currentUser.driverId);
+      const motoristaVinculado = ehMotorista && souEscaladoEm(a.driver_ids);
+      const meusIds = ehMotorista ? meusDriverIds() : [];
       const outros = ehMotorista
-        ? (a.driver_ids || []).filter((id) => id !== currentUser.driverId).map((id) => drivers.find((d) => d.id === id)).filter(Boolean)
+        ? (a.driver_ids || []).filter((id) => !meusIds.includes(id)).map((id) => drivers.find((d) => d.id === id)).filter(Boolean)
         : [];
       const compartilhadaHtml = outros.map((d) => {
         const v = driverVehicle(d.id);
@@ -2904,7 +2909,7 @@ function renderAgendaPorData() {
   // "Minhas próximas viagens" é pessoal: apenas viagens confirmadas do motorista
   // logado. A visão de todos os motoristas está em Agenda Geral.
   const fonte = currentUser?.role === 'motorista'
-    ? agenda.filter((a) => viagemConfirmadaParaMotorista(a) && (a.driver_ids || []).includes(currentUser.driverId))
+    ? agenda.filter((a) => viagemConfirmadaParaMotorista(a) && souEscaladoEm(a.driver_ids))
     : getVisibleAgenda();
   const visiveis = fonte.filter((a) => a.trip_date >= startStr && a.trip_date <= endStr && a.situacao !== 'cancelada' && a.situacao !== 'reprovada');
   const porDia = {};
@@ -2946,9 +2951,10 @@ function renderAgendaPorDataItem(a, agendaGeral = false) {
   if (a.status === 'approved') acao = `<button onclick="startTransit('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-medium whitespace-nowrap">Iniciar viagem</button>`;
   else if (a.status === 'in_transit') acao = `<button onclick="completeTrip('${a.id}')" class="text-slate-700 hover:text-slate-900 text-xs font-medium whitespace-nowrap">Concluir viagem</button>`;
   const totalPax = totalPassengers(a);
-  const minhaViagem = currentUser?.role === 'motorista' && (a.driver_ids || []).includes(currentUser.driverId);
+  const minhaViagem = currentUser?.role === 'motorista' && souEscaladoEm(a.driver_ids);
+  const meusIdsItem = currentUser?.role === 'motorista' ? meusDriverIds() : [];
   const outros = !agendaGeral && currentUser?.role === 'motorista'
-    ? (a.driver_ids || []).filter((id) => id !== currentUser.driverId).map((id) => drivers.find((d) => d.id === id)).filter(Boolean)
+    ? (a.driver_ids || []).filter((id) => !meusIdsItem.includes(id)).map((id) => drivers.find((d) => d.id === id)).filter(Boolean)
     : [];
   const compartilhadaHtml = outros.map((d) => {
     const v = driverVehicle(d.id);
@@ -3103,6 +3109,35 @@ function motoristasDaExcursao(trip) {
     .map((d) => d.name)
     .filter(Boolean);
   return [...new Set(nomes)];
+}
+
+// PEDIDO/RECLAMAÇÃO DO USUÁRIO ("Cristiano tem agenda do bora lá na quinta,
+// não carrega mais na aba Próximas" - mas aparece normal na Agenda Geral,
+// que não filtra por motorista): a Agenda Geral não filtra por motorista,
+// então sempre mostrou a viagem; Hoje/Próximas SÓ mostram viagem cujo
+// driver_ids inclua currentUser.driverId - se o LOGIN do motorista estiver
+// vinculado a um cadastro "drivers" diferente do cadastro realmente escalado
+// na excursão (2 linhas em "drivers" pra mesma pessoa - já aconteceu com o
+// KM dele, mesmo motivo), a viagem pessoal dele some sem nenhum erro, sem
+// aparecer. Em vez de comparar só currentUser.driverId, resolve TODOS os
+// ids de "drivers" que batem com a mesma pessoa (mesmo id, mesmo e-mail OU
+// mesma CNH) e usa esse conjunto pra decidir "essa viagem é minha".
+function meusDriverIds() {
+  if (!currentUser?.driverId) return [];
+  const ids = new Set([currentUser.driverId]);
+  const meu = drivers.find((d) => d.id === currentUser.driverId);
+  const emailLogin = (currentUser.email || meu?.email || '').toLowerCase();
+  drivers.forEach((d) => {
+    if (ids.has(d.id)) return;
+    if (emailLogin && d.email && d.email.toLowerCase() === emailLogin) ids.add(d.id);
+    else if (meu?.cnh && d.cnh && d.cnh === meu.cnh) ids.add(d.id);
+  });
+  return [...ids];
+}
+
+function souEscaladoEm(driverIds) {
+  const meus = meusDriverIds();
+  return meus.length > 0 && (driverIds || []).some((id) => meus.includes(id));
 }
 
 // Placa da van do motorista logado (currentUser.driverId -> drivers.vehicle_id ->
