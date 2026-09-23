@@ -99,13 +99,28 @@ Deno.serve(async (req) => {
 
     const { data: excursions, error } = await admin
       .from('excursions')
-      .select('id, trip_date, departure_time, return_time, turno, destination, status, situacao')
+      .select('id, school_id, trip_date, departure_time, return_time, turno, destination, destination_address, origin_name, origin_address, students_count, companions_count, requester_name, requester_contact, solicitation_type, status, situacao')
       .gte('trip_date', desde)
       .lte('trip_date', ate)
       .in('status', STATUS_OCUPA)
       .not('situacao', 'in', `(${SITUACAO_NAO_OCUPA.join(',')})`);
 
     if (error) return json({ error: error.message }, 400);
+
+    // PEDIDO DO USUÁRIO ("use a mesma configuração do card do bora lá, com
+    // informações do solicitante e setor"): origem/solicitante têm a MESMA
+    // regra de resolução que o próprio app.js já usa (originName/
+    // requesterContact) - excursão normal usa a unidade (schools), agendamento/
+    // externa usa origin_name/requester_name direto. Só busca "schools" (nome/
+    // endereço/telefone) - nenhuma tabela de aluno/documento.
+    const schoolIds = [...new Set((excursions || []).map((e: any) => e.school_id).filter(Boolean))];
+    let schoolsData: any[] = [];
+    if (schoolIds.length) {
+      const r = await admin.from('schools').select('id, name, address, phone').in('id', schoolIds);
+      schoolsData = r.data || [];
+    }
+    const schoolById: Record<string, any> = {};
+    schoolsData.forEach((s) => { schoolById[s.id] = s; });
 
     // Motorista(s)/placa(s) de cada excursão: busca em 3 passos separados
     // (excursion_drivers -> drivers -> vehicles) e junta tudo aqui, em vez de
@@ -165,6 +180,13 @@ Deno.serve(async (req) => {
         })
         .filter((e) => e.motorista || e.placa);
       const linhasBase = escalados.length ? escalados : [{ motorista: null, placa: null }];
+      const escola = ex.school_id ? schoolById[ex.school_id] : null;
+      const origem = ex.solicitation_type === 'agendamento'
+        ? (ex.origin_name || 'Entidade / Outro')
+        : (escola?.name || ex.origin_name || 'Entidade / Outro');
+      const enderecoOrigem = ex.origin_address || escola?.address || null;
+      const nomeSolicitante = ex.requester_name || escola?.name || null;
+      const telefoneSolicitante = ex.requester_contact || escola?.phone || null;
       for (const { motorista, placa } of linhasBase) {
         linhas.push({
           sistema: 'bora_la',
@@ -176,6 +198,13 @@ Deno.serve(async (req) => {
           hora_retorno: ex.return_time,
           detalhe: ex.destination,
           status: ex.status,
+          origem,
+          destino: ex.destination,
+          endereco_origem: enderecoOrigem,
+          endereco_destino: ex.destination_address || null,
+          qtd_pessoas: (ex.students_count || 0) + (ex.companions_count || 0),
+          nome_solicitante: nomeSolicitante,
+          telefone_solicitante: telefoneSolicitante,
         });
       }
     }
