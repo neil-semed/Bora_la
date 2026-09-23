@@ -2384,6 +2384,12 @@ function renderDashboard() {
   const listagemPendente = visible.filter((a) => precisaListagemComNomesDocumentos(a) && ['nao_enviada', 'rejeitada'].includes(a.listagem_status || 'nao_enviada') && ['approved', 'in_transit', 'completed'].includes(a.status)).length;
 
   document.getElementById('statHoje').textContent = viagensHoje;
+  // PEDIDO DO USUÁRIO ("dashboard não está somando as corridas dos 2 apps"):
+  // o card "Corridas hoje" só contava as viagens do Bora Lá - agora soma
+  // também as do MarkCarro com a mesma placa, buscadas à parte (outro
+  // projeto Supabase, assíncrono) e atualizadas assim que a resposta chegar,
+  // sem travar o resto do dashboard.
+  if (currentUser?.role === 'motorista') atualizarStatHojeComMarkCarro(viagensHoje, hoje);
   document.getElementById('statPendentes').textContent = pendentes;
   const pendentesLabel = document.getElementById('statPendentesLabel');
   if (pendentesLabel) pendentesLabel.textContent = currentUser?.role === 'pedagogia' ? 'Validações pendentes' : 'Pendentes';
@@ -3032,12 +3038,27 @@ async function renderAgendaGeralMotorista() {
     // azul do cardMarkCarroHTML()).
     const cards = [
       ...(porDia[data] || []).map((a) => ({ horario: a.departure_time || '', html: renderAgendaPorDataItem(a, true) })),
-      ...(porDiaMc[data] || []).map((l) => ({ horario: l.hora_saida || '', html: cardMarkCarroHTML(l) })),
+      ...(porDiaMc[data] || []).map((l) => ({ horario: l.hora_saida || '', html: cardMarkCarroHTML(l, true) })),
     ].sort((x, y) => x.horario.localeCompare(y.horario)).map((c) => c.html).join('');
     return `<div class="border rounded-xl overflow-hidden"><div class="px-4 py-3 bg-slate-50 border-b flex justify-between"><strong class="capitalize">${rotulo}</strong><span class="text-xs text-slate-500">${totalViagens} viagem(ns)</span></div><div class="p-3">${cards}</div></div>`;
   }).join('') : '<p class="text-center text-sm text-slate-500 py-8">Nenhuma viagem confirmada neste período.</p>';
 
   document.getElementById('agendaGeralMarkCarroAviso')?.classList.toggle('hidden', !erroMc);
+}
+
+// Soma no card "Corridas hoje" do dashboard do motorista (renderDashboard())
+// as viagens do MarkCarro de hoje com a mesma placa - ver comentário lá.
+async function atualizarStatHojeComMarkCarro(baseBoraLa, hojeStr) {
+  const minhaPlaca = placaDoMotoristaAtual();
+  const el = document.getElementById('statHoje');
+  if (!minhaPlaca || !el) return;
+  try {
+    const doMarkCarro = await buscarAgendaMarkCarro(hojeStr, hojeStr);
+    const totalMc = (doMarkCarro || []).filter((l) => (l.placa || '').toUpperCase() === minhaPlaca.toUpperCase()).length;
+    if (totalMc) el.textContent = baseBoraLa + totalMc;
+  } catch (e) {
+    console.error('Erro ao somar corridas do MarkCarro no dashboard:', e);
+  }
 }
 
 // Busca a agenda pública (só leitura) do MarkCarro - outro projeto Supabase - via a
@@ -3100,7 +3121,7 @@ function placaDoMotoristaAtual() {
 // situação/motorista(s) do Bora Lá, já que esses conceitos não existem lá
 // (nem ATF, nem "Número de viagens"). data-horario é usado por
 // mesclarAgendaMarkCarroPorDia() pra ordenar junto com os cards do Bora Lá.
-function cardMarkCarroHTML(l) {
+function cardMarkCarroHTML(l, mostrarMotorista = false) {
   return `
     <div class="driver-trip-card rounded-lg overflow-hidden bg-white shadow-sm border-l-4 border-blue-400 mb-3" data-horario="${l.hora_saida || ''}">
       <div class="px-4 py-2.5 flex items-center justify-between gap-2 bg-blue-50 border-b border-blue-100">
@@ -3125,6 +3146,7 @@ function cardMarkCarroHTML(l) {
           <span class="font-medium">${l.qtd_pessoas} total</span>
         </div>` : ''}
         ${l.nome_solicitante ? `<div class="text-xs text-slate-600"><span class="text-slate-400">Solicitante:</span> ${escapeHtml(l.nome_solicitante)}${l.telefone_solicitante ? ` • ${escapeHtml(l.telefone_solicitante)}` : ''}</div>` : ''}
+        ${mostrarMotorista && l.motorista ? `<div class="text-xs text-slate-700"><span class="text-slate-400">Motorista(s) escalado(s):</span> ${escapeHtml(l.motorista)}</div>` : ''}
       </div>
     </div>`;
 }
