@@ -117,25 +117,48 @@ function mapRegistro(log: any, email: string) {
   };
 }
 
-async function resolverOuCriarDriver(admin: any, email: string, nome?: string): Promise<string> {
-  const { data: existente, error: e1 } = await admin
+// Acha o motorista pelo e-mail (chave nova, ver migration) OU, se não achar,
+// pela CNH (chave que já existia nos 2 sistemas antes de qualquer migration -
+// MarkCarro tem profiles.cnh, Bora Lá tem drivers.cnh) - BUG CORRIGIDO (motorista
+// já cadastrado no Bora Lá SEM e-mail preenchido: buscar só por e-mail nunca
+// achava ele e criava um segundo cadastro duplicado, então o KM gravado pelo
+// MarkCarro ia pro cadastro novo/vazio enquanto o histórico de verdade (e o que
+// o Bora Lá já mostrava) continuava no cadastro antigo). Achando por CNH,
+// aproveita o cadastro existente E grava o e-mail nele (só na primeira vez),
+// pra da próxima vez achar direto pelo e-mail.
+async function buscarDriverExistente(admin: any, email: string, cnh?: string | null): Promise<string | null> {
+  const { data: porEmail, error: e1 } = await admin
     .from('drivers').select('id').eq('email', email).maybeSingle();
   if (e1) throw new Error(e1.message);
-  if (existente) return existente.id;
+  if (porEmail) return porEmail.id;
+
+  if (cnh) {
+    const { data: porCnh, error: e2 } = await admin
+      .from('drivers').select('id, email').eq('cnh', cnh).maybeSingle();
+    if (e2) throw new Error(e2.message);
+    if (porCnh) {
+      if (!porCnh.email) await admin.from('drivers').update({ email }).eq('id', porCnh.id);
+      return porCnh.id;
+    }
+  }
+  return null;
+}
+
+async function resolverOuCriarDriver(admin: any, email: string, nome?: string, cnh?: string | null): Promise<string> {
+  const existenteId = await buscarDriverExistente(admin, email, cnh);
+  if (existenteId) return existenteId;
 
   const { data: novo, error: e2 } = await admin
     .from('drivers')
-    .insert({ name: nome || email, email, active: true })
+    .insert({ name: nome || email, email, cnh: cnh || null, active: true })
     .select('id')
     .single();
   if (e2) throw new Error(e2.message);
   return novo.id;
 }
 
-async function buscarDriverPorEmail(admin: any, email: string): Promise<string | null> {
-  const { data, error } = await admin.from('drivers').select('id').eq('email', email).maybeSingle();
-  if (error) throw new Error(error.message);
-  return data?.id || null;
+async function buscarDriverPorEmail(admin: any, email: string, cnh?: string | null): Promise<string | null> {
+  return await buscarDriverExistente(admin, email, cnh);
 }
 
 Deno.serve(async (req) => {
@@ -166,11 +189,11 @@ Deno.serve(async (req) => {
       // condutor abrindo o KM do dia (só km_inicial) E o admin criando um
       // registro completo direto pela tela "Gerenciar KM" (km_inicial +
       // km_final + ajustado:true de uma vez só).
-      const { email_condutor, nome_condutor, data, km_inicial, km_final, ajustado } = body;
+      const { email_condutor, nome_condutor, cnh_condutor, data, km_inicial, km_final, ajustado } = body;
       if (!email_condutor || !data || km_inicial == null) return json({ error: 'Preencha e-mail, data e km inicial.' }, 400);
       if (!(await autorizarEmail(email_condutor))) return json({ error: 'Sem permissão.' }, 403);
 
-      const driverId = await resolverOuCriarDriver(admin, email_condutor, nome_condutor);
+      const driverId = await resolverOuCriarDriver(admin, email_condutor, nome_condutor, cnh_condutor);
       const novoRegistro: Record<string, unknown> = { driver_id: driverId, log_date: data, odometer_start: km_inicial, odometer_start_at: new Date().toISOString() };
       if (km_final != null) { novoRegistro.odometer_end = km_final; novoRegistro.odometer_end_at = new Date().toISOString(); }
       if (ajustado != null) novoRegistro.ajustado = ajustado;
@@ -182,11 +205,11 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'buscar_data') {
-      const { email_condutor, data } = body;
+      const { email_condutor, cnh_condutor, data } = body;
       if (!email_condutor || !data) return json({ error: 'Informe e-mail e data.' }, 400);
       if (!(await autorizarEmail(email_condutor))) return json({ error: 'Sem permissão.' }, 403);
 
-      const driverId = await buscarDriverPorEmail(admin, email_condutor);
+      const driverId = await buscarDriverPorEmail(admin, email_condutor, cnh_condutor);
       if (!driverId) return json({ data: null });
       const { data: log, error } = await admin
         .from('driver_km_logs').select('*').eq('driver_id', driverId).eq('log_date', data).maybeSingle();
@@ -195,11 +218,11 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'buscar_periodo') {
-      const { email_condutor, data_ini, data_fim } = body;
+      const { email_condutor, cnh_condutor, data_ini, data_fim } = body;
       if (!email_condutor || !data_ini || !data_fim) return json({ error: 'Informe e-mail e período.' }, 400);
       if (!(await autorizarEmail(email_condutor))) return json({ error: 'Sem permissão.' }, 403);
 
-      const driverId = await buscarDriverPorEmail(admin, email_condutor);
+      const driverId = await buscarDriverPorEmail(admin, email_condutor, cnh_condutor);
       if (!driverId) return json({ data: [] });
       const { data: logs, error } = await admin
         .from('driver_km_logs').select('*').eq('driver_id', driverId)
