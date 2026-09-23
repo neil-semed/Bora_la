@@ -47,6 +47,12 @@ const STATUS_OCUPA = ['approved', 'in_transit', 'completed'];
 const SITUACAO_NAO_OCUPA = ['cancelada', 'reprovada'];
 const LIMITE_DIAS = 90;
 
+// Marca de versão - some no JSON de resposta (campo "versao") só pra
+// conseguirmos confirmar, olhando a própria resposta, se o deploy pegou o
+// código mais recente ou se ainda está rodando uma versão antiga em cache
+// - depois de resolvido o problema do nome do motorista, pode remover.
+const VERSAO_FUNCAO = 'v4-debug-2026-09-23';
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -65,14 +71,17 @@ Deno.serve(async (req) => {
     let desde: string | null = null;
     let ate: string | null = null;
 
+    let debug = false;
     if (req.method === 'GET') {
       const url = new URL(req.url);
       desde = url.searchParams.get('desde');
       ate = url.searchParams.get('ate');
+      debug = url.searchParams.get('debug') === '1';
     } else if (req.method === 'POST') {
       const body = await req.json().catch(() => ({}));
       desde = body?.desde || null;
       ate = body?.ate || null;
+      debug = !!body?.debug;
     } else {
       return json({ error: 'Método não suportado.' }, 405);
     }
@@ -106,21 +115,34 @@ Deno.serve(async (req) => {
     // funcionar aqui, sem depender de o PostgREST resolver um embed de 3
     // níveis através de uma tabela de junção.
     const ids = (excursions || []).map((e: any) => e.id);
-    const excursionDrivers: any[] = ids.length
-      ? (await admin.from('excursion_drivers').select('excursion_id, driver_id').in('excursion_id', ids)).data || []
-      : [];
+    let erroExcursionDrivers: string | null = null;
+    let erroDrivers: string | null = null;
+    let erroVehicles: string | null = null;
+
+    let excursionDrivers: any[] = [];
+    if (ids.length) {
+      const r = await admin.from('excursion_drivers').select('*').in('excursion_id', ids);
+      if (r.error) erroExcursionDrivers = r.error.message;
+      excursionDrivers = r.data || [];
+    }
 
     const driverIds = [...new Set(excursionDrivers.map((ed) => ed.driver_id))];
-    const driversData: any[] = driverIds.length
-      ? (await admin.from('drivers').select('id, name, vehicle_id').in('id', driverIds)).data || []
-      : [];
+    let driversData: any[] = [];
+    if (driverIds.length) {
+      const r = await admin.from('drivers').select('*').in('id', driverIds);
+      if (r.error) erroDrivers = r.error.message;
+      driversData = r.data || [];
+    }
     const driverById: Record<string, any> = {};
     driversData.forEach((d) => { driverById[d.id] = d; });
 
     const vehicleIds = [...new Set(driversData.map((d) => d.vehicle_id).filter(Boolean))];
-    const vehiclesData: any[] = vehicleIds.length
-      ? (await admin.from('vehicles').select('id, plate').in('id', vehicleIds)).data || []
-      : [];
+    let vehiclesData: any[] = [];
+    if (vehicleIds.length) {
+      const r = await admin.from('vehicles').select('*').in('id', vehicleIds);
+      if (r.error) erroVehicles = r.error.message;
+      vehiclesData = r.data || [];
+    }
     const plateById: Record<string, string> = {};
     vehiclesData.forEach((v) => { plateById[v.id] = v.plate; });
 
@@ -158,7 +180,22 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json({ data: linhas });
+    const resposta: any = { versao: VERSAO_FUNCAO, data: linhas };
+    if (debug) {
+      resposta.debug = {
+        excursoes_encontradas: (excursions || []).length,
+        excursion_drivers_encontrados: excursionDrivers.length,
+        excursion_drivers_amostra: excursionDrivers.slice(0, 3),
+        drivers_encontrados: driversData.length,
+        drivers_amostra: driversData.slice(0, 3),
+        vehicles_encontrados: vehiclesData.length,
+        vehicles_amostra: vehiclesData.slice(0, 3),
+        erro_excursion_drivers: erroExcursionDrivers,
+        erro_drivers: erroDrivers,
+        erro_vehicles: erroVehicles,
+      };
+    }
+    return json(resposta);
   } catch (err) {
     return json({ error: String(err) }, 500);
   }
