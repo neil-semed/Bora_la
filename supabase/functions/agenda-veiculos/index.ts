@@ -196,7 +196,7 @@ Deno.serve(async (req) => {
           turno: ex.turno,
           hora_saida: ex.departure_time,
           hora_retorno: ex.return_time,
-          detalhe: ex.destination,
+          detalhe: `${origem || ''} → ${ex.destination || ''}`,
           status: ex.status,
           origem,
           destino: ex.destination,
