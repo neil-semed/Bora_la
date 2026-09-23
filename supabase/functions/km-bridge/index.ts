@@ -269,9 +269,41 @@ Deno.serve(async (req) => {
       if (!(await ehAdminMarkCarro(caller.id, token))) return json({ error: 'Só administradores podem listar todos os registros.' }, 403);
 
       const { data: logs, error } = await admin
-        .from('driver_km_logs').select('*, drivers(email)').order('log_date', { ascending: false });
+        .from('driver_km_logs').select('*, drivers(id, email, cnh)').order('log_date', { ascending: false });
       if (error) return json({ error: error.message }, 400);
-      return json({ data: (logs || []).filter((l: any) => l.drivers?.email).map((l: any) => mapRegistro(l, l.drivers.email)) });
+
+      // BUG CORRIGIDO (mesmo espírito do buscarDriverExistente por CNH acima,
+      // mas aqui pra LISTA INTEIRA de uma vez): motorista do Bora Lá cadastrado
+      // antes da migration não tem "email" preenchido - o filtro antigo
+      // (l.drivers?.email) descartava a linha inteira da tela "Gerenciar KM" do
+      // MarkCarro, mesmo com o registro existindo e aparecendo no próprio Bora
+      // Lá (caso do Cristiano). Agora, pra quem não tem e-mail, busca o e-mail
+      // no MarkCarro pela CNH (chave que já existia nos 2 sistemas) e completa
+      // o cadastro aqui (backfill), em vez de simplesmente esconder a linha.
+      const semEmail = (logs || []).filter((l: any) => !l.drivers?.email && l.drivers?.cnh);
+      const cnhsFaltando = [...new Set(semEmail.map((l: any) => l.drivers.cnh))];
+      const emailPorCnh: Record<string, string> = {};
+      if (cnhsFaltando.length) {
+        const filtro = cnhsFaltando.map((c: string) => encodeURIComponent(c)).join(',');
+        const resp = await fetch(`${MARKCARRO_SUPABASE_URL}/rest/v1/profiles?select=email,cnh&cnh=in.(${filtro})`, {
+          headers: { apikey: MARKCARRO_ANON_KEY, Authorization: `Bearer ${token}` },
+        }).catch(() => null);
+        if (resp?.ok) {
+          const perfis = await resp.json().catch(() => []);
+          (perfis || []).forEach((p: any) => { if (p.cnh && p.email) emailPorCnh[p.cnh] = p.email; });
+          for (const [cnh, email] of Object.entries(emailPorCnh)) {
+            const driverId = semEmail.find((l: any) => l.drivers.cnh === cnh)?.drivers?.id;
+            if (driverId) await admin.from('drivers').update({ email }).eq('id', driverId);
+          }
+        }
+      }
+
+      return json({
+        data: (logs || [])
+          .map((l: any) => ({ log: l, email: l.drivers?.email || emailPorCnh[l.drivers?.cnh] || null }))
+          .filter((x: any) => x.email)
+          .map((x: any) => mapRegistro(x.log, x.email)),
+      });
     }
 
     return json({ error: 'Ação inválida.' }, 400);
