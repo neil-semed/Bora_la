@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // BORA LÁ - EXCURSÕES | Lógica principal com Supabase
 // ============================================================
 
@@ -3190,7 +3190,7 @@ async function renderAgendaCombinadaAdmin() {
       (placas.length ? placas : [null]).forEach((placa, idx) => linhas.push({
         sistema: 'bora_la', placa, motorista: motoristas[idx] || motoristas[0] || null,
         data_viagem: a.trip_date, hora_saida: a.departure_time,
-        hora_retorno: a.return_time, detalhe: a.destination, status: a.status,
+        hora_retorno: a.return_time, detalhe: `${originName(a) || ''} → ${a.destination || ''}`, status: a.status,
       }));
     });
 
