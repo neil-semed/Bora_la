@@ -3134,6 +3134,23 @@ function normalizarPlaca(p) {
 // (nem ATF, nem "Número de viagens"). data-horario é usado por
 // mesclarAgendaMarkCarroPorDia() pra ordenar junto com os cards do Bora Lá.
 function cardMarkCarroHTML(l, mostrarMotorista = false) {
+  // PEDIDO DO USUÁRIO ("aparece a viagem agendada no markcarro, mas não
+  // aparece sómente IDA ou Volta - tem que aparecer conforme o gravado no
+  // markcarro"): quando a RPC do MarkCarro manda l.sentido = 'ida' ou
+  // 'volta' (motorista/van diferente em cada trecho - ver SQL
+  // agenda_publica_veiculos), negrita o sentido no lugar do rótulo "Saída →
+  // Retorno" e sublinha só o horário correspondente àquele trecho. Quando
+  // sentido é 'ambos' (mesma van faz os 2 trechos) ou vier vazio (RPC
+  // antiga, antes dessa atualização), mantém o comportamento de sempre.
+  const destacarIda = l.sentido === 'ida';
+  const destacarVolta = l.sentido === 'volta';
+  const rotuloHorario = destacarIda
+    ? '<strong class="text-blue-700">Ida</strong>'
+    : destacarVolta
+      ? '<strong class="text-blue-700">Volta</strong>'
+      : 'Saída → Retorno';
+  const horaSaidaHTML = destacarIda ? `<u>${horaComH(l.hora_saida)}</u>` : horaComH(l.hora_saida);
+  const horaRetornoHTML = l.hora_retorno ? (destacarVolta ? `<u>${horaComH(l.hora_retorno)}</u>` : horaComH(l.hora_retorno)) : '';
   return `
     <div class="driver-trip-card rounded-lg overflow-hidden bg-white shadow-sm border-l-4 border-blue-400 mb-3" data-horario="${l.hora_saida || ''}">
       <div class="px-4 py-2.5 flex items-center justify-between gap-2 bg-blue-50 border-b border-blue-100">
@@ -3142,8 +3159,8 @@ function cardMarkCarroHTML(l, mostrarMotorista = false) {
       </div>
       <div class="p-4 space-y-2.5 text-sm">
         <div class="flex items-center justify-between gap-2">
-          <span class="text-slate-500 text-xs">Saída → Retorno</span>
-          <span class="font-bold text-base text-slate-800">${horaComH(l.hora_saida)}${l.hora_retorno ? ' → ' + horaComH(l.hora_retorno) : ''}</span>
+          <span class="text-slate-500 text-xs">${rotuloHorario}</span>
+          <span class="font-bold text-base text-slate-800">${horaSaidaHTML}${horaRetornoHTML ? ' → ' + horaRetornoHTML : ''}</span>
         </div>
         <div>
           <div class="text-slate-500 text-xs">Origem</div>
