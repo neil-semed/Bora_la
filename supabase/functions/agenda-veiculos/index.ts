@@ -47,6 +47,40 @@ const STATUS_OCUPA = ['approved', 'in_transit', 'completed'];
 const SITUACAO_NAO_OCUPA = ['cancelada', 'reprovada'];
 const LIMITE_DIAS = 90;
 
+// PEDIDO DO USUÁRIO ("mostrar o status da viagem, texto e demais
+// informações... vide print"): mesmos rótulos/mesma conta que o próprio
+// app.js do Bora Lá usa no card do motorista (SITUACAO_LABELS, ATF_LABELS,
+// numeroViagensIndicadas) - repetidos aqui porque o MarkCarro não tem
+// acesso a essas tabelas/lógica, só ao que esta function devolve.
+const SITUACAO_LABELS: Record<string, string> = {
+  sem_validacao: 'Sem Validação',
+  aguarda_motorista: 'Aguarda motorista',
+  aguarda_atf: 'Aguarda ATF',
+  aprovada: 'Aprovada',
+  confirmada: 'Confirmada',
+  envio_coop: 'Envio Coop',
+  reprovada: 'Reprovada',
+  cancelada: 'Cancelada',
+  sem_listagem: 'Sem Listagem',
+};
+const ATF_LABELS: Record<string, string> = {
+  nao_precisa: 'Não Precisa',
+  em_analise: 'Em análise',
+  nao_emitida: 'Não Emitida',
+  aguardando: 'Aguardando',
+  emitida: 'Emitida',
+};
+
+// Em trajetos inteiramente dentro de Nova Lima, um único veículo pode fazer
+// mais de uma volta - mesma regra de numeroViagensIndicadas()/
+// viagemInteiraEmNovaLima() do app.js: só conta mais de 1 viagem quando tem
+// EXATAMENTE 1 motorista/van escalado (senão o transporte já está dividido
+// entre vans) e nem o destino nem a origem são fora de Nova Lima.
+function cidadeEhForaDeNovaLima(cidade: string | null | undefined) {
+  const c = String(cidade || '').trim().toLowerCase();
+  return !!c && c !== 'nova lima';
+}
+
 // Marca de versão - some no JSON de resposta (campo "versao") só pra
 // conseguirmos confirmar, olhando a própria resposta, se o deploy pegou o
 // código mais recente ou se ainda está rodando uma versão antiga em cache
@@ -99,7 +133,7 @@ Deno.serve(async (req) => {
 
     const { data: excursions, error } = await admin
       .from('excursions')
-      .select('id, school_id, trip_date, departure_time, return_time, turno, destination, destination_address, origin_name, origin_address, students_count, companions_count, requester_name, requester_contact, solicitation_type, status, situacao')
+      .select('id, school_id, trip_date, departure_time, return_time, turno, destination, destination_address, city, origin_name, origin_address, origin_city, students_count, companions_count, requester_name, requester_contact, solicitation_type, status, situacao, atf_status')
       .gte('trip_date', desde)
       .lte('trip_date', ate)
       .in('status', STATUS_OCUPA)
@@ -116,7 +150,7 @@ Deno.serve(async (req) => {
     const schoolIds = [...new Set((excursions || []).map((e: any) => e.school_id).filter(Boolean))];
     let schoolsData: any[] = [];
     if (schoolIds.length) {
-      const r = await admin.from('schools').select('id, name, address, phone').in('id', schoolIds);
+      const r = await admin.from('schools').select('id, name, address, phone, city').in('id', schoolIds);
       schoolsData = r.data || [];
     }
     const schoolById: Record<string, any> = {};
@@ -159,7 +193,8 @@ Deno.serve(async (req) => {
       vehiclesData = r.data || [];
     }
     const plateById: Record<string, string> = {};
-    vehiclesData.forEach((v) => { plateById[v.id] = v.plate; });
+    const capacityById: Record<string, number> = {};
+    vehiclesData.forEach((v) => { plateById[v.id] = v.plate; capacityById[v.id] = v.capacity || 0; });
 
     const driversByExcursion: Record<string, string[]> = {};
     excursionDrivers.forEach((ed) => {
@@ -187,6 +222,24 @@ Deno.serve(async (req) => {
       const enderecoOrigem = ex.origin_address || escola?.address || null;
       const nomeSolicitante = ex.requester_name || escola?.name || null;
       const telefoneSolicitante = ex.requester_contact || escola?.phone || null;
+      const qtdPessoas = (ex.students_count || 0) + (ex.companions_count || 0);
+
+      // "Número de viagens" (numeroViagensIndicadas() do app.js): só faz
+      // sentido quando tem EXATAMENTE 1 motorista/van escalado (senão o
+      // transporte já está dividido) e o trajeto é inteiro dentro de Nova
+      // Lima (nem destino nem origem fora) - aí sim 1 van pode precisar
+      // fazer mais de 1 volta pra levar todo mundo.
+      const cidadeDestino = ex.city || null;
+      const cidadeOrigem = ex.origin_city || escola?.city || null;
+      const foraDeNovaLima = cidadeEhForaDeNovaLima(cidadeDestino) || cidadeEhForaDeNovaLima(cidadeOrigem);
+      const driverIdsEscalados = driversByExcursion[ex.id] || [];
+      let numeroViagens = 1;
+      if (!foraDeNovaLima && driverIdsEscalados.length === 1) {
+        const d = driverById[driverIdsEscalados[0]];
+        const capacidade = (d?.vehicle_id && capacityById[d.vehicle_id]) || 0;
+        if (capacidade > 0) numeroViagens = Math.max(1, Math.ceil(qtdPessoas / capacidade));
+      }
+
       for (const { motorista, placa } of linhasBase) {
         linhas.push({
           sistema: 'bora_la',
@@ -198,11 +251,16 @@ Deno.serve(async (req) => {
           hora_retorno: ex.return_time,
           detalhe: `${origem || ''} → ${ex.destination || ''}`,
           status: ex.status,
+          situacao: ex.situacao,
+          situacao_label: SITUACAO_LABELS[ex.situacao] || ex.situacao,
+          atf_status: ex.atf_status,
+          atf_label: ATF_LABELS[ex.atf_status] || ex.atf_status,
+          numero_viagens: numeroViagens,
           origem,
           destino: ex.destination,
           endereco_origem: enderecoOrigem,
           endereco_destino: ex.destination_address || null,
-          qtd_pessoas: (ex.students_count || 0) + (ex.companions_count || 0),
+          qtd_pessoas: qtdPessoas,
           nome_solicitante: nomeSolicitante,
           telefone_solicitante: telefoneSolicitante,
         });
