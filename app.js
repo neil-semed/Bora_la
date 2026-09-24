@@ -993,7 +993,6 @@ function openUserModal(id) {
   document.getElementById('userModalEmail').textContent = p.email;
   document.getElementById('newUserNome').value = p.full_name || '';
   document.getElementById('newUserTelefone').value = p.phone || '';
-  document.getElementById('editUserPassword').value = '';
   document.getElementById('newUserRole').value = p.role || 'escola';
   fillAccessProfileSelect('newUserAccessProfileId', p.access_profile_id || '');
 
@@ -1043,8 +1042,6 @@ async function confirmSaveUser() {
   if (role === 'pedagogia' && !patch.setor_pedagogico) { toast('⚠️ Selecione o setor pedagógico deste usuário.', true); return; }
   if (role === 'operacional' && !patch.access_profile_id) { toast('⚠️ Selecione o perfil administrativo deste usuário.', true); return; }
   if (role === 'agente_externo' && !patch.cooperativa_id) { toast('⚠️ Selecione a cooperativa deste agente.', true); return; }
-  const password = document.getElementById('editUserPassword').value;
-  if (password && password.length < 8) { toast('⚠️ A nova senha precisa ter ao menos 8 caracteres.', true); return; }
 
   if (sb) {
     const { error } = await sb.from('profiles').update(patch).eq('id', editUserId);
@@ -1053,17 +1050,6 @@ async function confirmSaveUser() {
     const p = demoProfiles.find((x) => x.id === editUserId);
     if (p) Object.assign(p, patch);
     saveDemoData();
-  }
-  if (password) {
-    if (!sb) { toast('⚠️ A troca de senha só está disponível no Supabase.', true); return; }
-    const { data: { session } } = await sb.auth.getSession();
-    const supabaseUrl = localStorage.getItem('sb_url') || DEFAULT_SUPABASE_URL;
-    const response = await fetch(`${supabaseUrl}/functions/v1/admin-update-user-password`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
-      body: JSON.stringify({ user_id: editUserId, password }),
-    }).catch(() => null);
-    const payload = response ? await response.json().catch(() => ({})) : {};
-    if (!response?.ok) { toast('❌ Não foi possível atualizar a senha: ' + (payload.error || 'função indisponível.'), true); return; }
   }
   toast('✅ Usuário atualizado.');
   closeUserModal();
@@ -2357,22 +2343,9 @@ function renderDashboardCharts(visible) {
   dados.forEach((a) => { const k = monthKey(a.trip_date); porMes[k] = (porMes[k] || 0) + 1; });
   const mesesOrdenados = Object.keys(porMes).sort();
 
-  // Série anual por situação: evita o gráfico redundante de "viagens por
-  // unidade" para a própria Escola e entrega a mesma leitura de gestão para
-  // Admin. A Pedagogia troca cancelamentos por correções documentais.
-  const anoBase = (dados.find((a) => a.trip_date)?.trip_date || fmtDate(new Date())).slice(0, 4);
-  const mesesDoAno = Array.from({ length: 12 }, (_, i) => `${anoBase}-${String(i + 1).padStart(2, '0')}`);
-  const statusMes = { solicitacoes: {}, aprovadas: {}, reprovadas: {}, terceiro: {} };
-  mesesDoAno.forEach((k) => Object.keys(statusMes).forEach((tipo) => { statusMes[tipo][k] = 0; }));
-  dados.filter((a) => monthKey(a.trip_date).startsWith(anoBase + '-')).forEach((a) => {
-    const k = monthKey(a.trip_date); if (!statusMes.solicitacoes[k] && statusMes.solicitacoes[k] !== 0) return;
-    statusMes.solicitacoes[k]++;
-    if (a.admin_decision === 'aprovada' || a.situacao === 'aprovada' || a.situacao === 'confirmada') statusMes.aprovadas[k]++;
-    if (a.admin_decision === 'reprovada' || a.situacao === 'reprovada') statusMes.reprovadas[k]++;
-    if (currentUser?.role === 'pedagogia') {
-      if (['correcoes', 'solicitada'].includes(a.doc_status || '')) statusMes.terceiro[k]++;
-    } else if (a.situacao === 'cancelada') statusMes.terceiro[k]++;
-  });
+  const porUnidade = {};
+  dados.forEach((a) => { const nome = schoolName(a.school_id) !== '—' ? schoolName(a.school_id) : (a.requester_name || 'Outra'); porUnidade[nome] = (porUnidade[nome] || 0) + 1; });
+  const unidadesOrdenadas = Object.entries(porUnidade).sort((a, b) => b[1] - a[1]).slice(0, 10);
 
   const ctx1 = document.getElementById('chartPorMes');
   if (ctx1) {
@@ -2387,13 +2360,9 @@ function renderDashboardCharts(visible) {
   if (ctx2) {
     if (chartUnidadeInstance) chartUnidadeInstance.destroy();
     chartUnidadeInstance = new Chart(ctx2, {
-      data: { labels: mesesDoAno.map(monthLabel), datasets: [
-        { type: 'bar', label: 'Solicitações', data: mesesDoAno.map((k) => statusMes.solicitacoes[k]), backgroundColor: 'rgba(100,116,139,.45)', borderRadius: 5, order: 4 },
-        { type: 'line', label: 'Aprovadas', data: mesesDoAno.map((k) => statusMes.aprovadas[k]), borderColor: '#059669', backgroundColor: '#059669', tension: .35, pointRadius: 3, order: 1 },
-        { type: 'line', label: 'Reprovadas', data: mesesDoAno.map((k) => statusMes.reprovadas[k]), borderColor: '#dc2626', backgroundColor: '#dc2626', tension: .35, pointRadius: 3, order: 2 },
-        { type: 'line', label: currentUser?.role === 'pedagogia' ? 'Correções' : 'Canceladas', data: mesesDoAno.map((k) => statusMes.terceiro[k]), borderColor: '#f59e0b', backgroundColor: '#f59e0b', tension: .35, pointRadius: 3, order: 3 },
-      ] },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top', labels: { boxWidth: 10, boxHeight: 10, padding: 12, color: '#475569', font: { size: 12, weight: '600' } } }, title: { display: true, text: `Solicitações em ${anoBase}`, align: 'start', color: '#1e293b', font: { size: 14, weight: '600' } } }, scales: { y: { beginAtZero: true, ticks: { precision: 0, color: '#64748b' }, grid: { color: 'rgba(148,163,184,.16)' } }, x: { ticks: { color: '#64748b' }, grid: { display: false } } } },
+      type: 'doughnut',
+      data: { labels: unidadesOrdenadas.map((e) => e[0]), datasets: [{ data: unidadesOrdenadas.map((e) => e[1]), backgroundColor: ['#059669','#0ea5e9','#6366f1','#f59e0b','#ef4444','#8b5cf6','#14b8a6','#f97316','#64748b','#ec4899'], borderWidth: 3, borderColor: '#fff', hoverOffset: 8 }] },
+      options: { responsive: true, maintainAspectRatio: false, cutout: '64%', plugins: { legend: { position: 'right', labels: { boxWidth: 10, boxHeight: 10, padding: 12, color: '#475569', font: { size: 14, weight: '600' } } }, title: { display: true, text: 'Distribuição por unidade', align: 'start', color: '#1e293b', font: { size: 14, weight: '600' } } } },
     });
   }
 }
@@ -2986,10 +2955,6 @@ function renderAgendaPorDataItem(a, agendaGeral = false) {
     return `${escapeHtml(d.name)}${d.phone ? ` • ${escapeHtml(d.phone)}` : ''}${v?.plate ? ` • ${escapeHtml(v.plate)}` : ''}`;
   }).join('<br>');
   const numeroViagens = minhaViagem ? numeroViagensIndicadas(a) : 1;
-  // No app do motorista a decisão administrativa é a única aprovação que
-  // interessa. Não duplicamos o rótulo operacional "aprovada".
-  const situacaoExibida = a.admin_decision === 'aprovada' ? 'aprovada'
-    : a.admin_decision === 'reprovada' ? 'reprovada' : a.situacao;
   return `
     <div class="driver-trip-card px-4 py-4 flex items-center justify-between gap-3 bg-white rounded-xl mb-3" data-horario="${a.departure_time || ''}">
       <div>
@@ -3003,7 +2968,7 @@ function renderAgendaPorDataItem(a, agendaGeral = false) {
         ${compartilhadaHtml ? `<div class="text-xs text-slate-600 mt-1">Compartilhada com:<br>${compartilhadaHtml}</div>` : ''}
       </div>
       <div class="flex items-center gap-2 shrink-0">
-        <span style="${SITUACAO_COLORS[situacaoExibida] || ''}" class="px-2 py-1 rounded text-xs font-medium">${SITUACAO_LABELS[situacaoExibida] || situacaoExibida}</span>
+        <span style="${SITUACAO_COLORS[a.situacao] || ''}" class="px-2 py-1 rounded text-xs font-medium">${SITUACAO_LABELS[a.situacao] || a.situacao}</span>
         ${minhaViagem ? acao : ''}
       </div>
     </div>`;
@@ -3042,14 +3007,18 @@ async function renderAgendaGeralMotorista() {
   const porDia = {};
   viagens.forEach((a) => { (porDia[a.trip_date] ||= []).push(a); });
 
-  // Agenda Geral é coletiva: reúne todas as agendas confirmadas do período,
-  // incluindo as do MarkCarro, sempre identificando o motorista escalado.
+  // PEDIDO DO USUÁRIO ("mesma regra de apresentar no bora lá na tela hoje,
+  // vale pra tela geral"): busca a van do MarkCarro (mesma placa deste
+  // motorista) ANTES de montar os blocos de dia, pra incluir também um dia
+  // que só tenha corrida do MarkCarro (sem nenhuma do Bora Lá nele).
+  const minhaPlaca = placaDoMotoristaAtual();
   const porDiaMc = {};
   let erroMc = false;
-  if (currentUser?.role === 'motorista') {
+  if (minhaPlaca) {
     try {
       const doMarkCarro = await buscarAgendaMarkCarro(inicio, fim);
       (doMarkCarro || [])
+        .filter((l) => normalizarPlaca(l.placa) === normalizarPlaca(minhaPlaca))
         .forEach((l) => { (porDiaMc[l.data_viagem] ||= []).push(l); });
     } catch (e) {
       console.error('Erro ao buscar agenda do MarkCarro (Agenda Geral):', e);
@@ -3080,30 +3049,16 @@ async function renderAgendaGeralMotorista() {
 // Soma no card "Corridas hoje" do dashboard do motorista (renderDashboard())
 // as viagens do MarkCarro de hoje com a mesma placa - ver comentário lá.
 async function atualizarStatHojeComMarkCarro(baseBoraLa, hojeStr) {
+  const minhaPlaca = placaDoMotoristaAtual();
   const el = document.getElementById('statHoje');
-  if (!currentUser?.email || !el) return;
+  if (!minhaPlaca || !el) return;
   try {
     const doMarkCarro = await buscarAgendaMarkCarro(hojeStr, hojeStr);
-    const totalMc = agendaMarkCarroDoMotoristaAtual(doMarkCarro).length;
+    const totalMc = (doMarkCarro || []).filter((l) => normalizarPlaca(l.placa) === normalizarPlaca(minhaPlaca)).length;
     if (totalMc) el.textContent = baseBoraLa + totalMc;
   } catch (e) {
     console.error('Erro ao somar corridas do MarkCarro no dashboard:', e);
   }
-}
-
-function normalizarEmail(valor) { return String(valor || '').trim().toLowerCase(); }
-function emailDoMotorista(driver) {
-  if (!driver) return '';
-  return normalizarEmail(driver.email || allProfiles.find((profile) => profile.driver_id === driver.id)?.email);
-}
-function emailMotoristaMarkCarro(linha) { return normalizarEmail(linha?.motorista_email || linha?.email_motorista || linha?.email_condutor); }
-function nomeMotoristaMarkCarro(linha) { return linha?.motorista || linha?.nome_motorista || linha?.nome_condutor || ''; }
-function agendaMarkCarroDoMotoristaAtual(linhas) {
-  const email = normalizarEmail(currentUser?.email);
-  // A integração não pode inferir o motorista pela placa: um veículo pode ser
-  // usado por mais de uma pessoa. O endpoint MarkCarro deve entregar o e-mail
-  // do condutor, que é a chave comum confirmada nos dois sistemas.
-  return (linhas || []).filter((linha) => email && emailMotoristaMarkCarro(linha) === email);
 }
 
 // Busca a agenda pública (só leitura) do MarkCarro - outro projeto Supabase - via a
@@ -3150,13 +3105,25 @@ function motoristasDaExcursao(trip) {
   return [...new Set(nomes)];
 }
 
-// Mantida apenas para exibição. A agenda integrada é filtrada por e-mail, não
-// por placa, pois um mesmo veículo pode ter mais de um motorista.
+// Placa da van do motorista logado (currentUser.driverId -> drivers.vehicle_id ->
+// vehicles.plate) - usada pra filtrar a agenda do MarkCarro só pela van dele.
 function placaDoMotoristaAtual() {
   if (!currentUser?.driverId) return null;
   const driver = drivers.find((d) => d.id === currentUser.driverId);
   if (!driver) return null;
   return vehicles.find((v) => v.id === driver.vehicle_id)?.plate || null;
+}
+
+// Placa "normalizada" (só letras/números maiúsculos) pra comparar a placa
+// cadastrada aqui no Bora Lá com a placa cadastrada no MarkCarro - são 2
+// cadastros de texto livre, digitados por pessoas diferentes em sistemas
+// diferentes ("ABC-1234" vs "ABC1234" vs "abc 1234" etc.), então comparar
+// direto (só toUpperCase) pode nunca bater mesmo sendo a mesma van, e a
+// van do MarkCarro simplesmente nunca aparece pro motorista - sem erro
+// nenhum, silenciosamente. Usado em toda comparação de placa entre os 2
+// sistemas (Hoje, Próximas, Agenda Geral, dashboard).
+function normalizarPlaca(p) {
+  return (p || '').toString().toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
 // Card de uma corrida do MarkCarro (mesma placa do motorista logado), no mesmo
@@ -3191,7 +3158,7 @@ function cardMarkCarroHTML(l, mostrarMotorista = false) {
           <span class="font-medium">${l.qtd_pessoas} total</span>
         </div>` : ''}
         ${l.nome_solicitante ? `<div class="text-xs text-slate-600"><span class="text-slate-400">Solicitante:</span> ${escapeHtml(l.nome_solicitante)}${l.telefone_solicitante ? ` • ${escapeHtml(l.telefone_solicitante)}` : ''}</div>` : ''}
-        ${mostrarMotorista && nomeMotoristaMarkCarro(l) ? `<div class="text-xs text-slate-700"><span class="text-slate-400">Motorista(s) escalado(s):</span> ${escapeHtml(nomeMotoristaMarkCarro(l))}</div>` : ''}
+        ${mostrarMotorista && l.motorista ? `<div class="text-xs text-slate-700"><span class="text-slate-400">Motorista(s) escalado(s):</span> ${escapeHtml(l.motorista)}</div>` : ''}
       </div>
     </div>`;
 }
@@ -3220,10 +3187,12 @@ function inserirCardMarkCarroPorHorario(container, l) {
 // renderAgendaGeralMotorista() (ela já é assíncrona e precisa incluir dias
 // que só têm corrida do MarkCarro, sem nenhuma do Bora Lá).
 async function mesclarAgendaMarkCarroPorDia(raiz, desde, ate) {
-  if (!currentUser?.email || !raiz) return;
+  const minhaPlaca = placaDoMotoristaAtual();
+  if (!minhaPlaca || !raiz) return;
   try {
     const doMarkCarro = await buscarAgendaMarkCarro(desde, ate);
-    agendaMarkCarroDoMotoristaAtual(doMarkCarro)
+    (doMarkCarro || [])
+      .filter((l) => normalizarPlaca(l.placa) === normalizarPlaca(minhaPlaca))
       .forEach((l) => {
         const container = raiz.dataset && raiz.dataset.dia !== undefined
           ? raiz
@@ -3245,7 +3214,6 @@ async function renderAgendaCombinadaAdmin() {
   const inicio = document.getElementById('agendaCombinadaInicio')?.value || fmtDate(hoje);
   const fim = document.getElementById('agendaCombinadaFim')?.value || fmtDate(daqui30);
   const filtroPlaca = (document.getElementById('agendaCombinadaFiltroPlaca')?.value || '').trim().toUpperCase();
-  const filtroMotorista = document.getElementById('agendaCombinadaFiltroMotorista')?.value || '';
 
   const linhas = [];
   agenda
@@ -3270,16 +3238,7 @@ async function renderAgendaCombinadaAdmin() {
     avisoEl?.classList.remove('hidden');
   }
 
-  const motoristaSelect = document.getElementById('agendaCombinadaFiltroMotorista');
-  if (motoristaSelect) {
-    const atual = motoristaSelect.value;
-    motoristaSelect.innerHTML = '<option value="">Todos</option>' + drivers.map((d) => `<option value="${d.id}">${escapeHtml(d.name || 'Motorista sem nome')}</option>`).join('');
-    motoristaSelect.value = drivers.some((d) => d.id === atual) ? atual : '';
-  }
-  const motoristaFiltrado = filtroMotorista ? drivers.find((d) => d.id === filtroMotorista) : null;
-  const filtradas = linhas
-    .filter((l) => !filtroPlaca || (l.placa || '').toUpperCase().includes(filtroPlaca))
-    .filter((l) => !motoristaFiltrado || l.motorista === motoristaFiltrado.name || emailMotoristaMarkCarro(l) === emailDoMotorista(motoristaFiltrado))
+  const filtradas = (filtroPlaca ? linhas.filter((l) => (l.placa || '').toUpperCase().includes(filtroPlaca)) : linhas)
     .sort((a, b) => `${a.data_viagem || ''} ${a.hora_saida || ''}`.localeCompare(`${b.data_viagem || ''} ${b.hora_saida || ''}`));
 
   if (!filtradas.length) {
@@ -3292,24 +3251,12 @@ async function renderAgendaCombinadaAdmin() {
       <td class="px-4 py-2">${l.data_viagem ? new Date(l.data_viagem + 'T00:00').toLocaleDateString('pt-BR') : '-'}</td>
       <td class="px-4 py-2">${hhmm(l.hora_saida)}${l.hora_retorno ? ' - ' + hhmm(l.hora_retorno) : ''}</td>
       <td class="px-4 py-2 font-semibold">${l.placa || '<span class="text-amber-600">sem placa</span>'}</td>
-      <td class="px-4 py-2">${nomeMotoristaMarkCarro(l) || '<span class="text-slate-400">—</span>'}</td>
+      <td class="px-4 py-2">${l.motorista || '<span class="text-slate-400">—</span>'}</td>
       <td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full text-xs font-semibold ${l.sistema === 'bora_la' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}">${l.sistema === 'bora_la' ? 'Bora Lá' : 'MarkCarro'}</span></td>
       <td class="px-4 py-2">${l.detalhe || ''}</td>
       <td class="px-4 py-2">${l.status || ''}</td>
     </tr>
   `).join('');
-}
-
-function filtrarAgendaCombinadaHoje() {
-  const hoje = fmtDate(new Date());
-  document.getElementById('agendaCombinadaInicio').value = hoje;
-  document.getElementById('agendaCombinadaFim').value = hoje;
-  renderAgendaCombinadaAdmin();
-}
-function limparFiltrosAgendaCombinada() {
-  ['agendaCombinadaInicio', 'agendaCombinadaFim', 'agendaCombinadaFiltroPlaca'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
-  const motorista = document.getElementById('agendaCombinadaFiltroMotorista'); if (motorista) motorista.value = '';
-  renderAgendaCombinadaAdmin();
 }
 function closeExcursionEditor() { document.getElementById('excursionEditorModal').classList.add('hidden'); editExcursionId = null; }
 async function saveExcursionEditor() {
@@ -3834,7 +3781,6 @@ function renderValidacoesPedagogia() {
   const origemEl = document.getElementById('validacaoFiltroOrigem');
   const setorFiltro = setorEl ? setorEl.value : '';
   const origemFiltro = origemEl ? origemEl.value : '';
-  const dataFiltro = document.getElementById('validacaoFiltroDataPedagogia')?.value || '';
   const meusSetores = new Set(validatorSectorAssignments.filter((v) => v.profile_id === currentUser?.id).map((v) => v.sector_id));
   // A proposta solicitada pelo Admin aparece em Pendências como aviso à
   // Pedagogia, mas não pode ser analisada antes de a unidade enviar o arquivo.
@@ -3843,7 +3789,6 @@ function renderValidacoesPedagogia() {
     lista = lista.filter((a) => setorFiltro ? a.validation_sector_id === setorFiltro : (!meusSetores.size || meusSetores.has(a.validation_sector_id)));
   } else if (setorFiltro) lista = lista.filter((a) => a.setor_pedagogico_atual === setorFiltro);
   if (origemFiltro) lista = lista.filter((a) => origemFiltroId(a) === origemFiltro);
-  if (dataFiltro) lista = lista.filter((a) => a.trip_date === dataFiltro);
 
   if (lista.length === 0) {
     tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-500 text-sm">Nenhuma solicitação pendente de validação</td></tr>';
@@ -3855,14 +3800,11 @@ function renderValidacoesPedagogia() {
     .sort((a, b) => (a.trip_date || '').localeCompare(b.trip_date || ''))
     .map((a) => {
       const totalPax = (a.students_count || 0) + (a.companions_count || 0) + (a.pca_count || 0) + (a.apoio_count || 0);
-      const origemEhEscola = schools.some((s) => String(s.name || '').trim().toLowerCase() === String(originName(a) || '').trim().toLowerCase());
-      const destinoEhEscola = schools.some((s) => String(s.name || '').trim().toLowerCase() === String(a.destination || '').trim().toLowerCase());
       return `
     <tr class="hover:bg-slate-50">
-      <td class="px-4 py-3 text-sm">${a.created_at ? new Date(a.created_at).toLocaleDateString('pt-BR') : '-'}</td>
-      <td class="px-4 py-3 text-sm font-medium">${new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR')}</td>
-      <td class="px-4 py-3 text-sm">${originName(a)}${origemEhEscola ? '' : `<div class="text-xs text-slate-500">${originAddress(a) || '-'}</div>`}</td>
-      <td class="px-4 py-3 text-sm">${a.destination}${destinoEhEscola ? '' : `<div class="text-xs text-slate-500">${a.destination_address || a.city || '-'}</div>`}</td>
+      <td class="px-4 py-3 text-sm">${new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR')}</td>
+      <td class="px-4 py-3 text-sm">${originName(a)}<div class="text-xs text-slate-500">${originAddress(a) || '-'}</div></td>
+      <td class="px-4 py-3 text-sm">${a.destination}<div class="text-xs text-slate-500">${a.destination_address || a.city || '-'}</div></td>
       <td class="px-4 py-3 text-sm">${publicoAlvoLabel(a.validation_target_id || a.publico_alvo)}</td>
       <td class="px-4 py-3 text-sm">${totalPax}</td>
       <td class="px-4 py-3 text-sm">${validationSectors.find((s) => s.id === a.validation_sector_id)?.name || SETOR_PEDAGOGICO_LABELS[a.setor_pedagogico_atual] || '-'}</td>
@@ -4036,15 +3978,11 @@ function openValidacaoModal(id, somenteLeituraForcada = false) {
   // O transporte adaptado PCD é pedido à parte à cooperativa; portanto não entra na
   // lotação/ATF do veículo regular escalado pela Secretaria.
   const totalPax = (trip.students_count || 0) + (trip.companions_count || 0);
-  const origemEhEscola = schools.some((s) => String(s.name || '').trim().toLowerCase() === String(originName(trip) || '').trim().toLowerCase());
-  const destinoEhEscola = schools.some((s) => String(s.name || '').trim().toLowerCase() === String(trip.destination || '').trim().toLowerCase());
   document.getElementById('validacaoInfo').innerHTML = `
     <div><strong>Origem:</strong> ${originName(trip)}</div>
-    ${origemEhEscola ? '' : `<div><strong>Endereço da origem:</strong> ${originAddress(trip) || '-'}</div>`}
+    <div><strong>Endereço da origem:</strong> ${originAddress(trip) || '-'}</div>
     <div><strong>Destino:</strong> ${trip.destination} (${trip.city || '-'})</div>
-    ${destinoEhEscola ? '' : `<div><strong>Endereço do destino:</strong> ${trip.destination_address || '-'}</div>`}
-    <div><strong>Data da solicitação:</strong> ${trip.created_at ? new Date(trip.created_at).toLocaleDateString('pt-BR') : '-'}</div>
-    <div><strong>Data da viagem:</strong> ${new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR')}</div>
+    <div><strong>Data:</strong> ${new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR')}</div>
     <div><strong>Pessoas:</strong> ${totalPax}</div>
     <div><strong>Público-alvo:</strong> ${publicoAlvoLabel(trip.validation_target_id || trip.publico_alvo)}</div>
     <div><strong>Setor atual:</strong> ${validationSectors.find((s) => s.id === trip.validation_sector_id)?.name || SETOR_PEDAGOGICO_LABELS[trip.setor_pedagogico_atual] || '-'}</div>
@@ -4335,9 +4273,6 @@ async function getExcursionPcdStudents(id) {
 // fluxo - a conferência acontece quando o gestor tiver disponibilidade.
 let listagemVeiculoTargetId = null;
 let listagemRowsByDriver = {}; // { [driverId]: [{ nome, tipo_documento, documento }, ...] }
-let listagemMetodoByDriver = {}; // manual | pdf, uma escolha por veículo
-let listagemUploadsByDriver = {}; // arquivos PDF ainda não enviados ao Drive
-let listagemFilesByDriver = {}; // últimos arquivos já gravados no Drive
 
 async function openListagemVeiculoModal(id) {
   listagemVeiculoTargetId = id;
@@ -4345,20 +4280,13 @@ async function openListagemVeiculoModal(id) {
   if (!trip) return;
   const driverIds = trip.driver_ids || [];
   const grouped = await getExcursionPassengersGrouped(id);
-  const files = await listagemFilesForTrip(id);
   const status = trip.listagem_status || 'nao_enviada';
   const editable = currentUser.role === 'escola' && (status === 'nao_enviada' || status === 'rejeitada');
 
   listagemRowsByDriver = {};
-  listagemMetodoByDriver = {};
-  listagemUploadsByDriver = {};
-  listagemFilesByDriver = {};
   driverIds.forEach((did) => {
     const existentes = (grouped[did] || []).map((p) => ({ nome: p.nome, tipo_documento: p.tipo_documento || 'cpf', documento: p.documento || '' }));
     listagemRowsByDriver[did] = existentes.length ? existentes : (editable ? [{ nome: '', documento: '' }] : []);
-    const arquivo = files.filter((f) => f.driver_id === did).slice(-1)[0];
-    if (arquivo) { listagemFilesByDriver[did] = arquivo; if (status !== 'rejeitada') listagemMetodoByDriver[did] = 'pdf'; }
-    else if (existentes.length) listagemMetodoByDriver[did] = 'manual';
   });
 
   renderListagemVeiculoModal();
@@ -4368,9 +4296,6 @@ function closeListagemVeiculoModal() {
   document.getElementById('listagemVeiculoModal').classList.add('hidden');
   listagemVeiculoTargetId = null;
   listagemRowsByDriver = {};
-  listagemMetodoByDriver = {};
-  listagemUploadsByDriver = {};
-  listagemFilesByDriver = {};
 }
 
 function renderListagemVeiculoModal() {
@@ -4419,13 +4344,10 @@ function renderListagemVeiculoBloco(did, editable) {
   const d = drivers.find((x) => x.id === did);
   const capacidade = v ? v.capacity : 0;
   const rows = listagemRowsByDriver[did] || [];
-  const metodo = listagemMetodoByDriver[did] || '';
-  const arquivoExistente = listagemFilesByDriver[did];
-  const arquivoPendente = listagemUploadsByDriver[did];
   const preenchidos = rows.filter((p) => p.nome && p.nome.trim()).length;
   const corContagem = capacidade && preenchidos > capacidade ? 'text-red-600' : 'text-slate-500';
 
-  const linhas = editable && metodo !== 'pdf'
+  const linhas = editable
     ? rows.map((p, i) => `
         <div class="flex gap-2 items-center">
           <span class="text-xs text-slate-400 w-5 text-right">${i + 1}.</span>
@@ -4442,69 +4364,21 @@ function renderListagemVeiculoBloco(did, editable) {
         || '<p class="text-xs text-slate-400">Nenhum passageiro preenchido.</p>');
 
   const atingiuCapacidade = capacidade > 0 && rows.length >= capacidade;
-  const addBtn = editable && metodo !== 'pdf'
+  const addBtn = editable
     ? (atingiuCapacidade
         ? `<p class="text-xs text-amber-600 mt-1">⚠️ Capacidade máxima atingida (${capacidade} lugares).</p>`
         : `<button onclick="addListagemRow('${did}')" class="mt-1 px-3 py-1 border rounded-lg text-xs">+ Adicionar linha</button>`)
     : '';
 
-  const arquivoNome = arquivoPendente?.name || arquivoExistente?.filename || '';
-  const metodoHtml = editable ? `
-      <div class="grid gap-3 md:grid-cols-2 mb-4">
-        <section class="rounded-xl border p-3 ${metodo === 'manual' ? 'border-emerald-400 bg-emerald-50/50' : 'border-slate-200'}">
-          <div class="flex items-center justify-between gap-2"><div><strong class="text-sm text-emerald-800">Digitar no sistema</strong><p class="text-xs text-slate-500 mt-1">Informe nome e documento de cada passageiro.</p></div><button onclick="selectListagemMethod('${did}','manual')" class="rounded-lg px-3 py-2 text-xs font-bold ${metodo === 'manual' ? 'bg-emerald-600 text-white' : 'border border-emerald-300 text-emerald-800'}">${metodo === 'manual' ? 'Selecionado' : 'Usar digitação'}</button></div>
-        </section>
-        <section class="rounded-xl border p-3 ${metodo === 'pdf' ? 'border-violet-400 bg-violet-50/50' : 'border-slate-200'}">
-          <div class="flex items-center justify-between gap-2"><div><strong class="text-sm text-violet-800">Modelo e upload</strong><p class="text-xs text-slate-500 mt-1">Baixe o Excel, preencha e envie somente o PDF.</p></div><button onclick="selectListagemMethod('${did}','pdf')" class="rounded-lg px-3 py-2 text-xs font-bold ${metodo === 'pdf' ? 'bg-violet-600 text-white' : 'border border-violet-300 text-violet-800'}">${metodo === 'pdf' ? 'Selecionado' : 'Usar PDF'}</button></div>
-          ${metodo === 'pdf' ? `<div class="mt-3 flex flex-wrap items-center gap-2"><button onclick="downloadListagemModelo('${listagemVeiculoTargetId}','${did}')" class="rounded-lg border border-violet-300 bg-white px-3 py-2 text-xs font-bold text-violet-800">⬇ Baixar modelo Excel</button><label class="cursor-pointer rounded-lg bg-violet-600 px-3 py-2 text-xs font-bold text-white">Enviar PDF<input type="file" accept="application/pdf,.pdf" class="hidden" onchange="onListagemPdfSelected('${did}', this)"></label>${arquivoNome ? `<span class="text-xs text-slate-600">📄 ${escapeHtml(arquivoNome)}</span>` : '<span class="text-xs text-amber-700">Selecione o PDF preenchido.</span>'}</div><p class="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-xs text-amber-800">Ao enviar PDF, a digitação deste veículo ficará bloqueada.</p>` : ''}
-        </section>
-      </div>` : '';
   return `
-    <div class="border rounded-xl p-4">
+    <div class="border rounded-xl p-3">
       <div class="flex items-center justify-between mb-2">
         <div class="font-medium text-sm">${v ? `${v.plate} - ${v.capacity} lugares` : 'Veículo não vinculado'}${d ? ` <span class="text-slate-500 font-normal">(Motorista: ${d.name})</span>` : ''}</div>
         <div class="text-xs ${corContagem}">${preenchidos}/${capacidade || '?'} preenchidos</div>
       </div>
-      ${metodoHtml}
       <div class="space-y-2">${linhas}</div>
       ${addBtn}
     </div>`;
-}
-
-function selectListagemMethod(driverId, method) {
-  listagemMetodoByDriver[driverId] = method;
-  if (method === 'manual') delete listagemUploadsByDriver[driverId];
-  renderListagemVeiculoModal();
-}
-function onListagemPdfSelected(driverId, input) {
-  const file = input.files?.[0];
-  if (!file) return;
-  if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) { toast('⚠️ Para upload, selecione apenas um arquivo PDF.', true); input.value = ''; return; }
-  listagemMetodoByDriver[driverId] = 'pdf';
-  listagemUploadsByDriver[driverId] = file;
-  renderListagemVeiculoModal();
-}
-
-function downloadListagemModelo(excursionId, driverId) {
-  const trip = agenda.find((a) => a.id === excursionId); const d = drivers.find((x) => x.id === driverId); const v = driverVehicle(driverId);
-  if (!trip || !window.XLSX) { toast('⚠️ Gerador de Excel indisponível. Verifique sua internet.', true); return; }
-  const capacidade = Number(v?.capacity || 0);
-  const cabecalho = [
-    ['BORA LÁ - EXCURSÕES / SEMED NOVA LIMA'],
-    ['LISTAGEM DE PASSAGEIROS POR VEÍCULO'], [],
-    ['Data da viagem', trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : ''],
-    ['Saída', horaComH(trip.departure_time)], ['Retorno', horaComH(trip.return_time)],
-    ['Origem', originName(trip)], ['Endereço origem', originAddress(trip) || ''],
-    ['Destino', trip.destination || ''], ['Endereço destino', trip.destination_address || trip.city || ''],
-    ['Motorista', d?.name || ''], ['Veículo / placa', `${v?.type || 'Veículo'}${v?.plate ? ' - ' + v.plate : ''}`], ['Capacidade', capacidade], [],
-    ['Nº', 'NOME COMPLETO', 'CI / CNH / CPF'],
-  ];
-  for (let i = 1; i <= capacidade; i++) cabecalho.push([i, '', '']);
-  const ws = XLSX.utils.aoa_to_sheet(cabecalho);
-  ws['!cols'] = [{ wch: 8 }, { wch: 44 }, { wch: 24 }];
-  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: 2 } }];
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Listagem');
-  XLSX.writeFile(wb, `listagem-${trip.trip_date || 'viagem'}-${v?.plate || driverId}.xlsx`);
 }
 
 function addListagemRow(driverId) {
@@ -4599,16 +4473,9 @@ async function confirmEnviarListagem() {
 
   const foraDeNovaLima = precisaListagemComNomesDocumentos(trip);
 
-  // Cada veículo usa somente um método. A digitação exige ao menos um nome;
-  // o envio por arquivo exige o PDF correspondente.
+  // Cada veículo precisa de pelo menos 1 passageiro preenchido - não precisa usar a
+  // capacidade toda, mas uma listagem vazia não faz sentido enviar.
   for (const did of driverIds) {
-    const method = listagemMetodoByDriver[did] || 'manual';
-    if (method === 'pdf') {
-      if (!listagemUploadsByDriver[did] && !listagemFilesByDriver[did]) {
-        const v = driverVehicle(did); toast(`⚠️ Envie o PDF da listagem do veículo ${v ? v.plate : driverName(did)}.`, true); return;
-      }
-      continue;
-    }
     const rows = (listagemRowsByDriver[did] || []).filter((p) => p.nome && p.nome.trim());
     if (!rows.length) {
       const v = driverVehicle(did);
@@ -4622,7 +4489,6 @@ async function confirmEnviarListagem() {
   // documento faltando nem com quantidade de passageiros inferior ao solicitado.
   if (foraDeNovaLima) {
     for (const did of driverIds) {
-      if ((listagemMetodoByDriver[did] || 'manual') === 'pdf') continue;
       const rows = listagemRowsByDriver[did] || [];
       for (const p of rows) {
         const nome = String(p.nome || '').trim();
@@ -4639,7 +4505,6 @@ async function confirmEnviarListagem() {
 
   const allRows = [];
   driverIds.forEach((did) => {
-    if ((listagemMetodoByDriver[did] || 'manual') === 'pdf') return;
     (listagemRowsByDriver[did] || []).filter((p) => p.nome && p.nome.trim())
       .forEach((p) => allRows.push({ nome: p.nome.trim(), tipo_documento: p.tipo_documento || 'cpf', documento: (p.documento || '').trim(), driver_id: did }));
   });
@@ -4649,33 +4514,25 @@ async function confirmEnviarListagem() {
     return;
   }
 
-  if (allRows.length) {
-    const savedOk = await savePassengersForExcursion(id, allRows);
-    if (!savedOk) return;
-  }
+  const savedOk = await savePassengersForExcursion(id, allRows);
+  if (!savedOk) return;
 
   const driveUrl = getDriveUploadUrl();
-  if (driverIds.some((did) => (listagemMetodoByDriver[did] || 'manual') === 'pdf' && listagemUploadsByDriver[did]) && !driveUrl) {
-    toast('⚠️ Google Drive ainda não está configurado. Não é possível enviar o PDF da listagem.', true); return;
-  }
   if (!driveUrl) {
     toast('⚠️ Google Drive ainda não configurado (peça pro Admin configurar em Cooperativas) - listagem registrada só no sistema.', true);
-  } else if (!window.jspdf && driverIds.some((did) => (listagemMetodoByDriver[did] || 'manual') !== 'pdf')) {
+  } else if (!window.jspdf) {
     toast('⚠️ Não foi possível gerar o PDF da listagem (verifique sua internet) - listagem registrada só no sistema.', true);
   } else {
     const { data: { session } } = await sb.auth.getSession();
     if (!session?.access_token) { toast('⚠️ Sua sessão expirou. Entre novamente antes de enviar a listagem.', true); return; }
     for (const did of driverIds) {
       try {
-        const method = listagemMetodoByDriver[did] || 'manual';
-        const arquivoEnviado = listagemUploadsByDriver[did];
-        if (method === 'pdf' && !arquivoEnviado) continue; // PDF já está no Drive.
-        const blob = method === 'pdf' ? arquivoEnviado : gerarListagemPdf(trip, did);
+        const blob = gerarListagemPdf(trip, did);
         if (!blob) continue;
         const base64 = await blobToBase64(blob);
         const v = driverVehicle(did);
         const unidadeSlug = slugify(schoolName(trip.school_id) || trip.requester_name);
-        const filename = method === 'pdf' ? `${trip.trip_date}_${unidadeSlug}_${v ? v.plate : did}_${arquivoEnviado.name}` : `${trip.trip_date}_${unidadeSlug}_${v ? v.plate : did}.pdf`;
+        const filename = `${trip.trip_date}_${unidadeSlug}_${v ? v.plate : did}.pdf`;
         const respJson = await uploadToGoogleDrive(driveUrl, { excursionId: id, filename, mimeType: 'application/pdf', fileBase64: base64, accessToken: session.access_token });
         await registrarListagemFile(id, did, filename, respJson.fileId, respJson.url);
       } catch (err) {
@@ -6533,13 +6390,6 @@ function clearRelatorioFilters() {
   ['relFiltroInicio', 'relFiltroFim'].forEach((id) => { const field = document.getElementById(id); if (field) field.value = ''; });
   const unidade = document.getElementById('relFiltroUnidade'); if (unidade) unidade.value = '';
   const motorista = document.getElementById('relFiltroMotorista'); if (motorista) motorista.value = '';
-  renderEscalaPreview();
-}
-
-function filtrarEscalaHoje() {
-  const hoje = fmtDate(new Date());
-  document.getElementById('relFiltroInicio').value = hoje;
-  document.getElementById('relFiltroFim').value = hoje;
   renderEscalaPreview();
 }
 
