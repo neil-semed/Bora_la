@@ -3144,11 +3144,13 @@ function cardMarkCarroHTML(l, mostrarMotorista = false) {
   // antiga, antes dessa atualização), mantém o comportamento de sempre.
   const destacarIda = l.sentido === 'ida';
   const destacarVolta = l.sentido === 'volta';
-  const rotuloHorario = destacarIda
-    ? '<strong class="text-blue-700">Ida</strong>'
-    : destacarVolta
-      ? '<strong class="text-blue-700">Volta</strong>'
-      : 'Saída → Retorno';
+  // PEDIDO DO USUÁRIO (o <strong> sozinho só deixava em negrito, do mesmo
+  // tamanho pequeno do rótulo "Saída → Retorno" - queria destaque de
+  // verdade): quando é só Ida ou só Volta, o rótulo passa a usar a MESMA
+  // classe do horário ao lado (text-base font-bold), não mais o texto
+  // cinza pequeno.
+  const classeRotulo = (destacarIda || destacarVolta) ? 'text-base font-bold text-blue-700' : 'text-slate-500 text-xs';
+  const rotuloHorario = destacarIda ? 'Ida' : destacarVolta ? 'Volta' : 'Saída → Retorno';
   const horaSaidaHTML = destacarIda ? `<u>${horaComH(l.hora_saida)}</u>` : horaComH(l.hora_saida);
   const horaRetornoHTML = l.hora_retorno ? (destacarVolta ? `<u>${horaComH(l.hora_retorno)}</u>` : horaComH(l.hora_retorno)) : '';
   return `
@@ -3159,7 +3161,7 @@ function cardMarkCarroHTML(l, mostrarMotorista = false) {
       </div>
       <div class="p-4 space-y-2.5 text-sm">
         <div class="flex items-center justify-between gap-2">
-          <span class="text-slate-500 text-xs">${rotuloHorario}</span>
+          <span class="${classeRotulo}">${rotuloHorario}</span>
           <span class="font-bold text-base text-slate-800">${horaSaidaHTML}${horaRetornoHTML ? ' → ' + horaRetornoHTML : ''}</span>
         </div>
         <div>
