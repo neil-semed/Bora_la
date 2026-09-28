@@ -104,6 +104,22 @@ async function ehAdminMarkCarro(callerId: string, token: string): Promise<boolea
   return Array.isArray(linhas) && linhas[0]?.tipo === 'admin';
 }
 
+// Normaliza CNH (só dígitos) e e-mail/nome (trim + minúsculo/maiúsculo) pra
+// comparar entre os 2 sistemas sem cair em falso-negativo por formatação
+// (espaço sobrando, pontuação na CNH, maiúscula/minúscula diferente) - CASO
+// REAL: motorista Cristiano tinha registro de KM no Bora Lá mas sumia da
+// tela "Gerenciar KM" do MarkCarro porque a comparação de CNH/e-mail era
+// exata demais (string idêntica caractere a caractere).
+function normalizarCnh(v: any): string {
+  return String(v || '').replace(/\D/g, '');
+}
+function normalizarEmail(v: any): string {
+  return String(v || '').trim().toLowerCase();
+}
+function normalizarNome(v: any): string {
+  return String(v || '').trim().toUpperCase().replace(/\s+/g, ' ');
+}
+
 function mapRegistro(log: any, email: string) {
   if (!log) return null;
   return {
@@ -127,18 +143,32 @@ function mapRegistro(log: any, email: string) {
 // aproveita o cadastro existente E grava o e-mail nele (só na primeira vez),
 // pra da próxima vez achar direto pelo e-mail.
 async function buscarDriverExistente(admin: any, email: string, cnh?: string | null): Promise<string | null> {
+  // 1) e-mail, sem diferenciar maiúscula/minúscula nem espaço nas pontas
+  //    (ilike sem "%" é comparação exata, só que case-insensitive).
   const { data: porEmail, error: e1 } = await admin
-    .from('drivers').select('id').eq('email', email).maybeSingle();
+    .from('drivers').select('id').ilike('email', normalizarEmail(email)).maybeSingle();
   if (e1) throw new Error(e1.message);
   if (porEmail) return porEmail.id;
 
-  if (cnh) {
-    const { data: porCnh, error: e2 } = await admin
-      .from('drivers').select('id, email').eq('cnh', cnh).maybeSingle();
+  // 2) CNH, comparando só os dígitos (ignora pontuação/espaço/formatação
+  //    diferente entre os 2 sistemas) - busca todos os motoristas com CNH
+  //    preenchida e compara normalizado em memória, já que o Postgres não
+  //    tem como fazer esse "só dígitos" direto no filtro.
+  const cnhAlvo = normalizarCnh(cnh);
+  if (cnhAlvo) {
+    const { data: candidatos, error: e2 } = await admin
+      .from('drivers').select('id, email, cnh').not('cnh', 'is', null);
     if (e2) throw new Error(e2.message);
-    if (porCnh) {
-      if (!porCnh.email) await admin.from('drivers').update({ email }).eq('id', porCnh.id);
-      return porCnh.id;
+    const achado = (candidatos || []).find((d: any) => normalizarCnh(d.cnh) === cnhAlvo);
+    if (achado) {
+      // Preenche/corrige o e-mail se estiver vazio ou diferente do atual -
+      // mesma CNH = mesma pessoa, então o e-mail mais recente do MarkCarro
+      // é o certo (cobre e-mail trocado ou cadastrado com diferença de
+      // formatação da primeira vez).
+      if (normalizarEmail(achado.email) !== normalizarEmail(email)) {
+        await admin.from('drivers').update({ email: normalizarEmail(email) }).eq('id', achado.id);
+      }
+      return achado.id;
     }
   }
   return null;
@@ -269,7 +299,7 @@ Deno.serve(async (req) => {
       if (!(await ehAdminMarkCarro(caller.id, token))) return json({ error: 'Só administradores podem listar todos os registros.' }, 403);
 
       const { data: logs, error } = await admin
-        .from('driver_km_logs').select('*, drivers(id, email, cnh)').order('log_date', { ascending: false });
+        .from('driver_km_logs').select('*, drivers(id, email, cnh, name)').order('log_date', { ascending: false });
       if (error) return json({ error: error.message }, 400);
 
       // BUG CORRIGIDO (mesmo espírito do buscarDriverExistente por CNH acima,
@@ -280,29 +310,62 @@ Deno.serve(async (req) => {
       // Lá (caso do Cristiano). Agora, pra quem não tem e-mail, busca o e-mail
       // no MarkCarro pela CNH (chave que já existia nos 2 sistemas) e completa
       // o cadastro aqui (backfill), em vez de simplesmente esconder a linha.
-      const semEmail = (logs || []).filter((l: any) => !l.drivers?.email && l.drivers?.cnh);
-      const cnhsFaltando = [...new Set(semEmail.map((l: any) => l.drivers.cnh))];
-      const emailPorCnh: Record<string, string> = {};
-      if (cnhsFaltando.length) {
-        const filtro = cnhsFaltando.map((c: string) => encodeURIComponent(c)).join(',');
-        const resp = await fetch(`${MARKCARRO_SUPABASE_URL}/rest/v1/profiles?select=email,cnh&cnh=in.(${filtro})`, {
+      //
+      // CORREÇÃO 2 (o caso do Cristiano continuava sumindo mesmo com esse
+      // backfill): a comparação de CNH era exata-caractere-por-caractere
+      // (via filtro "in." do Postgrest) - qualquer diferença de formatação
+      // (ponto, espaço, zero à esquerda) entre a CNH digitada no MarkCarro e
+      // a CNH cadastrada no Bora Lá fazia o backfill não achar ninguém, e o
+      // motorista sumia pra sempre da lista. Agora: 1) busca TODOS os perfis
+      // do MarkCarro com CNH preenchida (não só um filtro exato) e compara só
+      // os dígitos; 2) se ainda assim não achar (CNH vazia nos dois lados, ou
+      // realmente diferente), tenta um último critério - nome completo igual
+      // (maiúsculo, sem espaço duplicado) - já que motorista sem e-mail nem
+      // CNH batendo, mas com o MESMO nome cadastrado nos 2 sistemas, é o
+      // mesmo caso Cristiano relatado.
+      const semEmail = (logs || []).filter((l: any) => !l.drivers?.email);
+      if (semEmail.length) {
+        const resp = await fetch(`${MARKCARRO_SUPABASE_URL}/rest/v1/profiles?select=email,cnh,nome&or=(cnh.not.is.null,nome.not.is.null)`, {
           headers: { apikey: MARKCARRO_ANON_KEY, Authorization: `Bearer ${token}` },
         }).catch(() => null);
+
         if (resp?.ok) {
-          const perfis = await resp.json().catch(() => []);
-          (perfis || []).forEach((p: any) => { if (p.cnh && p.email) emailPorCnh[p.cnh] = p.email; });
-          for (const [cnh, email] of Object.entries(emailPorCnh)) {
-            const driverId = semEmail.find((l: any) => l.drivers.cnh === cnh)?.drivers?.id;
-            if (driverId) await admin.from('drivers').update({ email }).eq('id', driverId);
+          const perfis: any[] = await resp.json().catch(() => []);
+          const emailPorCnh: Record<string, string> = {};
+          const emailPorNome: Record<string, string> = {};
+          perfis.forEach((p: any) => {
+            const cnhNorm = normalizarCnh(p.cnh);
+            if (cnhNorm && p.email) emailPorCnh[cnhNorm] = p.email;
+            const nomeNorm = normalizarNome(p.nome);
+            if (nomeNorm && p.email) emailPorNome[nomeNorm] = p.email;
+          });
+
+          const driversResolvidos: Record<string, string> = {}; // driver.id -> email
+          for (const l of semEmail) {
+            const driverId = l.drivers?.id;
+            if (!driverId || driversResolvidos[driverId]) continue;
+            const cnhNorm = normalizarCnh(l.drivers?.cnh);
+            const nomeNorm = normalizarNome(l.drivers?.name);
+            const emailAchado = (cnhNorm && emailPorCnh[cnhNorm]) || (nomeNorm && emailPorNome[nomeNorm]) || null;
+            if (emailAchado) driversResolvidos[driverId] = emailAchado;
           }
+
+          for (const [driverId, email] of Object.entries(driversResolvidos)) {
+            await admin.from('drivers').update({ email }).eq('id', driverId);
+          }
+
+          (logs || []).forEach((l: any) => {
+            if (!l.drivers?.email && driversResolvidos[l.drivers?.id]) {
+              l.drivers.email = driversResolvidos[l.drivers.id];
+            }
+          });
         }
       }
 
       return json({
         data: (logs || [])
-          .map((l: any) => ({ log: l, email: l.drivers?.email || emailPorCnh[l.drivers?.cnh] || null }))
-          .filter((x: any) => x.email)
-          .map((x: any) => mapRegistro(x.log, x.email)),
+          .filter((l: any) => l.drivers?.email)
+          .map((l: any) => mapRegistro(l, l.drivers.email)),
       });
     }
 
