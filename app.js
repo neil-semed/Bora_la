@@ -6181,16 +6181,13 @@ async function confirmSaveDriver() {
     cooperative: coop ? coop.name : null, // mantido por compatibilidade com telas antigas
     vehicle_id: vehicleId,
   };
-  // Um veículo fica associado a apenas um motorista. Ao reaproveitá-lo, removemos
-  // o vínculo anterior antes de salvar o novo, sem apagar nenhum cadastro.
-  if (vehicleId) {
-    if (sb) {
-      let clearQuery = sb.from('drivers').update({ vehicle_id: null }).eq('vehicle_id', vehicleId);
-      if (wasEdit) clearQuery = clearQuery.neq('id', editDriverId);
-      const { error: clearError } = await clearQuery;
-      if (clearError) { toast('❌ ' + clearError.message, true); return; }
-    } else drivers.filter((d) => d.vehicle_id === vehicleId && (!wasEdit || d.id !== editDriverId)).forEach((d) => { d.vehicle_id = null; });
-  }
+  // PEDIDO DO USUÁRIO ("dar permissão para vincular 2 ou mais motoristas a
+  // um veículo"): antes, salvar um motorista com um veículo desvinculava
+  // automaticamente qualquer outro motorista que já estivesse nesse mesmo
+  // veículo (só permitia 1 motorista por veículo). Removido - agora vários
+  // motoristas podem apontar pro mesmo vehicle_id ao mesmo tempo (a tela de
+  // Veículos já mostrava a lista de "Motorista(s)" no plural, preparada pra
+  // isso). Nada é desvinculado automaticamente mais.
   if (wasEdit) {
     if (sb) {
       const { error } = await sb.from('drivers').update(patch).eq('id', editDriverId);
