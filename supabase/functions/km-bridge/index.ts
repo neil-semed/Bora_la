@@ -40,6 +40,7 @@
 //   atualizar      { id, data?, km_inicial?, km_final?, ajustado? }  (admin, ou o próprio dono do registro)
 //   excluir        { id }                                            (só admin)
 //   listar_todos   {}                                                (só admin)
+//   vincular_motorista { driver_id, email }                          (só admin)
 //
 // Sempre devolve os registros no MESMO formato que o MarkCarro já usava
 // (tabela antiga registros_km), pra não precisar mexer nas telas:
@@ -362,11 +363,54 @@ Deno.serve(async (req) => {
         }
       }
 
+      // CORREÇÃO 3 (a tentativa automática de CNH/nome pode não bater mesmo
+      // assim - motorista sem CNH cadastrada em nenhum dos 2 sistemas, ou
+      // nome digitado com pequena diferença entre eles): em vez de continuar
+      // escondendo a linha (o comportamento de antes, que é exatamente o que
+      // fez o Cristiano continuar sumindo mesmo depois da correção 2), agora
+      // ela aparece na lista mesmo sem casar automático, marcada como
+      // "_nao_vinculado" - a tela Gerenciar KM mostra um seletor pra admin
+      // escolher manualmente qual condutor do MarkCarro é aquele motorista, e
+      // essa escolha grava o e-mail de vez (ação "vincular_motorista" abaixo)
+      // - depois disso o casamento automático por e-mail passa a funcionar
+      // sempre, sem precisar repetir a escolha.
       return json({
-        data: (logs || [])
-          .filter((l: any) => l.drivers?.email)
-          .map((l: any) => mapRegistro(l, l.drivers.email)),
+        data: (logs || []).map((l: any) =>
+          l.drivers?.email
+            ? mapRegistro(l, l.drivers.email)
+            : {
+                id: l.id,
+                email_condutor: null,
+                data: l.log_date,
+                km_inicial: l.odometer_start,
+                km_final: l.odometer_end,
+                ajustado: !!l.ajustado,
+                created_at: l.created_at,
+                _nao_vinculado: true,
+                _driver_id: l.drivers?.id || null,
+                _nome_bora_la: l.drivers?.name || null,
+              }
+        ),
       });
+    }
+
+    if (action === 'vincular_motorista') {
+      // Admin escolhe manualmente, pela tela Gerenciar KM, qual condutor do
+      // MarkCarro corresponde a um motorista do Bora Lá que não casou
+      // automático (ver comentário na ação "listar_todos" acima).
+      if (!(await ehAdminMarkCarro(caller.id, token))) return json({ error: 'Só administradores podem vincular motoristas.' }, 403);
+
+      const { driver_id, email } = body;
+      if (!driver_id || !email) return json({ error: 'Informe o motorista e o condutor.' }, 400);
+
+      const { data: driverAtual, error: eAtual } = await admin
+        .from('drivers').select('id').eq('id', driver_id).maybeSingle();
+      if (eAtual) return json({ error: eAtual.message }, 400);
+      if (!driverAtual) return json({ error: 'Motorista não encontrado.' }, 404);
+
+      const { error } = await admin.from('drivers').update({ email: normalizarEmail(email) }).eq('id', driver_id);
+      if (error) return json({ error: error.message }, 400);
+      return json({ ok: true });
     }
 
     return json({ error: 'Ação inválida.' }, 400);
