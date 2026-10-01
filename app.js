@@ -5544,6 +5544,8 @@ function onWRecorrenciaChange() {
   const datasEspecificas = recorrencia === 'datas_adicionais';
   document.getElementById('wRecorrenciaDetalhes').classList.toggle('hidden', recorrencia === 'unico');
   document.getElementById('wRecorrenciaPadrao')?.classList.toggle('hidden', datasEspecificas);
+  document.getElementById('wDatasAdicionaisBox')?.classList.toggle('hidden', !datasEspecificas);
+  if (!datasEspecificas) document.getElementById('wDatasRecorrencia').innerHTML = '';
   if (datasEspecificas && !selectedRecurrenceDates().length) addRecurrenceDateField();
 }
 
@@ -5555,7 +5557,7 @@ function addFinanceItemRow() {
   const box = document.getElementById('wFinanceItems');
   if (!box) return;
   const row = document.createElement('div');
-  row.className = 'grid grid-cols-[1fr_110px_140px_34px] gap-2';
+  row.className = 'grid grid-cols-[1fr_64px_82px_28px] gap-2';
   row.innerHTML = '<input data-finance-description placeholder="Descrição" class="rounded-lg border px-3 py-2" /><input data-finance-quantity type="number" min="0" placeholder="0" class="rounded-lg border px-3 py-2" /><input data-finance-value inputmode="decimal" placeholder="0,00" class="rounded-lg border px-3 py-2" /><button type="button" onclick="this.parentElement.remove()" class="rounded-lg text-red-600" title="Remover item">×</button>';
   box.appendChild(row);
 }
@@ -5698,7 +5700,7 @@ function resetWizard() {
   toggleFinanceFields();
   const unico = document.querySelector('input[name="wRecorrencia"][value="unico"]');
   if (unico) unico.checked = true;
-  document.getElementById('wRecorrenciaDetalhes').classList.add('hidden');
+  onWRecorrenciaChange();
   document.querySelectorAll('input[name="wDiaSemana"]').forEach((el) => { el.checked = false; });
   document.getElementById('wRecorrenciaFim').value = '';
   document.getElementById('wDatasRecorrencia').innerHTML = '';
