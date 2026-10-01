@@ -2731,7 +2731,7 @@ function renderAgenda() {
         acoes = `<span class="text-xs text-orange-500" title="${a.cancel_reason}">Cancelada ⓘ</span>`;
       }
       if (isAgendaEditor && (a.situacao === 'cancelada' || a.admin_decision === 'reprovada' || a.status === 'rejected')) {
-        const reativar = `<button onclick="reactivateExcursion('${a.id}')" class="text-indigo-600 hover:text-indigo-800 text-xs font-medium ml-2">↻ Reativar</button>`;
+        const reativar = `<button onclick="reactivateExcursion('${a.id}')" class="ml-2 rounded bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-200">↻ Reativar</button>`;
         acoes = acoes.includes('text-slate-300') ? reativar : acoes + reativar;
       }
       if (podeCancelar) {
@@ -5541,7 +5541,10 @@ function onWEscolaChange() {
 
 function onWRecorrenciaChange() {
   const recorrencia = document.querySelector('input[name="wRecorrencia"]:checked').value;
+  const datasEspecificas = recorrencia === 'datas_adicionais';
   document.getElementById('wRecorrenciaDetalhes').classList.toggle('hidden', recorrencia === 'unico');
+  document.getElementById('wRecorrenciaPadrao')?.classList.toggle('hidden', datasEspecificas);
+  if (datasEspecificas && !selectedRecurrenceDates().length) addRecurrenceDateField();
 }
 
 function toggleFinanceFields() {
@@ -5916,7 +5919,9 @@ function renderResumo() {
     const dias = Array.from(document.querySelectorAll('input[name="wDiaSemana"]:checked'))
       .map((el) => ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][parseInt(el.value)]).join(', ');
     const fim = document.getElementById('wRecorrenciaFim').value;
-    recorrenciaTxt = `Continuado ${recorrencia} - ${dias || 'nenhum dia escolhido'}, até ${fim ? new Date(fim + 'T00:00').toLocaleDateString('pt-BR') : '-'}`;
+    recorrenciaTxt = recorrencia === 'datas_adicionais'
+      ? 'Repetição em datas específicas'
+      : `Continuado ${recorrencia} - ${dias || 'nenhum dia escolhido'}, até ${fim ? new Date(fim + 'T00:00').toLocaleDateString('pt-BR') : '-'}`;
     const extras = selectedRecurrenceDates();
     if (extras.length) recorrenciaTxt += ` · datas adicionais: ${extras.map((d) => new Date(d + 'T00:00').toLocaleDateString('pt-BR')).join(', ')}`;
   }
@@ -6179,18 +6184,24 @@ function renderVeiculos() {
     grid.innerHTML = '<p class="text-sm text-slate-500 col-span-full text-center py-8">Nenhum veículo cadastrado</p>';
     return;
   }
-  grid.innerHTML = vehicles.map((v) => `
+  grid.innerHTML = vehicles.map((v) => {
+    const tipo = String(v.type || '').toLowerCase();
+    const ehVan = /van|utilit.rio|sprinter/.test(tipo);
+    const icon = ehVan ? 'car-front' : 'bus-front';
+    const iconBg = ehVan ? 'bg-violet-100' : 'bg-sky-100';
+    const iconColor = ehVan ? 'text-violet-700' : 'text-sky-700';
+    return `
     <div class="bg-white rounded-xl border border-slate-200 p-5 card-hover">
       <div class="flex items-start justify-between mb-3">
-        <div class="w-12 h-12 rounded-lg bg-emerald-100 flex items-center justify-center">
-          <i data-lucide="bus" class="w-6 h-6 text-emerald-600"></i>
+        <div class="w-12 h-12 rounded-lg ${iconBg} flex items-center justify-center">
+          <i data-lucide="${icon}" class="w-6 h-6 ${iconColor}"></i>
         </div>
         <div class="flex items-center gap-2">
           <span class="text-base bg-slate-100 px-2 py-1 rounded font-mono font-bold">${v.plate}</span>
           ${podeEditar ? `<button onclick="openVehicleModal('${v.id}')" class="text-xs text-emerald-600 hover:text-emerald-800">Editar</button>` : ''}
         </div>
       </div>
-      <h3 class="font-semibold text-slate-800 capitalize"><i data-lucide="bus-front" class="w-4 h-4 inline text-teal-600"></i> ${(v.type || '').replace('-', ' ')}</h3>
+      <h3 class="font-semibold text-slate-800 capitalize"><i data-lucide="${icon}" class="w-4 h-4 inline ${iconColor}"></i> ${(v.type || '').replace('-', ' ')}</h3>
       <p class="text-sm text-slate-500">${v.cooperative || '-'}</p>
       ${(() => { const ds = drivers.filter((item) => item.vehicle_id === v.id); return ds.length ? `<div class="mt-2 mb-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700"><strong class="text-indigo-700">Motorista(s):</strong>${ds.map((d) => `<br>${escapeHtml(d.name)} · ${escapeHtml(d.phone || 'não informado')}`).join('')}</div>` : '<p class="mb-3 text-xs text-slate-400">Sem motorista vinculado.</p>'; })()}
       <div class="flex items-center justify-between text-sm border-t border-slate-100 pt-3">
@@ -6203,7 +6214,8 @@ function renderVeiculos() {
         </span>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
   safeIcons();
 }
 
@@ -6862,7 +6874,7 @@ async function renderRelatorioPreview() {
   const rows = await relatorioLinhas();
   if (!rows.length) { box.innerHTML = '<p class="rounded-lg bg-slate-50 p-5 text-center text-sm text-slate-500">Nenhum registro encontrado para os filtros selecionados.</p>'; return; }
   const headers = Object.keys(rows[0]);
-  box.innerHTML = `${resumoRelatorioHtml(tipo,rows,relatorioFiltroBase())}<div class="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"><div><p class="text-[11px] font-bold uppercase tracking-wide text-slate-500">Resultados do relatório</p><h4 class="text-base font-bold text-slate-900">${escapeHtml(tituloRelatorio())}</h4></div><span class="rounded-full bg-slate-800 px-3 py-1 text-xs font-bold text-white">${rows.length} registro(s)</span></div><div class="overflow-x-auto rounded-xl border border-slate-300"><table class="w-full min-w-[900px] text-left text-xs"><thead><tr style="background:#0f172a;color:#ffffff">${headers.map((h) => `<th style="background:#0f172a;color:#ffffff;border:1px solid #334155;padding:0.65rem 0.5rem;font-weight:700">${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr class="odd:bg-white even:bg-slate-50">${headers.map((h) => `<td class="border px-2 py-2 align-top">${escapeHtml(String(r[h] ?? '-'))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  box.innerHTML = `${resumoRelatorioHtml(tipo,rows,relatorioFiltroBase())}<div class="mb-3 text-sm font-semibold text-slate-800">${escapeHtml(tituloRelatorio())} <span class="font-normal text-slate-500">· ${rows.length} registro(s)</span></div><div class="overflow-x-auto rounded-xl border border-slate-300"><table class="w-full min-w-[900px] text-left text-xs"><thead><tr style="background:#0f172a;color:#ffffff">${headers.map((h) => `<th style="background:#0f172a;color:#ffffff;border:1px solid #334155;padding:0.65rem 0.5rem;font-weight:700">${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr class="odd:bg-white even:bg-slate-50">${headers.map((h) => `<td class="border px-2 py-2 align-top">${escapeHtml(String(r[h] ?? '-'))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 
 async function exportRelatorioExcel() {
