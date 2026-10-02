@@ -1,26 +1,12 @@
-// ============================================================
-// BORA LÁ - EXCURSÕES | Edge Function: send-cooperativa-email
+// BORA LÁ - EXCURSÕES | envio transacional pelo Brevo.
 //
-// Manda um e-mail de verdade (sem precisar abrir o programa de e-mail de ninguém)
-// para destinatários autorizados pelo Admin, incluindo cooperativas, unidades e
-// responsáveis pela escala. Só quem já é Admin no app
-// consegue chamar essa função. Se a chave do serviço de e-mail (RESEND_API_KEY)
-// ainda não estiver configurada, esta função devolve um erro claro e o app cai
-// automaticamente pro fluxo manual de sempre (rascunho de e-mail pra você conferir
-// e clicar em enviar) - ninguém fica travado esperando isso ser configurado.
+// Secrets obrigatórios no Supabase:
+// - BREVO_API_KEY: chave criada em Brevo > SMTP & API > API Keys.
+// - BREVO_FROM_EMAIL: remetente já verificado no Brevo.
+// - BREVO_FROM_NAME: opcional; padrão "Bora Lá - Excursões / Semed Nova Lima".
 //
-// COMO PUBLICAR (uma vez só, veja o passo a passo completo no README):
-//   1. Crie uma conta grátis em https://resend.com e pegue uma API key
-//      (Dashboard -> API Keys -> Create API Key)
-//   2. Instale a Supabase CLI e faça login (supabase login), se ainda não tiver
-//   3. supabase link --project-ref <ref-do-seu-projeto>
-//   4. supabase secrets set RESEND_API_KEY=re_xxxxxxxx
-//   5. (opcional, recomendado) depois de verificar seu próprio domínio no Resend:
-//      supabase secrets set RESEND_FROM="Excursão Semed <excursao@seudominio.com.br>"
-//      Sem isso, os e-mails saem do remetente de testes do próprio Resend
-//      (onboarding@resend.dev) - funciona, mas identifica como "teste" pra quem recebe.
-//   6. supabase functions deploy send-cooperativa-email
-// ============================================================
+// A função preserva a autorização: somente administradores autenticados podem
+// disparar e-mails. O destinatário e a cópia são recebidos do próprio sistema.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -37,6 +23,13 @@ function json(body: unknown, status = 200) {
   });
 }
 
+function emails(value: unknown) {
+  return String(value || '')
+    .split(/[;,\n]+/)
+    .map((email) => email.trim())
+    .filter((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS });
   if (req.method !== 'POST') return json({ error: 'Método não suportado.' }, 405);
@@ -44,10 +37,10 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const resendKey = Deno.env.get('RESEND_API_KEY');
+    const brevoKey = Deno.env.get('BREVO_API_KEY');
+    const fromEmail = Deno.env.get('BREVO_FROM_EMAIL');
+    const fromName = Deno.env.get('BREVO_FROM_NAME') || 'Bora Lá - Excursões / Semed Nova Lima';
 
-    // 1) Confirma que quem está chamando é um Admin de verdade
     const authHeader = req.headers.get('Authorization') || '';
     const callerClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -58,33 +51,41 @@ Deno.serve(async (req) => {
     const { data: callerProfile } = await callerClient
       .from('profiles').select('role').eq('id', user.id).single();
     if (!callerProfile || callerProfile.role !== 'admin') {
-      return json({ error: 'Só administradores podem enviar e-mail automático pela aplicação.' }, 403);
+      return json({ error: 'Somente administradores podem enviar e-mails automáticos.' }, 403);
     }
 
-    if (!resendKey) {
-      return json({ error: 'RESEND_API_KEY não configurada neste projeto (veja o passo a passo no topo deste arquivo/README). Use o rascunho manual por enquanto.' }, 500);
+    if (!brevoKey || !fromEmail) {
+      return json({ error: 'Brevo não configurado. Cadastre BREVO_API_KEY e BREVO_FROM_EMAIL nos secrets do Supabase.' }, 500);
     }
 
-    // 2) Lê os dados do e-mail
     const body = await req.json();
-    const { to, subject, text, html, cc } = body || {};
-    if (!to || !subject || (!text && !html)) {
-      return json({ error: 'Faltam campos (to/subject e texto ou HTML).' }, 400);
+    const to = emails(body?.to);
+    const cc = emails(body?.cc);
+    const subject = String(body?.subject || '').trim();
+    const text = String(body?.text || '').trim();
+    const html = String(body?.html || '').trim();
+    if (!to.length || !subject || (!text && !html)) {
+      return json({ error: 'Faltam destinatário, assunto e conteúdo do e-mail.' }, 400);
     }
 
-    // 3) Envia via Resend (serviço de e-mail transacional)
-    const from = Deno.env.get('RESEND_FROM') || 'Bora Lá <onboarding@resend.dev>';
-    const resp = await fetch('https://api.resend.com/emails', {
+    const payload: Record<string, unknown> = {
+      sender: { email: fromEmail, name: fromName },
+      to: to.map((email) => ({ email })),
+      subject,
+      ...(text ? { textContent: text } : {}),
+      ...(html ? { htmlContent: html } : {}),
+      ...(cc.length ? { cc: cc.map((email) => ({ email })) } : {}),
+    };
+    const resp = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to: Array.isArray(to) ? to : [to], cc: cc ? (Array.isArray(cc) ? cc : [cc]) : undefined, subject, text: text || undefined, html: html || undefined }),
+      headers: { 'api-key': brevoKey, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(payload),
     });
-    const respJson = await resp.json().catch(() => ({}));
+    const result = await resp.json().catch(() => ({}));
     if (!resp.ok) {
-      return json({ error: respJson.message || `O Resend recusou o envio (HTTP ${resp.status}).` }, 502);
+      return json({ error: result.message || `O Brevo recusou o envio (HTTP ${resp.status}).` }, 502);
     }
-
-    return json({ ok: true, id: respJson.id });
+    return json({ ok: true, id: result.messageId || result.message_id || null });
   } catch (err) {
     return json({ error: String(err) }, 500);
   }
