@@ -6882,12 +6882,20 @@ function buildNotificacaoViagensText(rows) {
   return `Prezados(as),\n\nSolicitamos a confirmação da(s) viagem(ns) abaixo para a liberação do(s) veículo(s). Solicitamos atenção aos horários e à quantidade de passageiros.\n\n${linhas}\n\nAtenciosamente,\nBora Lá - Excursões / Semed Nova Lima`;
 }
 
+function notificacaoViagensFaviconUrl() {
+  try { return new URL('assets/favicon-512.png', window.location.href).href; }
+  catch (_) { return 'assets/favicon-512.png'; }
+}
+
 function buildNotificacaoViagensHtml(rows, somenteQuadro = false) {
+  const dataLabel = rows[0]?.trip_date
+    ? new Date(`${rows[0].trip_date}T00:00`).toLocaleDateString('pt-BR')
+    : '';
   const table = rows.length
-    ? `<table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><thead><tr style="background:#047857;color:#fff"><th style="padding:9px;border:1px solid #ddd">Saída</th><th style="padding:9px;border:1px solid #ddd">Retorno</th><th style="padding:9px;border:1px solid #ddd">Origem</th><th style="padding:9px;border:1px solid #ddd">Destino</th><th style="padding:9px;border:1px solid #ddd">Pass.</th><th style="padding:9px;border:1px solid #ddd">Motorista(s)</th></tr></thead><tbody>${rows.map((a) => `<tr><td style="padding:8px;border:1px solid #ddd">${escapeHtml(horaComH(a.departure_time))}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml(horaComH(a.return_time))}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml(originName(a))}${a.origin_acronym ? ` (${escapeHtml(a.origin_acronym)})` : ''}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml(a.destination || '-')}</td><td style="padding:8px;border:1px solid #ddd;text-align:center">${totalPassengers(a)}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml((a.driver_ids || []).map(driverLabel).join(' / ') || '-')}</td></tr>`).join('')}</tbody></table>`
+    ? `<table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><tbody>${rows.map((a, index) => `<tr style="background:${index % 2 ? '#f8fafc' : '#ffffff'}"><td style="width:82px;padding:10px 9px;border:1px solid #dbe2ea;font-weight:700;vertical-align:top;white-space:nowrap">${escapeHtml(horaComH(a.departure_time))}<br><span style="color:#64748b;font-weight:400">${escapeHtml(horaComH(a.return_time))}</span></td><td style="padding:10px 9px;border:1px solid #dbe2ea;vertical-align:top"><strong>${escapeHtml(originName(a))}${a.origin_acronym ? ` (${escapeHtml(a.origin_acronym)})` : ''}</strong><br><span style="color:#475569">→ ${escapeHtml(a.destination || '-')}</span></td><td style="width:58px;padding:10px 9px;border:1px solid #dbe2ea;text-align:center;vertical-align:top"><strong>${totalPassengers(a)}</strong><br><span style="color:#64748b;font-size:11px">pass.</span></td><td style="padding:10px 9px;border:1px solid #dbe2ea;vertical-align:top">${escapeHtml((a.driver_ids || []).map(driverLabel).join(' / ') || 'Motorista a definir')}</td></tr>`).join('')}</tbody></table>`
     : '<p style="padding:16px">Selecione ao menos uma origem com viagem escalada.</p>';
   if (somenteQuadro) return table;
-  return `<div style="font-family:Arial,sans-serif;color:#1f2937"><p>Prezados(as),</p><p>Solicitamos a confirmação da(s) viagem(ns) abaixo para a liberação do(s) veículo(s). Solicitamos atenção aos horários e à quantidade de passageiros.</p>${table}<p style="margin-top:18px">Atenciosamente,<br><strong>Bora Lá - Excursões / Semed Nova Lima</strong></p></div>`;
+  return `<div style="max-width:820px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.45"><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | Confirmação de viagens</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:3px;background:#facc15;margin:3px 0 14px"></div><p style="margin:0 0 8px"><strong>Data:</strong> ${escapeHtml(dataLabel || '-')} &nbsp;·&nbsp; <strong>Viagens:</strong> ${rows.length}</p><p style="margin:0 0 14px">Prezados(as),<br>Solicitamos a confirmação da(s) viagem(ns) abaixo para a liberação do(s) veículo(s). Solicitamos atenção aos horários e à quantidade de passageiros.</p>${table}<p style="margin:18px 0 0">Atenciosamente,<br><strong>Bora Lá - Excursões / Semed Nova Lima</strong></p></div>`;
 }
 
 function openNotificarViagensModal() {
@@ -6947,7 +6955,7 @@ function renderNotificarViagensModal(inicializarOrigens = true) {
   const semEmail = [...new Set(selecionadas.filter((a) => !emailUnidadeDaViagem(a)).map((a) => originName(a)))];
   const titulo = tituloNotificacaoViagens(data);
   const tabela = selecionadas.length
-    ? `<table class="w-full min-w-[680px] text-left text-xs"><thead><tr class="bg-emerald-700 text-white"><th class="px-3 py-2">Saída</th><th class="px-3 py-2">Retorno</th><th class="px-3 py-2">Origem</th><th class="px-3 py-2">Destino</th><th class="px-3 py-2">Passageiros</th><th class="px-3 py-2">Motorista(s)</th></tr></thead><tbody>${selecionadas.map((a) => `<tr class="border-b bg-white"><td class="px-3 py-2 font-bold">${horaComH(a.departure_time)}</td><td class="px-3 py-2 font-bold">${horaComH(a.return_time)}</td><td class="px-3 py-2">${escapeHtml(originName(a))}</td><td class="px-3 py-2">${escapeHtml(a.destination || '-')}</td><td class="px-3 py-2 text-center">${totalPassengers(a)}</td><td class="px-3 py-2">${escapeHtml((a.driver_ids || []).map(driverLabel).join(' / ') || '-')}</td></tr>`).join('')}</tbody></table>`
+    ? buildNotificacaoViagensHtml(selecionadas, true)
     : '<p class="rounded-lg bg-white p-4 text-center text-sm text-slate-500">Selecione ao menos uma origem com viagem escalada.</p>';
   const lista = document.getElementById('notificarViagensLista'); if (lista) lista.innerHTML = tabela;
   const tituloEl = document.getElementById('notificarViagensTitulo'); if (tituloEl) tituloEl.textContent = titulo;
