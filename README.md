@@ -1,5 +1,16 @@
 # 🚌 Bora Lá - Excursões
 
+## Atualização 31 — público-alvo, siglas e envio de escala
+
+- Os cards de Pendências mostram o **Público-alvo** para todos os perfis e a tela ganhou filtro por público.
+- Unidades têm campo **Sigla**, disponível no cadastro e na edição. A sigla também é preservada em novas solicitações.
+- Em **Relatórios → Notificar viagens**, as origens começam desmarcadas e há um botão para limpar a seleção.
+- As mensagens de confirmação e de escala são exibidas e enviadas em formato de tabela.
+- Os destinatários da escala ficam visíveis diretamente na janela **Enviar escala**.
+- Os envios de Relatórios são feitos somente pela aplicação; uma falha mostra a mensagem na tela e não abre Outlook.
+
+Para atualizar uma instalação existente, execute `supabase/migration_031_siglas_unidades.sql` no SQL Editor. Para habilitar o envio inteiramente pela aplicação, atualize e publique também a função `send-cooperativa-email` e mantenha os segredos `RESEND_API_KEY` e `RESEND_FROM` configurados.
+
 ## Atualização 28 — notificações, ATF e aprovação administrativa
 
 - O botão **Alertas** do aplicativo móvel do motorista volta a abrir o painel de notificações.

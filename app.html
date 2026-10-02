@@ -474,6 +474,7 @@
               <div class="screen-panel px-4 py-3 flex flex-wrap items-end gap-3">
                 <div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Data da viagem</label><input id="pendenciasFiltroData" type="date" onchange="renderPendencias()" class="px-3 py-2 border rounded-lg text-sm"></div>
                 <div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Tipo de pendência</label><select id="pendenciasFiltroTipo" onchange="renderPendencias()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todas</option><option value="novas">Novas solicitações</option><option value="validacao">Sem validação pedagógica</option><option value="proposta">Proposta aguardada</option><option value="listagem">Listagens</option><option value="canceladas">Canceladas pela unidade</option><option value="financeiro">Aporte financeiro</option></select></div>
+                <div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Público-alvo</label><select id="pendenciasFiltroPublico" onchange="renderPendencias()" class="min-w-52 px-3 py-2 border rounded-lg text-sm"><option value="">Todos os públicos</option></select></div>
                 <button onclick="limparFiltrosPendencias()" class="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Limpar seleção</button>
               </div>
               <div id="pendenciasFiltroUnidadeWrap" class="hidden screen-panel px-4 py-3">
@@ -677,13 +678,14 @@
                 </div>
                 <div id="wAgendamentoOrigemBox" class="hidden mb-4 space-y-3 bg-slate-50 border rounded-lg p-3">
                   <p class="text-xs text-slate-500">No agendamento recebido, a entidade/comitiva é a <strong>origem</strong> e a escola selecionada é o <strong>destino</strong>.</p>
-                  <div><label class="block text-sm font-medium mb-1">Nome da origem</label><input type="text" id="wOrigemNome" class="w-full px-3 py-2 border rounded-lg" /></div>
+                  <div class="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_150px]"><div><label class="block text-sm font-medium mb-1">Nome da origem</label><input type="text" id="wOrigemNome" class="w-full px-3 py-2 border rounded-lg" /></div><div><label class="block text-sm font-medium mb-1">Sigla</label><input type="text" id="wOrigemSigla" maxlength="20" class="w-full px-3 py-2 border rounded-lg uppercase" placeholder="Ex.: SEMED" /></div></div>
                   <div><label class="block text-sm font-medium mb-1">Endereço da origem</label><input type="text" id="wOrigemEndereco" class="w-full px-3 py-2 border rounded-lg" /></div>
                   <div><label class="block text-sm font-medium mb-1">Cidade da origem</label><input type="text" id="wOrigemCidade" placeholder="Ex: Belo Horizonte" class="w-full px-3 py-2 border rounded-lg" /></div>
                   <div><label class="block text-sm font-medium mb-1">E-mail da origem/comitiva</label><input type="email" id="wOrigemEmail" placeholder="contato@entidade.org.br" class="w-full px-3 py-2 border rounded-lg" /></div>
                 </div>
                 <label class="block text-sm font-medium mb-1">Unidade</label>
                 <select id="wEscola" onchange="onWEscolaChange()" class="w-full px-3 py-2 border rounded-lg"></select>
+                <div class="mt-3"><label class="block text-sm font-medium mb-1">Sigla da unidade</label><input id="wUnidadeSigla" type="text" readonly class="w-full px-3 py-2 border rounded-lg bg-slate-50 uppercase" placeholder="Preenchida pelo cadastro da unidade" /></div>
                 <p class="text-xs text-slate-400 mt-2">A unidade define quem poderá acompanhar esta solicitação.</p>
 
                 <div id="wOutraBox" class="hidden mt-4 space-y-3 bg-slate-50 border rounded-lg p-3">
@@ -692,6 +694,7 @@
                     <label class="block text-sm font-medium mb-1">Nome da unidade/solicitante</label>
                     <input type="text" id="wOutraNome" class="w-full px-3 py-2 border rounded-lg" />
                   </div>
+                  <div><label class="block text-sm font-medium mb-1">Sigla</label><input type="text" id="wOutraSigla" maxlength="20" oninput="document.getElementById('wUnidadeSigla').value=this.value.toUpperCase()" class="w-full px-3 py-2 border rounded-lg uppercase" placeholder="Ex.: OSC" /></div>
                   <div>
                     <label class="block text-sm font-medium mb-1">Endereço</label>
                     <input type="text" id="wOutraEndereco" class="w-full px-3 py-2 border rounded-lg" />
@@ -1103,6 +1106,7 @@
                 <table class="w-full text-left">
                   <thead>
                     <tr class="border-b border-slate-200 text-xs uppercase text-slate-500">
+                      <th class="px-4 py-2">Sigla</th>
                       <th class="px-4 py-2">Nome</th>
                       <th class="px-4 py-2">Tipo</th>
                       <th class="px-4 py-2">Endereço / Cidade</th>
@@ -1472,6 +1476,10 @@
     <div class="bg-white rounded-2xl p-6 max-w-md w-full">
       <h3 id="unidadeModalTitle" class="font-bold text-lg mb-4">🏫 Nova unidade</h3>
       <div class="space-y-3">
+        <div>
+          <label class="block text-sm font-medium mb-1">Sigla</label>
+          <input type="text" id="newUnidadeSigla" maxlength="20" class="w-full px-3 py-2 border rounded-lg text-sm uppercase" placeholder="Ex.: EMJB" />
+        </div>
         <div>
           <label class="block text-sm font-medium mb-1">Nome</label>
           <input type="text" id="newUnidadeNome" class="w-full px-3 py-2 border rounded-lg text-sm" />
@@ -1956,14 +1964,15 @@
     <div class="bg-white rounded-2xl p-6 max-w-xl w-full max-h-[85vh] overflow-y-auto">
       <h3 class="font-bold text-lg mb-1">✉️ Enviar escala</h3>
       <p id="escalaEmailPeriodo" class="text-sm text-slate-500 mb-4"></p>
-      <div id="escalaEmailsConfigWrap" class="hidden rounded-xl border border-violet-200 bg-violet-50 p-4 mb-4">
-        <label class="block text-sm font-bold text-violet-950 mb-1">Destinatários pré-configurados</label>
+      <div id="escalaEmailsConfigWrap" class="rounded-xl border border-violet-200 bg-violet-50 p-4 mb-4">
+        <label class="block text-sm font-bold text-violet-950 mb-1">Destinatários da escala</label>
         <p class="text-xs text-violet-800 mb-2">Informe um ou mais e-mails, separados por vírgula, ponto e vírgula ou uma linha por endereço.</p>
         <textarea id="escalaEmailsInput" rows="5" class="w-full rounded-lg border bg-white px-3 py-2 text-sm" placeholder="transporte@exemplo.gov.br&#10;gestor@exemplo.gov.br"></textarea>
         <div class="mt-3 flex justify-end gap-2"><button onclick="saveEscalaEmails()" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white">Salvar destinatários</button></div>
       </div>
       <div id="escalaEnvioResumo" class="rounded-xl border bg-slate-50 p-4 text-sm text-slate-700"></div>
-      <div class="mt-4 flex items-center justify-between gap-2"><button onclick="openEscalaEmailsModal(true)" class="text-sm font-semibold text-violet-700 hover:text-violet-900">Editar destinatários</button><div class="flex gap-2"><button onclick="closeEscalaEmailsModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button><button id="btnConfirmarEnvioEscala" onclick="sendEscalaEmail()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">Enviar agora</button></div></div>
+      <div class="mt-4"><label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">Prévia da mensagem</label><div id="escalaMensagemPreview" class="overflow-x-auto rounded-xl border bg-white"></div></div>
+      <div class="mt-4 flex justify-end gap-2"><button onclick="closeEscalaEmailsModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button><button id="btnConfirmarEnvioEscala" onclick="sendEscalaEmail()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">Enviar pela aplicação</button></div>
     </div>
   </div>
 
@@ -1973,12 +1982,12 @@
       <div class="flex items-start justify-between gap-4"><div><h3 class="text-lg font-bold text-slate-900">✉️ Confirmar viagens</h3><p class="mt-1 text-sm text-slate-500">O envio é feito somente para o e-mail cadastrado da unidade solicitante.</p></div><button onclick="closeNotificarViagensModal()" class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Fechar">✕</button></div>
       <div class="mt-5 grid gap-4 lg:grid-cols-[190px_minmax(0,1fr)]">
         <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Data da viagem</label><input id="notificarViagensData" type="date" onchange="renderNotificarViagensModal()" class="w-full rounded-lg border px-3 py-2 text-sm"></div>
-        <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Origens</label><div id="notificarViagensOrigens" class="grid max-h-28 grid-cols-1 gap-2 overflow-y-auto rounded-lg border bg-slate-50 p-3 sm:grid-cols-2"></div></div>
+        <div><div class="mb-1 flex items-center justify-between gap-2"><label class="block text-xs font-bold uppercase tracking-wide text-slate-500">Origens</label><button type="button" onclick="limparNotificacaoViagensOrigens()" class="text-xs font-semibold text-red-600 hover:text-red-800">Limpar origens</button></div><div id="notificarViagensOrigens" class="grid max-h-28 grid-cols-1 gap-2 overflow-y-auto rounded-lg border bg-slate-50 p-3 sm:grid-cols-2"></div></div>
       </div>
       <div class="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4"><div class="mb-2 flex flex-wrap items-center justify-between gap-2"><strong id="notificarViagensTitulo" class="text-slate-800">Confirmar viagem(ns)</strong><span id="notificarViagensResumo" class="text-xs font-semibold text-slate-500"></span></div><div id="notificarViagensLista" class="overflow-x-auto"></div></div>
       <div class="mt-5 grid gap-4 lg:grid-cols-2"><div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Assunto</label><input id="notificarViagensAssunto" readonly class="w-full rounded-lg border bg-slate-50 px-3 py-2 text-sm"></div><div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Destinatários</label><div id="notificarViagensDestinatarios" class="rounded-lg border bg-slate-50 px-3 py-2 text-sm text-slate-700"></div></div></div>
-      <div class="mt-4"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Mensagem</label><textarea id="notificarViagensCorpo" rows="9" class="w-full rounded-lg border px-3 py-2 text-sm leading-6"></textarea></div>
-      <div class="mt-5 flex justify-end gap-2"><button onclick="closeNotificarViagensModal()" class="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">Cancelar</button><button id="btnEnviarNotificacaoViagens" onclick="sendNotificarViagensEmails()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Enviar e-mail</button></div>
+      <div class="mt-4"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Mensagem enviada</label><div id="notificarViagensMensagemPreview" class="overflow-x-auto rounded-xl border bg-white"></div></div>
+      <div class="mt-5 flex justify-end gap-2"><button onclick="closeNotificarViagensModal()" class="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">Cancelar</button><button id="btnEnviarNotificacaoViagens" onclick="sendNotificarViagensEmails()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Enviar pela aplicação</button></div>
     </div>
   </div>
 
@@ -2021,7 +2030,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=relatorios-notificar-viagens-20261001-054"></script>
+  <script src="app.js?v=publico-siglas-email-20261002-031"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */

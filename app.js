@@ -36,6 +36,7 @@ let motoristaHojeUsaProximaData = false;
 let cooperativas = [];
 let appSettings = { remetente_nome: '', remetente_email: '', escala_emails: '' };
 let notificacaoViagensOrigensSelecionadas = new Set();
+let ultimoErroEnvioAutomatico = '';
 let notifications = [];
 let unreadNotificationsSeen = null;
 // Áudio curto gravado para o Bora Lá. Instanciado uma única vez para evitar
@@ -3487,6 +3488,7 @@ function pendenciaCard(a, { badge, tone = 'amber', detail = '', action = '' } = 
         <div class="flex flex-wrap items-center gap-2"><span class="grid h-7 w-7 place-items-center rounded-lg ${toneClasses[tone] || toneClasses.amber}"><i data-lucide="${toneIcon[tone] || toneIcon.amber}" class="h-4 w-4"></i></span><span class="rounded-full px-2 py-0.5 text-xs font-bold ${toneClasses[tone] || toneClasses.amber}">${escapeHtml(badge || 'Pendente')}</span></div>
         <h3 class="mt-2 font-bold text-slate-800">${escapeHtml(originName(a))} <span class="text-slate-400">→</span> ${escapeHtml(a.destination || '-')}</h3>
         <div class="mt-1 text-xs text-slate-500">${pendenciaDataHora(a)}</div>
+        <p class="mt-1 text-xs font-semibold text-violet-700">Público-alvo: ${escapeHtml(publicoAlvoLabel(a.validation_target_id || a.publico_alvo))}</p>
         <p class="mt-1 text-sm text-slate-600">${escapeHtml(a.requester_name || schoolName(a.school_id) || 'Solicitante não identificado')} · ${totalPassengers(a)} passageiros</p>
         <p class="mt-1 text-xs text-slate-500">${escapeHtml(originAddress(a) || '-') } → ${escapeHtml(a.destination_address || a.city || '-')}</p>
         ${detail ? `<p class="mt-2 text-xs font-medium text-slate-600">${detail}</p>` : ''}
@@ -3535,10 +3537,28 @@ function populatePendenciasUnidadeFilter() {
   if ([...select.options].some((option) => option.value === atual)) select.value = atual;
 }
 
+function populatePendenciasPublicoFilter() {
+  const select = document.getElementById('pendenciasFiltroPublico');
+  if (!select) return;
+  const atual = select.value;
+  const opcoes = new Map();
+  validationTargets.filter((t) => t.active !== false).forEach((t) => opcoes.set(String(t.id), t.name));
+  Object.entries(PUBLICO_ALVO_LABELS).forEach(([id, nome]) => opcoes.set(id, nome));
+  agenda.forEach((a) => {
+    const id = a.validation_target_id || a.publico_alvo;
+    if (id && !opcoes.has(String(id))) opcoes.set(String(id), publicoAlvoLabel(id));
+  });
+  select.innerHTML = '<option value="">Todos os públicos</option>' + [...opcoes.entries()]
+    .sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'pt-BR'))
+    .map(([id, nome]) => `<option value="${escapeHtml(id)}">${escapeHtml(nome)}</option>`).join('');
+  if ([...select.options].some((option) => option.value === atual)) select.value = atual;
+}
+
 function limparFiltrosPendencias() {
   const data = document.getElementById('pendenciasFiltroData'); if (data) data.value = '';
   const unidade = document.getElementById('pendenciasFiltroUnidade'); if (unidade) unidade.value = '';
   const tipo = document.getElementById('pendenciasFiltroTipo'); if (tipo) tipo.value = '';
+  const publico = document.getElementById('pendenciasFiltroPublico'); if (publico) publico.value = '';
   renderPendencias();
 }
 
@@ -3563,12 +3583,16 @@ function renderPendencias() {
   const ehAdmin = currentUser.role === 'admin';
   const ehEscola = currentUser.role === 'escola';
   populatePendenciasUnidadeFilter();
+  populatePendenciasPublicoFilter();
   const unidadeFiltro = (!ehEscola && ['admin', 'pedagogia'].includes(currentUser.role))
     ? (document.getElementById('pendenciasFiltroUnidade')?.value || '') : '';
   const dataFiltro = document.getElementById('pendenciasFiltroData')?.value || '';
   const tipoFiltro = document.getElementById('pendenciasFiltroTipo')?.value || '';
+  const publicoFiltro = document.getElementById('pendenciasFiltroPublico')?.value || '';
   const recentes = agenda.slice()
-    .filter((a) => (!unidadeFiltro || a.school_id === unidadeFiltro) && (!dataFiltro || a.trip_date === dataFiltro))
+    .filter((a) => (!unidadeFiltro || a.school_id === unidadeFiltro)
+      && (!dataFiltro || a.trip_date === dataFiltro)
+      && (!publicoFiltro || String(a.validation_target_id || a.publico_alvo || '') === publicoFiltro))
     .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
   const abertas = recentes.filter((a) => !['cancelada', 'reprovada'].includes(a.situacao) && a.status !== 'rejected');
   const semValidacao = abertas.filter((a) => a.status === 'pending' && a.situacao === 'sem_validacao');
@@ -3601,7 +3625,13 @@ function renderPendencias() {
     if ((!tipoFiltro || tipoFiltro === 'financeiro') && sb) {
       sb.from('finance_requests').select('*').in('status', ['solicitado', 'em_analise']).order('created_at', { ascending: true }).then(({ data, error }) => {
         if (error || !data?.length) return;
-        const cards = data.map((f) => {
+        const cards = data.filter((f) => {
+          const trip = agenda.find((a) => a.finance_request_id === f.id) || agenda.find((a) => a.id === f.root_excursion_id);
+          return !!trip
+            && (!unidadeFiltro || trip.school_id === unidadeFiltro)
+            && (!dataFiltro || trip.trip_date === dataFiltro)
+            && (!publicoFiltro || String(trip.validation_target_id || trip.publico_alvo || '') === publicoFiltro);
+        }).map((f) => {
           const trip = agenda.find((a) => a.finance_request_id === f.id) || agenda.find((a) => a.id === f.root_excursion_id) || {};
           const itens = (f.items || []).map((i) => `${escapeHtml(i.description || 'Item')} · ${i.quantity || 0} · R$ ${Number(i.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`).join(' | ');
           return pendenciaCard(trip, { badge: 'Aporte financeiro', tone: 'amber', detail: `R$ ${Number(f.requested_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} · ${itens}`, action: `<button onclick="showScreen('financeiro')" class="shrink-0 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-bold text-orange-700">Abrir aporte</button>` });
@@ -4999,9 +5029,10 @@ async function confirmRejeitarListagem() {
 }
 
 // Tenta mandar o e-mail de verdade via Edge Function (Resend) - se não estiver
-// configurada ou der erro, devolve false e quem chamou cai pro rascunho manual de sempre.
+// configurada ou der erro, devolve false e preserva a mensagem para a própria tela.
 async function tentarEnviarEmailAutomatico(to, subject, text, cc = '', html = '') {
-  if (!sb) return false; // modo demonstração não tem como chamar uma Edge Function de verdade
+  ultimoErroEnvioAutomatico = '';
+  if (!sb) { ultimoErroEnvioAutomatico = 'O envio automático exige conexão com o Supabase.'; return false; }
   try {
     const { data: { session } } = await sb.auth.getSession();
     const url = localStorage.getItem('sb_url') || DEFAULT_SUPABASE_URL;
@@ -5012,8 +5043,10 @@ async function tentarEnviarEmailAutomatico(to, subject, text, cc = '', html = ''
       body: JSON.stringify({ to, subject, text, cc: cc || undefined, html: html || undefined }),
     });
     const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || json.error) ultimoErroEnvioAutomatico = json.error || `Falha no envio (HTTP ${resp.status}).`;
     return resp.ok && !json.error;
   } catch (err) {
+    ultimoErroEnvioAutomatico = err?.message || String(err);
     return false;
   }
 }
@@ -5472,7 +5505,7 @@ function populateEscolaSelect() {
   if (!sel) return;
 
   const visiveis = schools.filter((s) => s.active !== false || s.id === currentUser.schoolId);
-  sel.innerHTML = visiveis.map((s) => `<option value="${s.id}">${s.name}</option>`).join('')
+  sel.innerHTML = visiveis.map((s) => `<option value="${s.id}">${escapeHtml(s.name)}${s.acronym ? ' — ' + escapeHtml(s.acronym) : ''}</option>`).join('')
     + '<option value="__outra__">Outra (não cadastrada)</option>';
   if (currentUser.role === 'escola' && currentUser.schoolId) {
     sel.value = currentUser.schoolId;
@@ -5546,6 +5579,9 @@ function onWEscolaChange() {
   if (!escolaEl) return;
 
   const isOutra = escolaEl.value === '__outra__';
+  const escola = schools.find((s) => s.id === escolaEl.value);
+  const sigla = document.getElementById('wUnidadeSigla');
+  if (sigla) sigla.value = isOutra ? (document.getElementById('wOutraSigla')?.value || '').toUpperCase() : (escola?.acronym || '');
   const outraBox = document.getElementById('wOutraBox');
   if (outraBox) outraBox.classList.toggle('hidden', !isOutra);
 
@@ -5676,6 +5712,8 @@ function resetWizard() {
   document.getElementById('btnPrev').classList.add('hidden');
   document.getElementById('btnNext').textContent = 'Próximo →';
   document.getElementById('wOutraNome').value = '';
+  document.getElementById('wOutraSigla').value = '';
+  document.getElementById('wUnidadeSigla').value = '';
   document.getElementById('wOutraEndereco').value = '';
   document.getElementById('wOutraTelefone').value = '';
   document.getElementById('wOutraEmail').value = '';
@@ -5688,6 +5726,8 @@ function resetWizard() {
   const destinoEscolaEndereco = document.getElementById('wDestinoEscolaEndereco');
   const cidadeAgendamento = document.getElementById('wCidadeAgendamento');
   if (origemNome) origemNome.value = '';
+  const origemSigla = document.getElementById('wOrigemSigla');
+  if (origemSigla) origemSigla.value = '';
   if (origemEndereco) origemEndereco.value = '';
   if (destinoEscola) destinoEscola.value = '';
   if (destinoEscolaEndereco) destinoEscolaEndereco.value = '';
@@ -6071,6 +6111,7 @@ async function submitSolicitacao() {
     cityValue = document.getElementById('wCidadeAgendamento').value.trim();
     var originCityValue = document.getElementById('wOrigemCidade')?.value.trim() || null;
     var originEmailValue = document.getElementById('wOrigemEmail')?.value.trim() || null;
+    var originAcronymValue = document.getElementById('wOrigemSigla')?.value.trim().toUpperCase() || null;
   } else {
     originNameValue = isOutra ? (document.getElementById('wOutraNome').value.trim() || null) : (schoolName(escolaId) || null);
     originAddressValue = isOutra ? (document.getElementById('wOutraEndereco').value.trim() || null) : (schoolAddress(escolaId) || null);
@@ -6079,12 +6120,16 @@ async function submitSolicitacao() {
     cityValue = document.getElementById('wCidade').value.trim();
     var originCityValue = isOutra ? (document.getElementById('wOutraCidade')?.value.trim() || null) : (schools.find((x) => x.id === escolaId)?.city || null);
     var originEmailValue = isOutra ? (document.getElementById('wOutraEmail')?.value.trim() || null) : null;
+    var originAcronymValue = isOutra
+      ? (document.getElementById('wOutraSigla')?.value.trim().toUpperCase() || null)
+      : (schools.find((x) => x.id === escolaId)?.acronym || null);
   }
 
   const base = {
     school_id: isOutra ? null : (escolaId || null),
     solicitation_type: tipo,
     origin_name: originNameValue,
+    origin_acronym: originAcronymValue,
     origin_address: originAddressValue,
     origin_city: originCityValue,
     requester_address: isOutra ? (document.getElementById('wOutraEndereco').value || null) : null,
@@ -6464,7 +6509,7 @@ let editUnidadeId = null;
 function renderUnidades() {
   const tbody = document.getElementById('unidadesTable');
   if (schools.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-slate-500 text-sm">Nenhuma unidade cadastrada</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Nenhuma unidade cadastrada</td></tr>';
     return;
   }
   tbody.innerHTML = schools.map((s) => {
@@ -6476,7 +6521,8 @@ function renderUnidades() {
       : `<button onclick="toggleSchoolActive('${s.id}')" class="ml-2 text-xs text-red-600 hover:text-red-800">Bloquear</button>`;
     return `
     <tr class="hover:bg-slate-50">
-      <td class="px-4 py-3 text-sm font-medium">${s.name}</td>
+      <td class="px-4 py-3 text-sm font-bold text-blue-700">${escapeHtml(s.acronym || '-')}</td>
+      <td class="px-4 py-3 text-sm font-medium">${escapeHtml(s.name)}</td>
       <td class="px-4 py-3 text-sm">${s.tipo === 'entidade' ? 'Entidade' : 'Escola'}</td>
       <td class="px-4 py-3 text-sm">${s.address || '-'}<div class="text-xs text-slate-500">${s.city || '-'}</div></td>
       <td class="px-4 py-3 text-sm">${s.email || '-'}</td>
@@ -6521,6 +6567,7 @@ async function deleteSchoolSafely(id) {
 function openUnidadeModal(id) {
   editUnidadeId = id || null;
   const s = editUnidadeId ? schools.find((x) => x.id === editUnidadeId) : null;
+  document.getElementById('newUnidadeSigla').value = s ? (s.acronym || '') : '';
   document.getElementById('newUnidadeNome').value = s ? s.name : '';
   document.getElementById('newUnidadeTipo').value = s ? s.tipo : 'escola';
   document.getElementById('newUnidadeEndereco').value = s ? (s.address || '') : '';
@@ -6536,6 +6583,7 @@ async function confirmSaveUnidade() {
   const name = document.getElementById('newUnidadeNome').value.trim();
   if (!name) { toast('⚠️ Informe o nome da unidade.', true); return; }
   const patch = {
+    acronym: document.getElementById('newUnidadeSigla').value.trim().toUpperCase() || null,
     name,
     tipo: document.getElementById('newUnidadeTipo').value,
     address: document.getElementById('newUnidadeEndereco').value.trim() || null,
@@ -6756,10 +6804,11 @@ function openEscalaEmailsModal(configurar = true) {
   if (currentUser?.role !== 'admin') return;
   const rows = escalaRowsOrdenadas();
   document.getElementById('escalaEmailPeriodo').textContent = `Período selecionado: ${escalaPeriodoLabel()}`;
-  document.getElementById('escalaEmailsConfigWrap').classList.toggle('hidden', !configurar);
+  document.getElementById('escalaEmailsConfigWrap').classList.remove('hidden');
   document.getElementById('escalaEmailsInput').value = appSettings.escala_emails || '';
   document.getElementById('escalaEnvioResumo').innerHTML = `<strong>${rows.length}</strong> viagem(ns) confirmada(s) e escalada(s) serão enviadas para: <strong>${escalaDestinatarios().join(', ') || 'nenhum e-mail configurado'}</strong>.`;
-  document.getElementById('btnConfirmarEnvioEscala').classList.toggle('hidden', configurar);
+  document.getElementById('escalaMensagemPreview').innerHTML = buildEscalaEmailHtml(rows, true);
+  document.getElementById('btnConfirmarEnvioEscala').classList.remove('hidden');
   document.getElementById('escalaEmailsModal').classList.remove('hidden');
 }
 function openEnviarEscalaModal() { openEscalaEmailsModal(false); }
@@ -6775,12 +6824,20 @@ async function saveEscalaEmails() {
   appSettings.escala_emails = value;
   if (!sb) saveDemoData();
   toast('✅ Destinatários da escala salvos.');
-  closeEscalaEmailsModal();
+  openEscalaEmailsModal(false);
 }
 
 function buildEscalaEmailText(rows) {
   const linhas = rows.map((a, index) => `${index + 1}. ${new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR')} | ${horaComH(a.departure_time)} → ${horaComH(a.return_time)}\n${originName(a)} (${originAddress(a) || '-'}) → ${a.destination || '-'} (${a.destination_address || a.city || '-'})\nPSS: ${totalPassengers(a)} | ATF: ${ATF_LABELS[a.atf_status] || a.atf_status || '-'} | Motorista(s): ${(a.driver_ids || []).map(driverLabel).join(' / ') || '-'} `).join('\n\n');
   return `Bora Lá - Excursões / Semed Nova Lima\n\nESCALA DE TRANSPORTE\nPeríodo: ${escalaPeriodoLabel()}\n\n${linhas || 'Nenhuma viagem confirmada e escalada para o período selecionado.'}`;
+}
+
+function buildEscalaEmailHtml(rows, somenteQuadro = false) {
+  const table = rows.length
+    ? `<table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><thead><tr style="background:#5b21b6;color:#fff"><th style="padding:9px;border:1px solid #ddd">Data</th><th style="padding:9px;border:1px solid #ddd">Horário</th><th style="padding:9px;border:1px solid #ddd">Origem</th><th style="padding:9px;border:1px solid #ddd">Destino</th><th style="padding:9px;border:1px solid #ddd">Pass.</th><th style="padding:9px;border:1px solid #ddd">Motorista / veículo</th></tr></thead><tbody>${rows.map((a) => `<tr><td style="padding:8px;border:1px solid #ddd">${new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR')}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml(horaComH(a.departure_time))} → ${escapeHtml(horaComH(a.return_time))}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml(originName(a))}${a.origin_acronym ? ` (${escapeHtml(a.origin_acronym)})` : ''}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml(a.destination || '-')}</td><td style="padding:8px;border:1px solid #ddd;text-align:center">${totalPassengers(a)}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml((a.driver_ids || []).map(driverLabel).join(' / ') || '-')}</td></tr>`).join('')}</tbody></table>`
+    : '<p style="padding:16px">Nenhuma viagem confirmada e escalada no período.</p>';
+  if (somenteQuadro) return table;
+  return `<div style="font-family:Arial,sans-serif;color:#1f2937"><h2 style="color:#5b21b6">Escala de transporte</h2><p><strong>Período:</strong> ${escapeHtml(escalaPeriodoLabel())}</p>${table}<p style="margin-top:18px">Atenciosamente,<br><strong>Bora Lá - Excursões / Semed Nova Lima</strong></p></div>`;
 }
 async function sendEscalaEmail() {
   if (currentUser?.role !== 'admin') return;
@@ -6789,13 +6846,12 @@ async function sendEscalaEmail() {
   if (!rows.length) { toast('⚠️ Não há viagens confirmadas e escaladas para enviar.', true); return; }
   const subject = `Escala de transporte - ${escalaPeriodoLabel()}`;
   const text = buildEscalaEmailText(rows);
+  const html = buildEscalaEmailHtml(rows);
   const copia = appSettings.email_copia_setor || appSettings.remetente_email || '';
   let enviados = 0;
-  for (const email of destinatarios) if (await tentarEnviarEmailAutomatico(email, subject, text, copia && copia !== email ? copia : '')) enviados++;
+  for (const email of destinatarios) if (await tentarEnviarEmailAutomatico(email, subject, text, copia && copia !== email ? copia : '', html)) enviados++;
   if (enviados === destinatarios.length) { closeEscalaEmailsModal(); toast(`✉️ Escala enviada para ${enviados} destinatário(s).`); return; }
-  const pendentes = destinatarios.filter((email) => email !== copia);
-  window.open(`mailto:?bcc=${encodeURIComponent(pendentes.join(','))}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`, '_blank');
-  toast(`✉️ ${enviados} envio(s) automático(s). O restante foi preparado no seu e-mail.`);
+  toast(`❌ ${enviados} de ${destinatarios.length} envio(s) concluído(s). ${ultimoErroEnvioAutomatico || 'Verifique a função de envio e tente novamente.'}`, true);
 }
 
 // ============ NOTIFICAÇÃO DE VIAGENS ÀS UNIDADES ============
@@ -6826,6 +6882,14 @@ function buildNotificacaoViagensText(rows) {
   return `Prezados(as),\n\nSolicitamos a confirmação da(s) viagem(ns) abaixo para a liberação do(s) veículo(s). Solicitamos atenção aos horários e à quantidade de passageiros.\n\n${linhas}\n\nAtenciosamente,\nBora Lá - Excursões / Semed Nova Lima`;
 }
 
+function buildNotificacaoViagensHtml(rows, somenteQuadro = false) {
+  const table = rows.length
+    ? `<table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><thead><tr style="background:#047857;color:#fff"><th style="padding:9px;border:1px solid #ddd">Saída</th><th style="padding:9px;border:1px solid #ddd">Retorno</th><th style="padding:9px;border:1px solid #ddd">Origem</th><th style="padding:9px;border:1px solid #ddd">Destino</th><th style="padding:9px;border:1px solid #ddd">Pass.</th><th style="padding:9px;border:1px solid #ddd">Motorista(s)</th></tr></thead><tbody>${rows.map((a) => `<tr><td style="padding:8px;border:1px solid #ddd">${escapeHtml(horaComH(a.departure_time))}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml(horaComH(a.return_time))}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml(originName(a))}${a.origin_acronym ? ` (${escapeHtml(a.origin_acronym)})` : ''}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml(a.destination || '-')}</td><td style="padding:8px;border:1px solid #ddd;text-align:center">${totalPassengers(a)}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml((a.driver_ids || []).map(driverLabel).join(' / ') || '-')}</td></tr>`).join('')}</tbody></table>`
+    : '<p style="padding:16px">Selecione ao menos uma origem com viagem escalada.</p>';
+  if (somenteQuadro) return table;
+  return `<div style="font-family:Arial,sans-serif;color:#1f2937"><p>Prezados(as),</p><p>Solicitamos a confirmação da(s) viagem(ns) abaixo para a liberação do(s) veículo(s). Solicitamos atenção aos horários e à quantidade de passageiros.</p>${table}<p style="margin-top:18px">Atenciosamente,<br><strong>Bora Lá - Excursões / Semed Nova Lima</strong></p></div>`;
+}
+
 function openNotificarViagensModal() {
   if (currentUser?.role !== 'admin') { toast('⚠️ Apenas o perfil Admin pode enviar esta notificação.', true); return; }
   const inicio = document.getElementById('relFiltroInicio')?.value || '';
@@ -6834,7 +6898,7 @@ function openNotificarViagensModal() {
   const input = document.getElementById('notificarViagensData');
   if (input) input.value = data;
   notificacaoViagensOrigensSelecionadas = new Set();
-  renderNotificarViagensModal();
+  renderNotificarViagensModal(false);
   document.getElementById('notificarViagensModal')?.classList.remove('hidden');
 }
 
@@ -6848,6 +6912,11 @@ function toggleNotificacaoViagensOrigem(chave, marcada) {
   renderNotificarViagensModal(false);
 }
 
+function limparNotificacaoViagensOrigens() {
+  notificacaoViagensOrigensSelecionadas.clear();
+  renderNotificarViagensModal(false);
+}
+
 function renderNotificarViagensModal(inicializarOrigens = true) {
   const data = document.getElementById('notificarViagensData')?.value || '';
   const rows = viagensNotificacaoBase(data);
@@ -6858,8 +6927,8 @@ function renderNotificarViagensModal(inicializarOrigens = true) {
     porOrigem.get(chave).rows.push(a);
   });
   const chaves = [...porOrigem.keys()];
-  if (inicializarOrigens || ![...notificacaoViagensOrigensSelecionadas].some((chave) => porOrigem.has(chave))) {
-    notificacaoViagensOrigensSelecionadas = new Set(chaves);
+  if (inicializarOrigens) {
+    notificacaoViagensOrigensSelecionadas = new Set();
   } else {
     notificacaoViagensOrigensSelecionadas = new Set([...notificacaoViagensOrigensSelecionadas].filter((chave) => porOrigem.has(chave)));
   }
@@ -6883,7 +6952,8 @@ function renderNotificarViagensModal(inicializarOrigens = true) {
   const lista = document.getElementById('notificarViagensLista'); if (lista) lista.innerHTML = tabela;
   const tituloEl = document.getElementById('notificarViagensTitulo'); if (tituloEl) tituloEl.textContent = titulo;
   const assunto = document.getElementById('notificarViagensAssunto'); if (assunto) assunto.value = titulo;
-  const corpo = document.getElementById('notificarViagensCorpo'); if (corpo) corpo.value = buildNotificacaoViagensText(selecionadas);
+  const mensagem = document.getElementById('notificarViagensMensagemPreview');
+  if (mensagem) mensagem.innerHTML = buildNotificacaoViagensHtml(selecionadas);
   const destinoEl = document.getElementById('notificarViagensDestinatarios');
   if (destinoEl) destinoEl.innerHTML = destinatarios.length ? `${destinatarios.map(escapeHtml).join('<br>')}${semEmail.length ? `<p class="mt-2 text-xs text-red-600">Sem e-mail: ${semEmail.map(escapeHtml).join(', ')}</p>` : ''}` : 'Nenhuma unidade selecionada';
   const resumo = document.getElementById('notificarViagensResumo'); if (resumo) resumo.textContent = `${selecionadas.length} viagem(ns) · ${destinatarios.length} destinatário(s)`;
@@ -6906,13 +6976,10 @@ async function sendNotificarViagensEmails() {
   const assunto = tituloNotificacaoViagens(data);
   let enviados = 0;
   for (const grupo of grupos.values()) {
-    if (await tentarEnviarEmailAutomatico(grupo.email, assunto, buildNotificacaoViagensText(grupo.rows))) enviados++;
+    if (await tentarEnviarEmailAutomatico(grupo.email, assunto, buildNotificacaoViagensText(grupo.rows), '', buildNotificacaoViagensHtml(grupo.rows))) enviados++;
   }
   if (enviados === grupos.size) { closeNotificarViagensModal(); toast(`✉️ Notificação enviada para ${enviados} unidade(s).`); return; }
-  const pendentes = [...grupos.values()].slice(enviados);
-  const primeiro = pendentes[0];
-  if (primeiro) window.open(`mailto:${encodeURIComponent(primeiro.email)}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(buildNotificacaoViagensText(primeiro.rows))}`, '_blank');
-  toast(`✉️ ${enviados} envio(s) automático(s). O primeiro e-mail pendente foi preparado para envio manual.`);
+  toast(`❌ ${enviados} de ${grupos.size} envio(s) concluído(s). ${ultimoErroEnvioAutomatico || 'Verifique a função de envio e tente novamente.'}`, true);
 }
 
 function filterRelatorio() {
