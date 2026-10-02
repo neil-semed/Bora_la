@@ -5544,6 +5544,7 @@ function onWRecorrenciaChange() {
   const datasEspecificas = recorrencia === 'datas_adicionais';
   document.getElementById('wRecorrenciaDetalhes').classList.toggle('hidden', recorrencia === 'unico');
   document.getElementById('wRecorrenciaPadrao')?.classList.toggle('hidden', datasEspecificas);
+  document.getElementById('wRecorrenciaFimWrap')?.classList.toggle('hidden', datasEspecificas);
   document.getElementById('wDatasAdicionaisBox')?.classList.toggle('hidden', !datasEspecificas);
   if (!datasEspecificas) document.getElementById('wDatasRecorrencia').innerHTML = '';
   if (datasEspecificas && !selectedRecurrenceDates().length) addRecurrenceDateField();
