@@ -3481,7 +3481,7 @@ function pendenciaCard(a, { badge, tone = 'amber', detail = '', action = '' } = 
   };
   const toneIcon = { emerald: 'clipboard-check', amber: 'clock-3', blue: 'file-text', red: 'circle-x' };
   return `<article class="rounded-xl border bg-white p-4 shadow-sm border-l-4 transition-shadow hover:shadow-md ${toneClasses[tone] || toneClasses.amber}">
-    <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="min-w-0">
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2"><span class="grid h-7 w-7 place-items-center rounded-lg ${toneClasses[tone] || toneClasses.amber}"><i data-lucide="${toneIcon[tone] || toneIcon.amber}" class="h-4 w-4"></i></span><span class="rounded-full px-2 py-0.5 text-xs font-bold ${toneClasses[tone] || toneClasses.amber}">${escapeHtml(badge || 'Pendente')}</span></div>
         <h3 class="mt-2 font-bold text-slate-800">${escapeHtml(originName(a))} <span class="text-slate-400">→</span> ${escapeHtml(a.destination || '-')}</h3>
@@ -3490,8 +3490,8 @@ function pendenciaCard(a, { badge, tone = 'amber', detail = '', action = '' } = 
         <p class="mt-1 text-xs text-slate-500">${escapeHtml(originAddress(a) || '-') } → ${escapeHtml(a.destination_address || a.city || '-')}</p>
         ${detail ? `<p class="mt-2 text-xs font-medium text-slate-600">${detail}</p>` : ''}
       </div>
-      ${action}
     </div>
+    ${action ? `<div class="mt-4 border-t border-slate-200 pt-3">${action}</div>` : ''}
   </article>`;
 }
 
@@ -5576,8 +5576,8 @@ function addFinanceItemRow() {
   const box = document.getElementById('wFinanceItems');
   if (!box) return;
   const row = document.createElement('div');
-  row.className = 'grid grid-cols-[1fr_64px_82px_28px] gap-2';
-  row.innerHTML = '<input data-finance-description placeholder="Descrição" class="rounded-lg border px-3 py-2" /><input data-finance-quantity type="number" min="0" placeholder="0" class="rounded-lg border px-3 py-2" /><input data-finance-value inputmode="decimal" placeholder="0,00" class="rounded-lg border px-3 py-2" /><button type="button" onclick="this.parentElement.remove()" class="rounded-lg text-red-600" title="Remover item">×</button>';
+  row.className = 'grid grid-cols-[minmax(0,1fr)_44px_68px_24px] gap-2';
+  row.innerHTML = '<input data-finance-description placeholder="Descrição" class="min-w-0 rounded-lg border px-2 py-2" /><input data-finance-quantity type="number" min="0" placeholder="0" class="min-w-0 rounded-lg border px-2 py-2" /><input data-finance-value inputmode="decimal" placeholder="0,00" class="min-w-0 rounded-lg border px-2 py-2" /><button type="button" onclick="this.parentElement.remove()" class="rounded-lg text-red-600" title="Remover item">×</button>';
   box.appendChild(row);
 }
 
