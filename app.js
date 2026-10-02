@@ -1983,6 +1983,15 @@ function setKmAdminHoje() {
   renderKmAdmin();
 }
 
+function setKmAdminMesAtual() {
+  const agora = new Date();
+  const inicio = document.getElementById('kmAdminFiltroInicio');
+  const fim = document.getElementById('kmAdminFiltroFim');
+  if (inicio) inicio.value = fmtDate(new Date(agora.getFullYear(), agora.getMonth(), 1));
+  if (fim) fim.value = fmtDate(new Date(agora.getFullYear(), agora.getMonth() + 1, 0));
+  renderKmAdmin();
+}
+
 function renderKmAdmin() {
   const rows = filterKmAdmin().slice().sort((a, b) => (b.log_date || '').localeCompare(a.log_date || ''));
   const tbody = document.getElementById('kmAdminTable');
@@ -2862,6 +2871,15 @@ function renderAgenda() {
       const totalPax = totalPassengers(a);
       const dataFmt = new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR');
       const diaSemana = new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR', { weekday: 'long' });
+      // Para a própria unidade, repetir o endereço da origem não agrega informação.
+      // Mantemos-o para qualquer origem diferente da escola que está logada.
+      const ocultarEnderecoDaOrigem = role === 'escola' && a.school_id === currentUser.schoolId;
+      const enderecoOrigemTabela = ocultarEnderecoDaOrigem
+        ? ''
+        : `<div class="text-xs text-slate-500">${originAddress(a) || '-'}</div>`;
+      const enderecoOrigemCard = ocultarEnderecoDaOrigem
+        ? ''
+        : `<div class="text-xs text-slate-500">${originAddress(a) || '-'}</div>`;
       const temAcoes = !acoes.includes('text-slate-300');
       const exibeMotoristas = isAgendaEditor || a.admin_decision === 'aprovada';
       const motoristasCell = exibeMotoristas ? driversLabelHtml(a.driver_ids) : '<span class="text-slate-400">Aguardando aprovação</span>';
@@ -2886,7 +2904,7 @@ function renderAgenda() {
       <td class="px-4 py-3 text-sm">${hhmm(a.return_time)}</td>
       <td class="px-4 py-3 text-sm">
         <div>${originName(a)}</div>
-        <div class="text-xs text-slate-500">${originAddress(a) || '-'}</div>
+        ${enderecoOrigemTabela}
       </td>
       <td class="px-4 py-3 text-sm">
         <div>${a.destination}</div>
@@ -2931,7 +2949,7 @@ function renderAgenda() {
         <div>
           <div class="text-slate-500 text-xs">Origem</div>
           <div class="font-medium">${originName(a)}</div>
-          <div class="text-xs text-slate-500">${originAddress(a) || '-'}</div>
+          ${enderecoOrigemCard}
         </div>
         <div>
           <div class="text-slate-500 text-xs">Destino</div>
@@ -3556,7 +3574,7 @@ function renderPendencias() {
   const reenvio = abertas.filter((a) => ['solicitada', 'correcoes'].includes(a.doc_status));
   const botaoAgenda = (a) => (ehAdmin || currentUser.role === 'pedagogia') ? `<button onclick="abrirAgendaDaPendencia('${a.trip_date}')" class="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-700">Abrir agenda da data</button>` : '';
   const botaoValidacaoAdmin = (a) => ehAdmin ? `<button onclick="abrirValidacaoDaPendencia('${a.id}')" class="shrink-0 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-bold text-violet-700 hover:bg-violet-100">Validação pedagógica</button>` : '';
-  const acoesAdmin = (a) => `<div class="flex flex-wrap gap-2">${botaoAgenda(a)}${botaoValidacaoAdmin(a)}${a.doc_status === 'nao_enviado' ? `<button onclick="solicitarPropostaPedagogica('${a.id}')" class="shrink-0 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100">Solicitar proposta</button>` : ''}</div>`;
+  const acoesAdmin = (a, { incluirReprovacao = false } = {}) => `<div class="flex flex-wrap gap-2">${botaoAgenda(a)}${botaoValidacaoAdmin(a)}${incluirReprovacao ? `<button onclick="openRejectModal('${a.id}')" class="shrink-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-100">Reprovar solicitação</button>` : ''}${a.doc_status === 'nao_enviado' ? `<button onclick="solicitarPropostaPedagogica('${a.id}')" class="shrink-0 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100">Solicitar proposta</button>` : ''}</div>`;
 
   const introTitulo = document.getElementById('pendenciasIntroTitulo');
   const introTexto = document.getElementById('pendenciasIntroTexto');
@@ -3572,7 +3590,7 @@ function renderPendencias() {
     const canceladasPelaUnidade = recentes.filter((a) => a.situacao === 'cancelada' && a.cancelled_by && a.cancelled_by === a.created_by);
     const listagensConferencia = abertas.filter((a) => a.listagem_status === 'enviada');
     const blocos = [
-      ['novas', pendenciaBloco('Novas solicitações', 'Aguardando a primeira tratativa do Admin.', novas.map((a) => pendenciaCard(a, { badge: 'Nova solicitação', tone: 'emerald', action: acoesAdmin(a) })), '🚌', 'emerald')],
+      ['novas', pendenciaBloco('Novas solicitações', 'Aguardando a primeira tratativa do Admin.', novas.map((a) => pendenciaCard(a, { badge: 'Nova solicitação', tone: 'emerald', action: acoesAdmin(a, { incluirReprovacao: true }) })), '🚌', 'emerald')],
       ['validacao', pendenciaBloco('Sem validação pedagógica', 'Solicitações que ainda não receberam parecer pedagógico.', semValidacao.map((a) => pendenciaCard(a, { badge: 'Aguardando validação', tone: 'amber', action: acoesAdmin(a) })), '⏳', 'amber')],
       ['proposta', pendenciaBloco('Proposta pedagógica aguardada', 'Solicitada pelo Admin ou devolvida pela Pedagogia.', reenvio.map((a) => pendenciaCard(a, { badge: a.doc_status === 'solicitada' ? 'Solicitada à unidade' : 'Aguardando reenvio', tone: 'blue', detail: escapeHtml(a.doc_parecer_comentario || 'Aguardando proposta pedagógica da unidade.'), action: acoesAdmin(a) })), '📄', 'blue')],
       ['listagem', pendenciaBloco('Listagens para conferência', 'Listagens enviadas pelas unidades e aguardando análise do Admin.', listagensConferencia.map((a) => pendenciaCard(a, { badge: 'Aguardando conferência', tone: 'blue', action: `<button onclick="openListagemVeiculoModal('${a.id}')" class="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700">Conferir listagem</button>` })), '👥', 'blue')],
