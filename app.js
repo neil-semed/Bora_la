@@ -2534,18 +2534,18 @@ function renderDashboard() {
   }
 
   container.innerHTML = proximas.map((a) => `
-    <div class="flex items-center justify-between p-3 border border-slate-100 rounded-lg hover:bg-slate-50">
-      <div class="flex items-center gap-3">
-        <div class="w-12 h-12 rounded-lg bg-emerald-100 flex flex-col items-center justify-center shrink-0">
+    <div class="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-slate-100 p-2.5 hover:bg-slate-50">
+      <div class="flex min-w-0 items-center gap-2.5">
+        <div class="h-10 w-10 rounded-lg bg-emerald-100 flex flex-col items-center justify-center shrink-0">
           <span class="text-xs text-emerald-700 font-semibold">${new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR', { month: 'short' })}</span>
-          <span class="text-lg font-bold text-emerald-800">${new Date(a.trip_date + 'T00:00').getDate()}</span>
+          <span class="text-base font-bold text-emerald-800">${new Date(a.trip_date + 'T00:00').getDate()}</span>
         </div>
-        <div>
-          <div class="font-medium text-slate-800">${a.destination}</div>
+        <div class="min-w-0">
+          <div class="truncate font-medium text-slate-800">${a.destination}</div>
           <div class="text-xs text-slate-500">${schoolName(a.school_id)} • ${hhmm(a.departure_time)} • ${a.students_count} passageiros</div>
         </div>
       </div>
-      <span style="${SITUACAO_COLORS[a.situacao] || ''}" class="px-2 py-1 rounded text-xs font-medium">${SITUACAO_LABELS[a.situacao] || a.situacao}</span>
+      <span style="${SITUACAO_COLORS[a.situacao] || ''}" class="shrink-0 px-2 py-1 rounded text-xs font-medium">${SITUACAO_LABELS[a.situacao] || a.situacao}</span>
     </div>
   `).join('');
 }
@@ -3481,7 +3481,7 @@ function pendenciaCard(a, { badge, tone = 'amber', detail = '', action = '' } = 
   };
   const toneIcon = { emerald: 'clipboard-check', amber: 'clock-3', blue: 'file-text', red: 'circle-x' };
   return `<article class="rounded-xl border bg-white p-4 shadow-sm border-l-4 transition-shadow hover:shadow-md ${toneClasses[tone] || toneClasses.amber}">
-    <div class="min-w-0">
+    <div class="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2"><span class="grid h-7 w-7 place-items-center rounded-lg ${toneClasses[tone] || toneClasses.amber}"><i data-lucide="${toneIcon[tone] || toneIcon.amber}" class="h-4 w-4"></i></span><span class="rounded-full px-2 py-0.5 text-xs font-bold ${toneClasses[tone] || toneClasses.amber}">${escapeHtml(badge || 'Pendente')}</span></div>
         <h3 class="mt-2 font-bold text-slate-800">${escapeHtml(originName(a))} <span class="text-slate-400">→</span> ${escapeHtml(a.destination || '-')}</h3>
@@ -3490,8 +3490,8 @@ function pendenciaCard(a, { badge, tone = 'amber', detail = '', action = '' } = 
         <p class="mt-1 text-xs text-slate-500">${escapeHtml(originAddress(a) || '-') } → ${escapeHtml(a.destination_address || a.city || '-')}</p>
         ${detail ? `<p class="mt-2 text-xs font-medium text-slate-600">${detail}</p>` : ''}
       </div>
+      ${action ? `<div class="w-full shrink-0 lg:w-[300px]">${action}</div>` : ''}
     </div>
-    ${action ? `<div class="mt-4 border-t border-slate-200 pt-3">${action}</div>` : ''}
   </article>`;
 }
 
@@ -3572,9 +3572,9 @@ function renderPendencias() {
   const abertas = recentes.filter((a) => !['cancelada', 'reprovada'].includes(a.situacao) && a.status !== 'rejected');
   const semValidacao = abertas.filter((a) => a.status === 'pending' && a.situacao === 'sem_validacao');
   const reenvio = abertas.filter((a) => ['solicitada', 'correcoes'].includes(a.doc_status));
-  const botaoAgenda = (a) => (ehAdmin || currentUser.role === 'pedagogia') ? `<button onclick="abrirAgendaDaPendencia('${a.trip_date}')" class="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-700">Abrir agenda da data</button>` : '';
-  const botaoValidacaoAdmin = (a) => ehAdmin ? `<button onclick="abrirValidacaoDaPendencia('${a.id}')" class="shrink-0 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-bold text-violet-700 hover:bg-violet-100">Validação pedagógica</button>` : '';
-  const acoesAdmin = (a, { incluirReprovacao = false } = {}) => `<div class="flex flex-wrap gap-2">${botaoAgenda(a)}${botaoValidacaoAdmin(a)}${incluirReprovacao ? `<button onclick="openRejectModal('${a.id}')" class="shrink-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-100">Reprovar solicitação</button>` : ''}${a.doc_status === 'nao_enviado' ? `<button onclick="solicitarPropostaPedagogica('${a.id}')" class="shrink-0 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100">Solicitar proposta</button>` : ''}</div>`;
+  const botaoAgenda = (a) => (ehAdmin || currentUser.role === 'pedagogia') ? `<button onclick="abrirAgendaDaPendencia('${a.trip_date}')" class="w-full min-w-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-700">Abrir agenda da data</button>` : '';
+  const botaoValidacaoAdmin = (a) => ehAdmin ? `<button onclick="abrirValidacaoDaPendencia('${a.id}')" class="w-full min-w-0 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-bold text-violet-700 hover:bg-violet-100">Validação pedagógica</button>` : '';
+  const acoesAdmin = (a, { incluirReprovacao = false } = {}) => `<div class="grid grid-cols-2 gap-2">${botaoAgenda(a)}${botaoValidacaoAdmin(a)}${incluirReprovacao ? `<button onclick="openRejectModal('${a.id}')" class="min-w-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-100">Reprovar solicitação</button>` : ''}${a.doc_status === 'nao_enviado' ? `<button onclick="solicitarPropostaPedagogica('${a.id}')" class="min-w-0 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100">Solicitar proposta</button>` : ''}</div>`;
 
   const introTitulo = document.getElementById('pendenciasIntroTitulo');
   const introTexto = document.getElementById('pendenciasIntroTexto');
