@@ -2,8 +2,8 @@
 // BORA LÁ - EXCURSÕES | Edge Function: send-cooperativa-email
 //
 // Manda um e-mail de verdade (sem precisar abrir o programa de e-mail de ninguém)
-// pra cooperativa, usado quando o gestor ACEITA a listagem de passageiros de uma
-// viagem (tela Agenda/Listagem, botão "✅ Aceitar"). Só quem já é Admin no app
+// para destinatários autorizados pelo Admin, incluindo cooperativas, unidades e
+// responsáveis pela escala. Só quem já é Admin no app
 // consegue chamar essa função. Se a chave do serviço de e-mail (RESEND_API_KEY)
 // ainda não estiver configurada, esta função devolve um erro claro e o app cai
 // automaticamente pro fluxo manual de sempre (rascunho de e-mail pra você conferir
@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
     const { data: callerProfile } = await callerClient
       .from('profiles').select('role').eq('id', user.id).single();
     if (!callerProfile || callerProfile.role !== 'admin') {
-      return json({ error: 'Só administradores podem enviar e-mail automático pra cooperativa.' }, 403);
+      return json({ error: 'Só administradores podem enviar e-mail automático pela aplicação.' }, 403);
     }
 
     if (!resendKey) {
@@ -67,7 +67,7 @@ Deno.serve(async (req) => {
 
     // 2) Lê os dados do e-mail
     const body = await req.json();
-    const { to, subject, text, html } = body || {};
+    const { to, subject, text, html, cc } = body || {};
     if (!to || !subject || (!text && !html)) {
       return json({ error: 'Faltam campos (to/subject e texto ou HTML).' }, 400);
     }
@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
     const resp = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to: [to], subject, text: text || undefined, html: html || undefined }),
+      body: JSON.stringify({ from, to: Array.isArray(to) ? to : [to], cc: cc ? (Array.isArray(cc) ? cc : [cc]) : undefined, subject, text: text || undefined, html: html || undefined }),
     });
     const respJson = await resp.json().catch(() => ({}));
     if (!resp.ok) {
