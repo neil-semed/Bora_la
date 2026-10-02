@@ -35,6 +35,7 @@ let motoristaHojeDataExibida = null;
 let motoristaHojeUsaProximaData = false;
 let cooperativas = [];
 let appSettings = { remetente_nome: '', remetente_email: '', escala_emails: '' };
+let notificacaoViagensOrigensSelecionadas = new Set();
 let notifications = [];
 let unreadNotificationsSeen = null;
 // Áudio curto gravado para o Bora Lá. Instanciado uma única vez para evitar
@@ -6797,6 +6798,123 @@ async function sendEscalaEmail() {
   toast(`✉️ ${enviados} envio(s) automático(s). O restante foi preparado no seu e-mail.`);
 }
 
+// ============ NOTIFICAÇÃO DE VIAGENS ÀS UNIDADES ============
+// O filtro é independente do relatório em tela: parte de uma única data e só traz
+// viagens já aprovadas e com motorista atribuído, sempre em ordem de saída.
+function viagensNotificacaoBase(data) {
+  return agenda.filter((a) => a.trip_date === data
+    && a.admin_decision === 'aprovada'
+    && !['cancelada', 'reprovada'].includes(a.situacao)
+    && (a.driver_ids || []).length > 0)
+    .sort((a, b) => String(a.departure_time || '').localeCompare(String(b.departure_time || '')));
+}
+
+function emailUnidadeDaViagem(trip) {
+  if (trip?.requester_email) return String(trip.requester_email).trim();
+  const escola = schools.find((s) => s.id === trip?.school_id);
+  if (escola?.email) return String(escola.email).trim();
+  const perfil = allProfiles.find((p) => p.role === 'escola' && p.school_id === trip?.school_id && p.active !== false && p.email);
+  return perfil?.email ? String(perfil.email).trim() : '';
+}
+
+function tituloNotificacaoViagens(data) {
+  return `Confirmar viagem(ns) - ${data ? new Date(`${data}T00:00`).toLocaleDateString('pt-BR') : ''}`;
+}
+
+function buildNotificacaoViagensText(rows) {
+  const linhas = rows.map((a, index) => `${index + 1}. ${horaComH(a.departure_time)} às ${horaComH(a.return_time)} — ${originName(a)} → ${a.destination || '-'}\nMotorista(s): ${(a.driver_ids || []).map(driverLabel).join(' / ') || '-'} | Passageiros: ${totalPassengers(a)}`).join('\n\n');
+  return `Prezados(as),\n\nSolicitamos a confirmação da(s) viagem(ns) abaixo para a liberação do(s) veículo(s). Solicitamos atenção aos horários e à quantidade de passageiros.\n\n${linhas}\n\nAtenciosamente,\nBora Lá - Excursões / Semed Nova Lima`;
+}
+
+function openNotificarViagensModal() {
+  if (currentUser?.role !== 'admin') { toast('⚠️ Apenas o perfil Admin pode enviar esta notificação.', true); return; }
+  const inicio = document.getElementById('relFiltroInicio')?.value || '';
+  const fim = document.getElementById('relFiltroFim')?.value || '';
+  const data = inicio && inicio === fim ? inicio : fmtDate(new Date());
+  const input = document.getElementById('notificarViagensData');
+  if (input) input.value = data;
+  notificacaoViagensOrigensSelecionadas = new Set();
+  renderNotificarViagensModal();
+  document.getElementById('notificarViagensModal')?.classList.remove('hidden');
+}
+
+function closeNotificarViagensModal() {
+  document.getElementById('notificarViagensModal')?.classList.add('hidden');
+}
+
+function toggleNotificacaoViagensOrigem(chave, marcada) {
+  if (marcada) notificacaoViagensOrigensSelecionadas.add(chave);
+  else notificacaoViagensOrigensSelecionadas.delete(chave);
+  renderNotificarViagensModal(false);
+}
+
+function renderNotificarViagensModal(inicializarOrigens = true) {
+  const data = document.getElementById('notificarViagensData')?.value || '';
+  const rows = viagensNotificacaoBase(data);
+  const porOrigem = new Map();
+  rows.forEach((a) => {
+    const chave = origemFiltroId(a);
+    if (!porOrigem.has(chave)) porOrigem.set(chave, { nome: originName(a), rows: [] });
+    porOrigem.get(chave).rows.push(a);
+  });
+  const chaves = [...porOrigem.keys()];
+  if (inicializarOrigens || ![...notificacaoViagensOrigensSelecionadas].some((chave) => porOrigem.has(chave))) {
+    notificacaoViagensOrigensSelecionadas = new Set(chaves);
+  } else {
+    notificacaoViagensOrigensSelecionadas = new Set([...notificacaoViagensOrigensSelecionadas].filter((chave) => porOrigem.has(chave)));
+  }
+
+  const origemWrap = document.getElementById('notificarViagensOrigens');
+  if (origemWrap) origemWrap.innerHTML = chaves.length
+    ? chaves.map((chave) => {
+      const grupo = porOrigem.get(chave);
+      const temEmail = emailUnidadeDaViagem(grupo.rows[0]);
+      return `<label class="flex items-start gap-2 rounded-md bg-white px-2 py-1.5 text-sm"><input type="checkbox" ${notificacaoViagensOrigensSelecionadas.has(chave) ? 'checked' : ''} onchange="toggleNotificacaoViagensOrigem('${escapeHtml(chave)}',this.checked)"><span>${escapeHtml(grupo.nome)} <span class="text-xs text-slate-400">(${grupo.rows.length})${temEmail ? '' : ' · sem e-mail'}</span></span></label>`;
+    }).join('')
+    : '<p class="text-sm text-slate-500">Nenhuma viagem aprovada e escalada nesta data.</p>';
+
+  const selecionadas = rows.filter((a) => notificacaoViagensOrigensSelecionadas.has(origemFiltroId(a)));
+  const destinatarios = [...new Set(selecionadas.map(emailUnidadeDaViagem).filter(Boolean))];
+  const semEmail = [...new Set(selecionadas.filter((a) => !emailUnidadeDaViagem(a)).map((a) => originName(a)))];
+  const titulo = tituloNotificacaoViagens(data);
+  const tabela = selecionadas.length
+    ? `<table class="w-full min-w-[680px] text-left text-xs"><thead><tr class="bg-emerald-700 text-white"><th class="px-3 py-2">Saída</th><th class="px-3 py-2">Retorno</th><th class="px-3 py-2">Origem</th><th class="px-3 py-2">Destino</th><th class="px-3 py-2">Passageiros</th><th class="px-3 py-2">Motorista(s)</th></tr></thead><tbody>${selecionadas.map((a) => `<tr class="border-b bg-white"><td class="px-3 py-2 font-bold">${horaComH(a.departure_time)}</td><td class="px-3 py-2 font-bold">${horaComH(a.return_time)}</td><td class="px-3 py-2">${escapeHtml(originName(a))}</td><td class="px-3 py-2">${escapeHtml(a.destination || '-')}</td><td class="px-3 py-2 text-center">${totalPassengers(a)}</td><td class="px-3 py-2">${escapeHtml((a.driver_ids || []).map(driverLabel).join(' / ') || '-')}</td></tr>`).join('')}</tbody></table>`
+    : '<p class="rounded-lg bg-white p-4 text-center text-sm text-slate-500">Selecione ao menos uma origem com viagem escalada.</p>';
+  const lista = document.getElementById('notificarViagensLista'); if (lista) lista.innerHTML = tabela;
+  const tituloEl = document.getElementById('notificarViagensTitulo'); if (tituloEl) tituloEl.textContent = titulo;
+  const assunto = document.getElementById('notificarViagensAssunto'); if (assunto) assunto.value = titulo;
+  const corpo = document.getElementById('notificarViagensCorpo'); if (corpo) corpo.value = buildNotificacaoViagensText(selecionadas);
+  const destinoEl = document.getElementById('notificarViagensDestinatarios');
+  if (destinoEl) destinoEl.innerHTML = destinatarios.length ? `${destinatarios.map(escapeHtml).join('<br>')}${semEmail.length ? `<p class="mt-2 text-xs text-red-600">Sem e-mail: ${semEmail.map(escapeHtml).join(', ')}</p>` : ''}` : 'Nenhuma unidade selecionada';
+  const resumo = document.getElementById('notificarViagensResumo'); if (resumo) resumo.textContent = `${selecionadas.length} viagem(ns) · ${destinatarios.length} destinatário(s)`;
+  const enviar = document.getElementById('btnEnviarNotificacaoViagens'); if (enviar) enviar.disabled = !selecionadas.length || !destinatarios.length;
+}
+
+async function sendNotificarViagensEmails() {
+  const data = document.getElementById('notificarViagensData')?.value || '';
+  const rows = viagensNotificacaoBase(data).filter((a) => notificacaoViagensOrigensSelecionadas.has(origemFiltroId(a)));
+  if (!rows.length) { toast('⚠️ Selecione ao menos uma origem com viagem escalada.', true); return; }
+  const grupos = new Map();
+  rows.forEach((a) => {
+    const email = emailUnidadeDaViagem(a);
+    if (!email) return;
+    const chave = `${origemFiltroId(a)}|${email.toLowerCase()}`;
+    if (!grupos.has(chave)) grupos.set(chave, { email, rows: [] });
+    grupos.get(chave).rows.push(a);
+  });
+  if (!grupos.size) { toast('⚠️ Nenhuma unidade selecionada possui e-mail cadastrado.', true); return; }
+  const assunto = tituloNotificacaoViagens(data);
+  let enviados = 0;
+  for (const grupo of grupos.values()) {
+    if (await tentarEnviarEmailAutomatico(grupo.email, assunto, buildNotificacaoViagensText(grupo.rows))) enviados++;
+  }
+  if (enviados === grupos.size) { closeNotificarViagensModal(); toast(`✉️ Notificação enviada para ${enviados} unidade(s).`); return; }
+  const pendentes = [...grupos.values()].slice(enviados);
+  const primeiro = pendentes[0];
+  if (primeiro) window.open(`mailto:${encodeURIComponent(primeiro.email)}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(buildNotificacaoViagensText(primeiro.rows))}`, '_blank');
+  toast(`✉️ ${enviados} envio(s) automático(s). O primeiro e-mail pendente foi preparado para envio manual.`);
+}
+
 function filterRelatorio() {
   // Os dois calendários compõem sempre um intervalo: data inicial até data final.
   const inicio = document.getElementById('relFiltroInicio').value;
@@ -6885,7 +7003,7 @@ function resumoRelatorioHtml(tipo, rows, viagens = []) {
       ? [['Solicitações', rows.length, 'slate'], ['Valor solicitado', valor.toLocaleString('pt-BR', { style:'currency', currency:'BRL' }), 'amber'], ['Deferidos', rows.filter((r) => r.Situação === 'deferido').length, 'emerald'], ['Indeferidos', rows.filter((r) => r.Situação === 'indeferido').length, 'red']]
       : [['Registros', rows.length, 'slate'], ['Passageiros', passageiros, 'blue'], ['Aprovadas', aprovadas, 'emerald'], ['Reprovadas', reprovadas, 'red'], ['Canceladas', canceladas, 'amber']];
   const tones={slate:'bg-slate-50 border-slate-200 text-slate-800',blue:'bg-blue-50 border-blue-200 text-blue-800',emerald:'bg-emerald-50 border-emerald-200 text-emerald-800',red:'bg-red-50 border-red-200 text-red-800',amber:'bg-amber-50 border-amber-200 text-amber-800'};
-  return `<div class="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">${cards.map(([label,value,tone]) => `<div class="rounded-xl border p-3 ${tones[tone]}"><div class="text-xs font-semibold">${label}</div><div class="mt-1 text-xl font-bold">${value}</div></div>`).join('')}</div>`;
+  return `<div class="mb-4 grid grid-cols-2 gap-2 md:grid-cols-5">${cards.map(([label,value,tone]) => `<div class="rounded-lg border px-2.5 py-2 ${tones[tone]}"><div class="text-[11px] font-semibold">${label}</div><div class="mt-0.5 text-lg font-bold">${value}</div></div>`).join('')}</div>`;
 }
 async function renderRelatorioPreview() {
   const tipo = document.getElementById('relTipo')?.value || 'escala';
