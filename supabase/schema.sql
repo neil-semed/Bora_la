@@ -22,6 +22,7 @@ create extension if not exists pgcrypto;
 -- organização que pede por e-mail e o admin cadastra a solicitação por ela)
 create table if not exists schools (
   id uuid primary key default gen_random_uuid(),
+  acronym text,
   name text not null unique,
   address text,
   contact text,
@@ -160,6 +161,7 @@ create table if not exists excursions (
   lista_escola boolean not null default false,
   solicitation_type text not null default 'excursao',
   origin_name text,
+  origin_acronym text,
   origin_address text,
   origin_city text,
   passenger_access_token text unique,
