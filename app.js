@@ -5325,22 +5325,22 @@ async function tentarEnviarEmailAutomatico(to, subject, text, cc = '', html = ''
 // Monta o corpo do e-mail pra cooperativa a partir da listagem por veículo já aceita -
 // mesmo modelo do e-mail de ATF de sempre, só que com uma seção por veículo.
 function buildListagemEmailBody(trip, driverIdsForCoop, grouped, files) {
-  const destinoCompleto = trip.destination_address
-    ? `${trip.destination}, ${trip.destination_address}${trip.city ? ', ' + trip.city : ''}`
-    : `${trip.destination}${trip.city ? ', ' + trip.city : ''}`;
+  const destinoEnd = [trip.destination_address, trip.city].filter(Boolean).join(', ');
   const dataFmt = trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
   const assinatura = 'Bora Lá - Excursões / Semed Nova Lima';
-  const totalGeral = Object.values(grouped || {}).reduce((sum, rows) => sum + (rows || []).filter((p) => String(p.nome || '').trim()).length, 0);
   const blocos = driverIdsForCoop.map((did) => {
     const v = driverVehicle(did);
     const d = drivers.find((x) => x.id === did);
-    const rows = grouped[did] || [];
-    const listagemTxt = rows.length
-      ? rows.map((p, i) => `  ${i + 1}. ${p.nome}${p.tipo_documento ? ' - ' + ({cpf:'CPF',rg:'RG',certidao_nascimento:'Certidão'}[p.tipo_documento] || p.tipo_documento) : ''}${p.documento ? ': ' + p.documento : ''}`).join('\n')
-      : '  (listagem não encontrada)';
+    const rows = (grouped[did] || []).filter((p) => String(p.nome || '').trim());
     const arquivo = files.filter((f) => f.driver_id === did).at(-1);
-    const arquivoTxt = arquivo ? `\nArquivo da listagem: ${arquivo.filename || '-'}${arquivo.drive_url ? `\nArquivo no Drive: ${arquivo.drive_url}` : ''}` : '';
-    return `Motorista: ${d ? d.name : '-'}${v?.plate ? ' — placa ' + v.plate : ''}\nPassageiros neste veículo: ${rows.filter((p) => String(p.nome || '').trim()).length}\n────────────────────────────────\n${listagemTxt}${arquivoTxt}`;
+    const cab = `Motorista: ${d ? d.name : '-'}${v?.plate ? ' — placa ' + v.plate : ''}${v?.capacity ? ' — ' + v.capacity + ' lugares' : ''}`;
+    // Lista digitada: contagem + relação. Lista enviada como arquivo: apenas o link.
+    if (rows.length) {
+      const listagemTxt = rows.map((p, i) => `  ${i + 1}. ${p.nome}${p.documento ? ' - ' + p.documento : ''}`).join('\n');
+      return `${cab}\nPassageiros neste veículo: ${rows.length}\n────────────────────────────────\n${listagemTxt}`;
+    }
+    if (arquivo) return `${cab}\nListagem de passageiros: ${arquivo.drive_url || arquivo.filename || '-'}`;
+    return `${cab}\n  (listagem não encontrada)`;
   }).join('\n\n');
 
   return `Bom dia,
@@ -5349,12 +5349,9 @@ Solicitamos a emissão de ATF para a viagem abaixo.
 
 Unidade solicitante: ${requesterName(trip)}
 Data: ${dataFmt}
-Horário: ${horaComH(trip.departure_time)} às ${horaComH(trip.return_time)}
-Origem: ${originName(trip)}
-Endereço de origem: ${originAddress(trip) || '-'}
-Destino: ${destinoCompleto}
-
-Total geral de passageiros: ${totalGeral}
+Saída: ${horaComH(trip.departure_time)} | Retorno: ${horaComH(trip.return_time)}
+Origem: ${originName(trip)}${originAddress(trip) ? ' → ' + originAddress(trip) : ''}
+Destino: ${trip.destination || '-'}${destinoEnd ? ' → ' + destinoEnd : ''}
 
 ${blocos}
 
@@ -5362,29 +5359,32 @@ Pedimos, por gentileza, confirmação da emissão da ATF por esta aplicação ou
 
 ${assinatura}`;
 }
-
-// Versão HTML do e-mail ATF. A tabela contém exclusivamente os passageiros;
-// motorista, placa e quantitativo ficam no cabeçalho de cada veículo.
 function buildListagemEmailHtml(trip, driverIdsForCoop, grouped, files) {
   const esc = (value) => escapeHtml(value ?? '-');
-  const destinoCompleto = trip.destination_address
-    ? `${trip.destination}, ${trip.destination_address}${trip.city ? ', ' + trip.city : ''}`
-    : `${trip.destination}${trip.city ? ', ' + trip.city : ''}`;
+  const sm = (t) => t ? ` <span style="font-size:12px;color:#475569">→ ${esc(t)}</span>` : '';
+  const destinoEnd = [trip.destination_address, trip.city].filter(Boolean).join(', ');
   const dataFmt = trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
-  const totalGeral = Object.values(grouped || {}).reduce((sum, rows) => sum + (rows || []).filter((p) => String(p.nome || '').trim()).length, 0);
+  const th = 'background:#e5e7eb;color:#111827;border:1px solid #cbd5e1;padding:7px;font-size:11px;text-align:left';
+  const td = 'border:1px solid #cbd5e1;padding:6px';
   const blocos = driverIdsForCoop.map((did) => {
     const motorista = drivers.find((d) => d.id === did);
     const veiculo = driverVehicle(did);
     const rows = (grouped[did] || []).filter((p) => String(p.nome || '').trim());
-    const passageiros = rows.length
-      ? rows.map((p) => `<tr><td style="padding:8px 10px;border:1px solid #d8e4e1">${esc(p.nome)}</td><td style="padding:8px 10px;border:1px solid #d8e4e1">${esc(p.documento || '-')}</td></tr>`).join('')
-      : '<tr><td colspan="2" style="padding:8px 10px;border:1px solid #d8e4e1;color:#64748b">Relação disponível no arquivo enviado pela unidade.</td></tr>';
     const arquivo = files.filter((f) => f.driver_id === did).at(-1);
-    const drive = arquivo ? `<p style="margin:8px 0 0;font-size:12px"><strong>Arquivo da listagem:</strong> ${esc(arquivo.filename || '-')}${arquivo.drive_url ? ` · <a href="${esc(arquivo.drive_url)}">Abrir cópia no Drive</a>` : ''}</p>` : '';
-    return `<section style="margin:20px 0"><p style="margin:0 0 4px"><strong>Motorista:</strong> ${esc(motorista?.name || '-')} &nbsp; <strong>Placa:</strong> ${esc(veiculo?.plate || '-')}</p><p style="margin:0 0 10px"><strong>Passageiros neste veículo:</strong> ${rows.length}</p><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="background:#047857;color:#ffffff"><th align="left" style="padding:9px 10px;border:1px solid #047857">Passageiro</th><th align="left" style="padding:9px 10px;border:1px solid #047857">Documento</th></tr></thead><tbody>${passageiros}</tbody></table>${drive}</section>`;
+    const cab = `<p style="margin:0"><strong>Motorista:</strong> ${esc(motorista?.name || '-')} &nbsp; <strong>Placa:</strong> ${esc(veiculo?.plate || '-')}${veiculo?.capacity ? ` &nbsp; ${esc(veiculo.capacity)} lugares` : ''}</p>`;
+    // Lista digitada: contagem + tabela. Lista enviada como arquivo: apenas o link.
+    if (rows.length) {
+      const linhas = rows.map((p, i) => `<tr><td style="${td}">${i + 1}</td><td style="${td}">${esc(p.nome)}</td><td style="${td}">${esc(p.documento || '-')}</td></tr>`).join('');
+      return `<section style="margin:16px 0">${cab}<p style="margin:0"><strong>Passageiros neste veículo:</strong> ${rows.length}</p><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;font-size:13px;margin-top:6px"><thead><tr><th style="${th};width:8%">Nº</th><th style="${th}">Passageiro</th><th style="${th};width:32%">Documento</th></tr></thead><tbody>${linhas}</tbody></table></section>`;
+    }
+    if (arquivo) {
+      const nome = esc(arquivo.filename || 'Abrir listagem');
+      return `<section style="margin:16px 0">${cab}<p style="margin:4px 0 0"><strong>Listagem de passageiros:</strong> ${arquivo.drive_url ? `<a href="${esc(arquivo.drive_url)}">${nome}</a>` : nome}</p></section>`;
+    }
+    return `<section style="margin:16px 0">${cab}<p style="margin:4px 0 0;color:#64748b">Listagem não encontrada.</p></section>`;
   }).join('');
 
-  return `<div style="font-family:Arial,sans-serif;color:#1f2937;line-height:1.45;max-width:760px"><p>Bom dia,</p><p>Solicitamos a emissão de ATF para a viagem abaixo.</p><p><strong>Unidade solicitante:</strong> ${esc(requesterName(trip))}<br><strong>Data:</strong> ${esc(dataFmt)}<br><strong>Horário:</strong> ${esc(horaComH(trip.departure_time))} às ${esc(horaComH(trip.return_time))}<br><strong>Origem:</strong> ${esc(originName(trip))}<br><strong>Endereço de origem:</strong> ${esc(originAddress(trip) || '-')}<br><strong>Destino:</strong> ${esc(destinoCompleto)}</p><p style="font-size:16px"><strong>Total geral de passageiros: ${totalGeral}</strong></p>${blocos}<p>Pedimos, por gentileza, confirmação da emissão da ATF por esta aplicação ou em resposta a este e-mail.</p><p><strong>Bora Lá - Excursões / Semed Nova Lima</strong></p></div>`;
+  return `<div style="font-family:Arial,sans-serif;color:#0f172a;line-height:1.5;font-size:14px;max-width:820px"><p style="margin:0 0 10px">Bom dia,<br>Solicitamos a emissão de ATF para a viagem abaixo.</p><p style="margin:0 0 12px"><strong>Unidade solicitante:</strong> ${esc(requesterName(trip))}<br><strong>Data:</strong> ${esc(dataFmt)}<br><strong>Saída:</strong> ${esc(horaComH(trip.departure_time))} &nbsp;|&nbsp; <strong>Retorno:</strong> ${esc(horaComH(trip.return_time))}<br><strong>Origem:</strong> ${esc(originName(trip))}${sm(originAddress(trip))}<br><strong>Destino:</strong> ${esc(trip.destination || '-')}${sm(destinoEnd)}</p>${blocos}<p style="margin:16px 0 0">Pedimos, por gentileza, confirmação da emissão da ATF por esta aplicação ou em resposta a este e-mail.<br><strong>Bora Lá - Excursões / Semed Nova Lima</strong></p></div>`;
 }
 
 // Depois que o gestor aceita a listagem: tenta mandar automaticamente (Resend) pra cada
