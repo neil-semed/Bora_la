@@ -14,13 +14,17 @@
     /* reforço: garante que elementos escondam mesmo se o Tailwind (CDN) demorar/falhar para carregar */
     .hidden { display: none !important; }
     .toast { position: fixed; top: 20px; right: 20px; z-index: 9999; max-width: 90vw; }
+    /* Login no navegador (desktop): card 15% menor, contorno verde e sombra 15% maior */
+    @media (min-width: 768px) {
+      .login-card { zoom: .85; border: 1px solid #059669; box-shadow: 0 29px 58px -14px rgb(0 0 0 / .29) !important; }
+    }
   </style>
 </head>
 <body class="bg-slate-50 min-h-screen" data-page="login">
 
   <!-- PÁGINA DE LOGIN (separada da página do sistema: veja app.html) -->
   <div id="loginScreen" class="min-h-screen flex items-center justify-center p-4 bg-[#F6FFFC]">
-    <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+    <div class="login-card bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
       <div class="text-center mb-6">
         <img src="assets/logo_bora-la.png" alt="Bora Lá" class="w-full max-w-xs mx-auto" onerror="this.style.display='none'" />
         <p class="text-slate-500 -mt-2 text-center">Sistema de Excursões<br />Semed - Nova Lima</p>
