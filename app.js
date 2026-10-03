@@ -1633,11 +1633,11 @@ async function refreshDadosDaTela(name) {
     if (name === 'perfisacesso') await loadRoleScreenPermissions();
     if (name === 'validacoes') {
       if (currentUser.role === 'escola') { populateValidacaoDestinoEscolaFilter(); renderValidacoesEscola(); }
-      else { populateValidacaoOrigemFilter(); populatePublicoAlvoFilter('validacaoFiltroPublico', 'Todos os públicos'); renderValidacoesPedagogia(); }
+      else { await loadValidationConfig(); populateValidacaoOrigemFilter(); populatePublicoAlvoFilter('validacaoFiltroPublico', 'Todos os públicos'); renderValidacoesPedagogia(); }
     }
     if (name === 'agenda') { populateAgendaUnidadeFilter(); renderAgenda(); }
     if (name === 'dashboard') renderDashboard();
-    if (name === 'pendencias') renderPendencias();
+    if (name === 'pendencias') { await loadValidationConfig(); renderPendencias(); }
     if (name === 'agendadata') renderAgendaPorData();
     if (name === 'agendageral') renderAgendaGeralMotorista();
     if (name === 'solicitacao') openSolicitacaoScreen();
@@ -3596,28 +3596,11 @@ function normalizaPublicoAlvo(txt) {
 }
 
 function publicoAlvoFiltroOptions() {
-  const opcoes = new Map();
-  const incluir = (id, nome) => {
-    const label = String(nome || '').trim();
-    if (!id || !label || label === '-') return;
-    // Mesmo público pode vir com ids/grafias diferentes ("Ens." x "Ensino"):
-    // agrupa pelo nome normalizado e mantém a grafia mais completa.
-    const chave = normalizaPublicoAlvo(label);
-    const existente = [...opcoes.entries()].find(([, l]) => normalizaPublicoAlvo(l) === chave);
-    if (existente) {
-      if (label.length > existente[1].length) { opcoes.delete(existente[0]); opcoes.set(String(id), label); }
-      return;
-    }
-    opcoes.set(String(id), label);
-  };
-  validationTargets.filter((t) => t.active !== false).forEach((t) => incluir(t.id, t.name));
-  Object.entries(PUBLICO_ALVO_LABELS).forEach(([id, nome]) => incluir(id, nome));
-  agenda.forEach((a) => {
-    const id = a.validation_target_id || a.publico_alvo;
-    const label = publicoAlvoLabel(id) !== '-' ? publicoAlvoLabel(id) : (a.publico_alvo || '');
-    incluir(id, label);
-  });
-  return [...opcoes.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'pt-BR'));
+  // Somente os públicos cadastrados em Admin > Validadores > "Público-alvo e destino da validação".
+  // Sem cadastro (modo demonstração/base antiga), usa os rótulos fixos do sistema.
+  const ativos = validationTargets.filter((t) => t.active !== false);
+  const lista = ativos.length ? ativos.map((t) => [String(t.id), String(t.name || '').trim()]) : Object.entries(PUBLICO_ALVO_LABELS);
+  return lista.filter(([, nome]) => nome).sort((x, y) => x[1].localeCompare(y[1], 'pt-BR'));
 }
 
 function populatePublicoAlvoFilter(selectId, placeholder) {
