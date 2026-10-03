@@ -135,6 +135,8 @@
     .pedagogia-compact .grid.grid-cols-2.md\:grid-cols-6 > div { padding:.8rem; }
     .pedagogia-compact .text-3xl { font-size:1.55rem; }
     .pedagogia-compact canvas { max-height:180px; }
+    .dashboard-chart.dashboard-chart-tall { height: 260px; }
+    .pedagogia-compact .dashboard-chart-tall canvas { max-height:none; }
     @media (max-width: 767px) {
       main { width: 100%; min-width: 0; }
       main > header { padding: 12px; }
@@ -458,7 +460,13 @@
               <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4"><h3 class="font-semibold text-emerald-950">Já validadas</h3><div id="dashboardValidadasLista" class="mt-2 space-y-2"></div></div>
             </div>
 
-            <div class="bg-white rounded-xl border shadow-sm p-5">
+            <!-- Pedagogia: substitui "Próximas Viagens" por público-alvo + ranking de solicitantes -->
+            <div id="dashboardPedagogiaCharts" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div class="bg-white rounded-xl border shadow-sm p-5"><div class="dashboard-chart dashboard-chart-tall"><canvas id="chartPorPublicoAlvo"></canvas></div></div>
+              <div class="bg-white rounded-xl border shadow-sm p-5"><div class="dashboard-chart dashboard-chart-tall"><canvas id="chartRankingSolicitantes"></canvas></div></div>
+            </div>
+
+            <div id="dashboardProximasBox" class="bg-white rounded-xl border shadow-sm p-5">
               <h3 class="font-semibold mb-4">Próximas Viagens</h3>
               <div id="proximasViagens" class="grid gap-2 lg:grid-cols-2"></div>
             </div>
@@ -926,6 +934,12 @@
                   </select>
                 </div>
                 <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Público-alvo</label>
+                  <select id="validacaoFiltroPublico" onchange="renderValidacoesPedagogia()" class="px-3 py-2 border rounded-lg text-sm">
+                    <option value="">Todos os públicos</option>
+                  </select>
+                </div>
+                <div>
                   <label class="block text-xs font-medium text-slate-500 mb-1">Setor</label>
                   <select id="validacaoFiltroSetor" onchange="renderValidacoesPedagogia()" class="px-3 py-2 border rounded-lg text-sm">
                     <option value="">Todos os setores</option>
@@ -1274,12 +1288,6 @@
                     <option value="financeiro">Aportes financeiros</option>
                     <option value="cancelamentos">Cancelamentos</option>
                     <option value="km">Quilometragem registrada</option>
-                  </select>
-                </div>
-                <div>
-                  <label class="block text-xs font-medium text-slate-500 mb-1">Público-alvo</label>
-                  <select id="validacaoFiltroPublico" onchange="renderValidacoesPedagogia()" class="px-3 py-2 border rounded-lg text-sm">
-                    <option value="">Todos os públicos</option>
                   </select>
                 </div>
                 <div>
@@ -1827,7 +1835,7 @@
 
   <!-- MODAL VALIDAÇÃO PEDAGÓGICA (Pedagogia dá parecer / encaminha) -->
   <div id="validacaoModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-    <div class="bg-white rounded-2xl p-6 max-w-[960px] w-full max-h-[90vh] overflow-y-auto">
+    <div class="bg-white rounded-2xl p-6 max-w-[1440px] w-full max-h-[90vh] overflow-y-auto">
       <h3 class="font-bold text-lg mb-3">📋 Validação pedagógica</h3>
       <div id="validacaoInfo" class="bg-slate-50 border rounded-lg p-3 text-sm mb-4 grid grid-cols-2 gap-1"></div>
 

@@ -2381,6 +2381,8 @@ function viagemValidadaCompletamente(a) {
 // ============ DASHBOARD ============
 let chartMesInstance = null;
 let chartUnidadeInstance = null;
+let chartPublicoAlvoInstance = null;
+let chartRankingSolicitantesInstance = null;
 
 function monthKey(dateStr) { return (dateStr || '').slice(0, 7); }
 function monthLabel(key) {
@@ -2464,6 +2466,46 @@ function renderDashboardCharts(visible) {
   }
 }
 
+function renderDashboardPedagogiaCharts(dados) {
+  if (!window.Chart) return;
+  const barH = (ctx, titulo, labels, valores, cor) => new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'Solicitações', data: valores, backgroundColor: cor, borderRadius: 5, maxBarThickness: 22 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, title: { display: true, text: titulo, align: 'start', color: '#1e293b', font: { size: 14, weight: '600' } } },
+      scales: { x: { beginAtZero: true, ticks: { precision: 0, color: '#64748b' }, grid: { color: 'rgba(148,163,184,.16)' } }, y: { ticks: { color: '#334155', autoSkip: false, callback(v) { const t = this.getLabelForValue(v); return t.length > 28 ? t.slice(0, 27) + '…' : t; } }, grid: { display: false } } },
+    },
+  });
+
+  const porPublico = {};
+  dados.forEach((a) => {
+    const id = a.validation_target_id || a.publico_alvo;
+    const label = id ? publicoAlvoLabel(id) : '-';
+    const nome = (!label || label === '-') ? 'Não informado' : label;
+    porPublico[nome] = (porPublico[nome] || 0) + 1;
+  });
+  const publicos = Object.entries(porPublico).sort((a, b) => b[1] - a[1]);
+  const ctxP = document.getElementById('chartPorPublicoAlvo');
+  if (ctxP) {
+    if (chartPublicoAlvoInstance) chartPublicoAlvoInstance.destroy();
+    chartPublicoAlvoInstance = barH(ctxP, 'Solicitações por público-alvo', publicos.map(([n]) => n), publicos.map(([, v]) => v), 'rgba(124,58,237,.7)');
+  }
+
+  const porUnidade = {};
+  dados.forEach((a) => {
+    const nome = a.school_id ? schoolName(a.school_id) : originName(a);
+    const chave = nome || 'Não informado';
+    porUnidade[chave] = (porUnidade[chave] || 0) + 1;
+  });
+  const ranking = Object.entries(porUnidade).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR')).slice(0, 7);
+  const ctxR = document.getElementById('chartRankingSolicitantes');
+  if (ctxR) {
+    if (chartRankingSolicitantesInstance) chartRankingSolicitantesInstance.destroy();
+    chartRankingSolicitantesInstance = barH(ctxR, 'Top 7 unidades solicitantes', ranking.map(([n], i) => `${i + 1}º ${n}`), ranking.map(([, v]) => v), 'rgba(5,150,105,.7)');
+  }
+}
+
 function renderDashboard() {
   const visibleBruto = getVisibleAgenda();
   const mesFiltro = document.getElementById('dashFiltroMes')?.value || '';
@@ -2523,6 +2565,13 @@ function renderDashboard() {
   const escondeFiltroUnidadeDash = currentUser.role === 'escola' || currentUser.role === 'motorista';
   if (dashUnidadeWrap) dashUnidadeWrap.classList.toggle('hidden', escondeFiltroUnidadeDash);
   renderDashboardCharts(visible);
+
+  // Pedagogia: "Próximas Viagens" sai e entram os gráficos de solicitações por
+  // público-alvo e o ranking top 7 de unidades solicitantes (mesmos filtros do topo).
+  const ehPedagogiaDash = currentUser?.role === 'pedagogia';
+  document.getElementById('dashboardProximasBox')?.classList.toggle('hidden', ehPedagogiaDash);
+  document.getElementById('dashboardPedagogiaCharts')?.classList.toggle('hidden', !ehPedagogiaDash);
+  if (ehPedagogiaDash) { renderDashboardPedagogiaCharts(visible); return; }
 
   const proximas = visible
     .filter((a) => a.trip_date >= hoje && a.situacao !== 'reprovada' && a.situacao !== 'cancelada')
@@ -3886,6 +3935,8 @@ async function openValidacoesScreen() {
       sel.value = currentUser.setorPedagogico || '';
       sel.dataset.inited = '1';
     }
+    populateValidacaoOrigemFilter();
+    populatePublicoAlvoFilter('validacaoFiltroPublico', 'Todos os públicos');
     renderValidacoesPedagogia();
   }
 }
