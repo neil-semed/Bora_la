@@ -1495,10 +1495,10 @@ async function notifyRequester(trip, title, message) {
   const uid = requesterUserId(trip);
   if (uid) await createNotification(uid, title, message, trip.id);
 }
-async function notifyRequesterEmail(trip, subject, text) {
+async function notifyRequesterEmail(trip, subject, text, html = '') {
   const to = (trip?.requester_email || '').trim();
   if (!to) return false;
-  return tentarEnviarEmailAutomatico(to, subject, text, appSettings.email_copia_setor || appSettings.remetente_email || '');
+  return tentarEnviarEmailAutomatico(to, subject, text, appSettings.email_copia_setor || appSettings.remetente_email || '', html);
 }
 function buildRequesterPassengerEmail(trip, link = '') {
   const data = trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
@@ -1513,13 +1513,31 @@ Destino: ${destino}
 Data: ${data}
 Saída: ${hhmm(trip.departure_time)} - Retorno: ${hhmm(trip.return_time)}
 
-Agora é necessário preencher a listagem de passageiros com nome completo, tipo e número do documento quando exigido.
+Agora é necessário informar os passageiros desta viagem, com nome completo e número do documento.
 
-${link ? 'Acesse o cadastro de passageiros pelo link abaixo:\n' + link + '\n' : 'Entre no sistema Bora Lá e acesse o menu Validações para preencher a listagem.'}
+${link ? 'Acesse o cadastro de passageiros pelo link abaixo:\n' + link + '\n' : 'Para isso, entre no sistema Bora Lá e acesse o menu Validações ou Agenda.'}
 
-Após o envio, a listagem será conferida pelo Admin.
+Após o envio, nossa equipe fará a conferência. Mas não demore: o prazo é de 48h (em dias úteis) de antecedência da viagem.
 
-${appSettings.remetente_nome || 'Bora Lá - Excursões'}`;
+Bora Lá - Excursões / Semed Nova Lima`;
+}
+// Versão HTML (com cabeçalho e logo) do mesmo e-mail de preenchimento de passageiros.
+function buildRequesterPassengerEmailHtml(trip, link = '') {
+  const data = trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
+  const origem = `${originName(trip) || '-'}${originAddress(trip) ? ' - ' + originAddress(trip) : ''}${originCity(trip) ? ' - ' + originCity(trip) : ''}`;
+  const destino = `${trip.destination || '-'}${trip.destination_address ? ' - ' + trip.destination_address : ''}${trip.city ? ' - ' + trip.city : ''}`;
+  const p = (t) => `<p style="margin:0 0 12px">${t}</p>`;
+  const acesso = link
+    ? p(`Acesse o cadastro de passageiros pelo link abaixo:<br><a href="${escapeHtml(link)}">${escapeHtml(link)}</a>`)
+    : p('Para isso, entre no sistema Bora Lá e acesse o menu Validações ou Agenda.');
+  return `<div style="max-width:720px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.5;font-size:14px"><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | Listagem de passageiros</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:3px;background:#16a34a;margin:3px 0 16px"></div>`
+    + p('Olá,')
+    + p('A viagem abaixo está aprovada e já possui motorista/veículo atribuído.')
+    + p(`<strong>Origem:</strong> ${escapeHtml(origem)}<br><strong>Destino:</strong> ${escapeHtml(destino)}<br><strong>Data:</strong> ${escapeHtml(data)}<br><strong>Saída:</strong> ${escapeHtml(hhmm(trip.departure_time))} - <strong>Retorno:</strong> ${escapeHtml(hhmm(trip.return_time))}`)
+    + p('Agora é necessário informar os passageiros desta viagem, com nome completo e número do documento.')
+    + acesso
+    + p('Após o envio, nossa equipe fará a conferência. Mas não demore: o prazo é de 48h (em dias úteis) de antecedência da viagem.')
+    + '<p style="margin:18px 0 0">Bora Lá - Excursões / Semed Nova Lima</p></div>';
 }
 function buildRequesterRejectedEmail(trip) {
   const motivo = trip.listagem_parecer_comentario || 'Verifique a listagem e corrija os dados solicitados.';
@@ -2990,6 +3008,10 @@ function renderAgenda() {
       const enderecoOrigemCard = ocultarEnderecoDaOrigem
         ? ''
         : `<div class="text-xs text-slate-500">${enderecoOrigemTxt || '-'}</div>`;
+      // Escola: viagem reprovada mostra o motivo nas Ações.
+      if (role === 'escola' && a.situacao === 'reprovada') {
+        acoes = `<span class="text-xs font-medium text-red-700 whitespace-normal">Motivo: ${escapeHtml(a.rejection_reason || a.admin_decision_reason || 'não informado')}</span>`;
+      }
       const temAcoes = !acoes.includes('text-slate-300');
       const exibeMotoristas = isAgendaEditor || a.admin_decision === 'aprovada';
       const motoristasCell = exibeMotoristas ? driversLabelHtml(a.driver_ids) : (role === 'escola' && a.situacao === 'reprovada' ? '' : '<span class="text-slate-400">Aguardando aprovação</span>');
@@ -4121,7 +4143,7 @@ function renderValidacoesEscola() {
         ${podeCancelarValidada ? `<button onclick="openCancelModal('${a.id}')" class="ml-2 text-xs text-orange-600 hover:text-orange-800">🚫 Cancelar</button>` : ''}
         ${!podeEnviar && !podeCancelarValidada && !(a.status === 'approved' && (a.driver_ids || []).length && precisaListagemComNomesDocumentos(a)) ? '<span class="text-slate-300 text-xs">—</span>' : ''}
       </td>
-      <td class="px-4 py-3">${a.escola_confirmada_em ? '<span class="text-xs font-bold text-blue-600">Confirmada</span>' : '<span class="text-xs font-bold text-black">Pendente</span>'}</td>
+      <td class="px-4 py-3">${a.situacao === 'reprovada' ? '' : (a.escola_confirmada_em ? '<span class="text-xs font-bold text-blue-600">Confirmada</span>' : '<span class="text-xs font-bold text-black">Pendente</span>')}</td>
       <td class="px-4 py-3"><span style="${SITUACAO_COLORS[a.situacao] || ''}" class="px-2 py-1 rounded text-xs font-medium whitespace-nowrap">${SITUACAO_LABELS[a.situacao] || a.situacao || '-'}</span></td>
     </tr>`;
     };
@@ -4858,7 +4880,7 @@ async function downloadListagemModelo(excursionId, driverId) {
     `DATA: ${dataViagem}   |   SAÍDA: ${horaComH(trip.departure_time)}   |   RETORNO: ${horaComH(trip.return_time)}`,
     `ORIGEM: ${originName(trip) || '-'} — ${originAddress(trip) || '-'}`,
     `DESTINO: ${destinoCompleto}`,
-    `MOTORISTA: ${d?.name || '-'}   |   VEÍCULO: ${v?.type || 'Veículo'}${v?.plate ? ' · ' + v.plate : ''}   |   CAPACIDADE: ${capacidade} lugares`,
+    `MOTORISTA: ${d?.name || '-'}   |   VEÍCULO: ${v?.type || 'Veículo'}${v?.plate ? ' · ' + v.plate : ''}   |   ${capacidade} lugares`,
   ];
   // Layout: título centralizado com o favicon antes, sem fundos verdes; dados da viagem
   // separados por linhas finas; só as colunas A–C visíveis; cabeçalho e dados travados
@@ -5704,7 +5726,7 @@ async function confirmAssign() {
         const link = (atualizado.solicitation_type === 'agendamento' || !atualizado.school_id) && atualizado.passenger_access_token
           ? `${base}passageiros.html?token=${encodeURIComponent(atualizado.passenger_access_token)}`
           : '';
-        const sent = await notifyRequesterEmail(atualizado, 'Bora Lá - preencher listagem de passageiros', buildRequesterPassengerEmail(atualizado, link));
+        const sent = await notifyRequesterEmail(atualizado, 'Bora Lá - preencher listagem de passageiros', buildRequesterPassengerEmail(atualizado, link), buildRequesterPassengerEmailHtml(atualizado, link));
         if (sent) await updateExcursion(assignTargetId, { passenger_access_notified_at: new Date().toISOString() });
       }
     }
