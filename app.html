@@ -2027,40 +2027,39 @@
   </div>
 
   <!-- MODAL ENVIAR PARA COOPERATIVA -->
-  <div id="cooperativaEmailModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-    <div class="bg-white rounded-2xl p-7 max-w-xl w-full max-h-[95vh] overflow-y-auto">
-      <h3 class="font-bold text-lg mb-4">✉️ Enviar para a cooperativa</h3>
-      <div class="space-y-3">
-        <div id="emailTipoWrap" class="hidden">
-          <label class="block text-sm font-medium mb-1">Registro deste envio</label>
-          <select id="emailTipo" onchange="onEmailTipoChange()" class="w-full px-3 py-2 border rounded-lg text-sm"></select>
-          <p class="text-xs text-slate-500 mt-1">PCD e ATF são enviados e registrados separadamente quando ambos forem exigidos.</p>
-        </div>
+  <div id="cooperativaEmailModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div class="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+      <div class="flex items-start justify-between gap-4"><div><h3 class="text-lg font-bold text-slate-900">✉️ Enviar para a cooperativa</h3><p class="mt-1 text-sm text-slate-500">O envio é feito para o e-mail cadastrado da cooperativa, com cópia automática para o setor.</p></div><button onclick="closeCooperativaEmailModal()" class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Fechar">✕</button></div>
+      <div class="mt-5 grid gap-4 lg:grid-cols-3">
         <div>
-          <label class="block text-sm font-medium mb-1">Cooperativa</label>
-          <select id="emailCooperativaId" onchange="onEmailCooperativaChange()" class="w-full px-3 py-2 border rounded-lg text-sm">
+          <label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Cooperativa</label>
+          <select id="emailCooperativaId" onchange="onEmailCooperativaChange()" class="w-full rounded-lg border px-3 py-2 text-sm">
             <option value="">— selecione —</option>
           </select>
-          <p id="emailCooperativaAviso" class="hidden text-xs text-amber-600 mt-1">⚠️ Essa cooperativa ainda não tem e-mail cadastrado (tela Cooperativas).</p>
+          <p id="emailCooperativaAviso" class="hidden mt-1 text-xs text-amber-600">⚠️ Essa cooperativa ainda não tem e-mail cadastrado (tela Cooperativas).</p>
+        </div>
+        <div id="emailTipoWrap" class="hidden">
+          <label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Registro deste envio</label>
+          <select id="emailTipo" onchange="onEmailTipoChange()" class="w-full rounded-lg border px-3 py-2 text-sm"></select>
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">Cópia automática</label>
-          <input id="emailCopiaSetor" type="email" readonly class="w-full px-3 py-2 border rounded-lg text-sm bg-slate-50" />
-          <p class="text-xs text-slate-500 mt-1">Alterável em Cooperativas → Envio de e-mail.</p>
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">Assunto</label>
-          <input type="text" id="emailAssunto" class="w-full px-3 py-2 border rounded-lg text-sm" />
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">Mensagem</label>
-          <textarea id="emailCorpo" rows="14" class="w-full px-3 py-2 border rounded-lg text-sm font-mono text-xs"></textarea>
+          <label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Cópia automática</label>
+          <input id="emailCopiaSetor" type="email" readonly class="w-full rounded-lg border bg-slate-50 px-3 py-2 text-sm" />
+          <p class="mt-1 text-xs text-slate-500">Alterável em Cooperativas → Envio de e-mail.</p>
         </div>
       </div>
-      <div class="flex justify-end gap-2 mt-4">
-        <button onclick="closeCooperativaEmailModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Cancelar</button>
-        <button onclick="copyEmailText()" class="px-4 py-2 border rounded-lg text-sm">📋 Copiar texto</button>
-        <button onclick="sendCooperativaEmail()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">Abrir e-mail</button>
+      <div class="mt-5 grid gap-4 lg:grid-cols-2">
+        <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Assunto</label><input type="text" id="emailAssunto" readonly class="w-full rounded-lg border bg-slate-50 px-3 py-2 text-sm" /></div>
+        <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Destinatários</label><div id="emailDestinatarios" class="rounded-lg border bg-slate-50 px-3 py-2 text-sm text-slate-700"></div></div>
+      </div>
+      <div class="mt-4"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Mensagem enviada</label><div id="emailMensagemPreview" class="overflow-x-auto rounded-xl border bg-white p-4"></div></div>
+      <!-- Texto simples (usado em Copiar texto e Abrir e-mail). -->
+      <textarea id="emailCorpo" class="hidden"></textarea>
+      <div class="mt-5 flex justify-end gap-2">
+        <button onclick="closeCooperativaEmailModal()" class="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">Cancelar</button>
+        <button onclick="copyEmailText()" class="rounded-lg border px-4 py-2 text-sm font-semibold text-slate-700">📋 Copiar texto</button>
+        <button onclick="sendCooperativaEmail(true)" class="rounded-lg border px-4 py-2 text-sm font-semibold text-slate-700">Abrir e-mail</button>
+        <button onclick="sendCooperativaEmail()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Enviar pela aplicação</button>
       </div>
     </div>
   </div>

@@ -5415,7 +5415,7 @@ async function enviarListagemParaCooperativas(id) {
     const copiaSetor = appSettings.email_copia_setor || appSettings.remetente_email || '';
     const enviouAuto = coop && coop.email ? await tentarEnviarEmailAutomatico(coop.email, subject, body, copiaSetor, html) : false;
     if (enviouAuto) {
-      await updateExcursion(id, { cooperativa_email_sent_at: new Date().toISOString(), atf_cooperativa_enviado_em: new Date().toISOString(), atf_status: precisaListagemComNomesDocumentos(trip) ? 'aguardando' : trip.atf_status, cooperativa_email_last_error: null });
+      await updateExcursion(id, { cooperativa_email_sent_at: new Date().toISOString(), atf_cooperativa_enviado_em: new Date().toISOString(), atf_status: precisaListagemComNomesDocumentos(trip) ? 'aguardando' : trip.atf_status, cooperativa_email_last_error: null, situacao: 'envio_coop' });
       toast(`✉️ E-mail enviado automaticamente para ${coop.name}.`);
     } else if (!precisaManual) {
       await updateExcursion(id, { cooperativa_email_last_error: `Falha ao enviar para ${coop ? coop.email : 'cooperativa sem e-mail'}` });
@@ -5487,6 +5487,7 @@ function openCooperativaEmailModalPreenchido(id, coopId, subject, body, html = '
 function onEmailCooperativaChange() {
   const coop = cooperativaById(document.getElementById('emailCooperativaId').value);
   document.getElementById('emailCooperativaAviso').classList.toggle('hidden', !coop || !!coop.email);
+  renderCooperativaEmailPreview();
   if (emailTargetId && document.getElementById('emailTipo')?.value === 'atf') onEmailTipoChange();
 }
 
@@ -5496,8 +5497,10 @@ async function onEmailTipoChange() {
   const tipo = document.getElementById('emailTipo').value || ((trip.pca_count || 0) > 0 ? 'pcd' : 'atf');
   document.getElementById('emailAssunto').value = buildCooperativaEmailSubject(trip, tipo === 'pcd');
   if (tipo === 'pcd') {
-    emailHtmlBody = '';
-    document.getElementById('emailCorpo').value = buildPcdEmailBody(trip, await getExcursionPcdStudents(trip.id));
+    const pcdStudents = await getExcursionPcdStudents(trip.id);
+    document.getElementById('emailCorpo').value = buildPcdEmailBody(trip, pcdStudents);
+    emailHtmlBody = coopEmailComCabecalho('Transporte adaptado PCD', buildPcdEmailHtml(trip, pcdStudents));
+    renderCooperativaEmailPreview();
     return;
   }
   const coopId = document.getElementById('emailCooperativaId')?.value || '';
@@ -5505,7 +5508,38 @@ async function onEmailTipoChange() {
   const grouped = await getExcursionPassengersGrouped(trip.id);
   const files = await listagemFilesForTrip(trip.id);
   document.getElementById('emailCorpo').value = buildListagemEmailBody(trip, ids, grouped, files);
-  emailHtmlBody = buildListagemEmailHtml(trip, ids, grouped, files);
+  emailHtmlBody = coopEmailComCabecalho('Solicitação de ATF', buildListagemEmailHtml(trip, ids, grouped, files));
+  renderCooperativaEmailPreview();
+}
+
+// Cabeçalho com a logo (mesmo modelo do e-mail "Confirmação de viagens").
+function coopEmailComCabecalho(titulo, corpoHtml) {
+  return `<div style="max-width:820px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.45"><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | ${escapeHtml(titulo)}</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:3px;background:#16a34a;margin:3px 0 14px"></div>${corpoHtml}</div>`;
+}
+
+function buildPcdEmailHtml(trip, pcdStudents) {
+  const esc = (v) => escapeHtml(v ?? '-');
+  const destinoCompleto = trip.destination_address
+    ? `${trip.destination}, ${trip.destination_address}${trip.city ? ', ' + trip.city : ''}`
+    : `${trip.destination}${trip.city ? ', ' + trip.city : ''}`;
+  const dataHora = `${trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'} — ${horaComH(trip.departure_time)} às ${horaComH(trip.return_time)}`;
+  const td = 'border:1px solid #cbd5e1;padding:6px';
+  const th = 'background:#e5e7eb;border:1px solid #cbd5e1;padding:7px 5px;font-size:11px';
+  const linhas = (pcdStudents || []).length
+    ? pcdStudents.map((p, i) => `<tr><td style="${td};text-align:center">${i + 1}</td><td style="${td}">${esc(p.nome_aluno)}</td><td style="${td}">${esc(p.documento_aluno || '-')}</td><td style="${td};text-align:center">${p.cadeirante ? 'Sim' : 'Não'}</td><td style="${td}">${esc(p.nome_apoio || '-')}</td><td style="${td}">${esc(p.documento_apoio || '-')}</td></tr>`).join('')
+    : `<tr><td colspan="6" style="${td};color:#64748b">Nenhum estudante cadastrado ainda - edite a solicitação antes de enviar.</td></tr>`;
+  return `<p style="margin:0 0 10px">Prezados(as),</p><p style="margin:0 0 10px">Solicitamos o transporte adaptado para o atendimento abaixo:</p><p style="margin:0 0 12px"><strong>Unidade solicitante:</strong> ${esc(requesterName(trip))}<br><strong>Data e horário:</strong> ${esc(dataHora)}<br><strong>Origem:</strong> ${esc(originName(trip))} — ${esc(originAddress(trip) || '-')}<br><strong>Destino:</strong> ${esc(destinoCompleto)}</p><table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><thead><tr><th style="${th};width:6%">Nº</th><th style="${th}">ESTUDANTE PCD</th><th style="${th};width:18%">DOCUMENTO</th><th style="${th};width:10%">CADEIRANTE</th><th style="${th}">APOIO</th><th style="${th};width:18%">DOCUMENTO</th></tr></thead><tbody>${linhas}</tbody></table><p style="margin:12px 0 0">Pedimos a confirmação do atendimento e, se disponível, a indicação do veículo e motorista responsáveis.</p><p style="margin:16px 0 0">Atenciosamente,<br>Bora Lá - Excursões / Semed Nova Lima</p>`;
+}
+
+function renderCooperativaEmailPreview() {
+  const coop = cooperativaById(document.getElementById('emailCooperativaId')?.value || '');
+  const copia = document.getElementById('emailCopiaSetor')?.value || '';
+  const dest = document.getElementById('emailDestinatarios');
+  if (dest) dest.innerHTML = coop?.email
+    ? `${escapeHtml(coop.email)}${copia ? `<br><span class="text-slate-500">cc: ${escapeHtml(copia)}</span>` : ''}`
+    : '<span class="text-amber-700">Cooperativa sem e-mail cadastrado</span>';
+  const prev = document.getElementById('emailMensagemPreview');
+  if (prev) prev.innerHTML = emailHtmlBody || `<pre class="whitespace-pre-wrap text-xs">${escapeHtml(document.getElementById('emailCorpo')?.value || '')}</pre>`;
 }
 
 function buildCooperativaEmailSubject(trip, isPcd) {
@@ -5588,7 +5622,7 @@ function copyEmailText() {
   );
 }
 
-async function sendCooperativaEmail() {
+async function sendCooperativaEmail(somenteAbrirEmail = false) {
   const coop = cooperativaById(document.getElementById('emailCooperativaId').value);
   if (!coop) { toast('⚠️ Selecione a cooperativa.', true); return; }
   if (!coop.email) { toast('⚠️ Essa cooperativa não tem e-mail cadastrado (tela Cooperativas).', true); return; }
@@ -5596,7 +5630,8 @@ async function sendCooperativaEmail() {
   const assunto = document.getElementById('emailAssunto').value;
   const corpo = document.getElementById('emailCorpo').value;
   const copiaSetor = appSettings.email_copia_setor || appSettings.remetente_email || '';
-  const enviou = await tentarEnviarEmailAutomatico(coop.email, assunto, corpo, copiaSetor, emailHtmlBody);
+  // "Abrir e-mail" só abre o programa de e-mail; "Enviar pela aplicação" tenta o envio automático.
+  const enviou = somenteAbrirEmail ? false : await tentarEnviarEmailAutomatico(coop.email, assunto, corpo, copiaSetor, emailHtmlBody);
   if (!enviou) {
     const mailto = `mailto:${encodeURIComponent(coop.email)}?cc=${encodeURIComponent(copiaSetor)}&subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
     window.open(mailto, '_blank');
