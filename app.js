@@ -1628,7 +1628,7 @@ function showScreen(name, el) {
   if (name === 'perfisacesso') { Promise.all([loadAccessProfiles(), loadRoleScreenPermissions()]).then(renderAccessProfiles); }
   if (name === 'validadores') openValidadoresScreen();
   if (name === 'relatorios') populateRelatorioFilters();
-  if (name === 'relatorios') renderRelatorioPreview();
+  if (name === 'relatorios') { document.getElementById('btnNotificarViagens')?.classList.toggle('hidden', currentUser?.role === 'agente_externo'); renderRelatorioPreview(); }
   if (name === 'pendenciascoop') renderPendenciasCoop();
   if (name === 'solicitacoescoop') renderSolicitacoesCoop();
   if (name === 'financeiro') renderFinanceRequests();
@@ -1667,7 +1667,7 @@ async function refreshDadosDaTela(name) {
     if (name === 'usuarios') openUsuariosScreen();
     if (name === 'validadores') openValidadoresScreen();
     if (name === 'relatorios') populateRelatorioFilters();
-    if (name === 'relatorios') renderRelatorioPreview();
+    if (name === 'relatorios') { document.getElementById('btnNotificarViagens')?.classList.toggle('hidden', currentUser?.role === 'agente_externo'); renderRelatorioPreview(); }
     if (name === 'pendenciascoop') renderPendenciasCoop();
     if (name === 'solicitacoescoop') renderSolicitacoesCoop();
     if (name === 'financeiro') renderFinanceRequests();
@@ -1987,6 +1987,8 @@ function filterKmAdmin() {
   return kmLogs.filter((k) => {
     if (currentUser?.role === 'agente_externo' && !driverBelongsToCooperativa(k.driver_id, currentUser.cooperativaId)) return false;
     if (motoristaId && k.driver_id !== motoristaId) return false;
+    const tipoKm = currentUser?.role === 'agente_externo' ? (document.getElementById('kmAdminFiltroTipo')?.value || '') : '';
+    if (tipoKm && (driverVehicle(k.driver_id)?.type || '') !== tipoKm) return false;
     if (coopId && !driverBelongsToCooperativa(k.driver_id, coopId)) return false;
     if (inicio && k.log_date < inicio) return false;
     if (fim && k.log_date > fim) return false;
@@ -2013,9 +2015,29 @@ function setKmAdminMesAtual() {
 }
 
 function renderKmAdmin() {
+  const ehCoopKm = currentUser?.role === 'agente_externo';
+  // Cooperativa: filtro de Tipo de veículo (só nesse perfil).
+  document.getElementById('kmAdminFiltroTipoWrap')?.classList.toggle('hidden', !ehCoopKm);
+  const tipoSel = document.getElementById('kmAdminFiltroTipo');
+  if (ehCoopKm && tipoSel) {
+    const atual = tipoSel.value;
+    const tipos = [...new Set(drivers.filter((d) => driverBelongsToCooperativa(d.id, currentUser.cooperativaId)).map((d) => driverVehicle(d.id)?.type).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    tipoSel.innerHTML = '<option value="">Todos</option>' + tipos.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+    tipoSel.value = tipos.includes(atual) ? atual : '';
+  }
   const rows = filterKmAdmin().slice().sort((a, b) => (b.log_date || '').localeCompare(a.log_date || ''));
+  const thead = document.getElementById('kmAdminThead');
+  if (thead) thead.innerHTML = ehCoopKm
+    ? '<th class="px-4 py-2">Data</th><th class="px-4 py-2">Motorista</th><th class="px-4 py-2">Tipo</th><th class="px-4 py-2">Capacidade</th><th class="px-4 py-2">Cooperativa</th><th class="px-4 py-2">Odômetro início</th><th class="px-4 py-2">Odômetro fim</th><th class="px-4 py-2">Km rodado</th>'
+    : '<th class="px-4 py-2">Data</th><th class="px-4 py-2">Motorista</th><th class="px-4 py-2">Cooperativa</th><th class="px-4 py-2">Odômetro início</th><th class="px-4 py-2">Odômetro fim</th><th class="px-4 py-2">Km rodado</th><th class="px-4 py-2"></th>';
   const tbody = document.getElementById('kmAdminTable');
-  if (tbody) {
+  if (tbody && ehCoopKm) {
+    tbody.innerHTML = rows.length ? rows.map((k) => {
+      const d = drivers.find((x) => x.id === k.driver_id);
+      const v = driverVehicle(k.driver_id);
+      return `<tr class="hover:bg-slate-50"><td class="px-4 py-3 text-sm">${new Date(k.log_date + 'T00:00').toLocaleDateString('pt-BR')}</td><td class="px-4 py-3 text-sm">${d ? escapeHtml(d.name) : '—'}</td><td class="px-4 py-3 text-sm">${escapeHtml(v?.type || '—')}</td><td class="px-4 py-3 text-sm">${v?.capacity ? escapeHtml(v.capacity) + ' lugares' : '—'}</td><td class="px-4 py-3 text-sm">${d ? cooperativaName(d) : '—'}</td><td class="px-4 py-3 text-sm">${k.odometer_start ?? '—'}</td><td class="px-4 py-3 text-sm">${k.odometer_end ?? '—'}</td><td class="px-4 py-3 text-sm font-medium">${k.km_rodado != null ? k.km_rodado + ' km' : '—'}</td></tr>`;
+    }).join('') : '<tr><td colspan="8" class="text-center py-8 text-slate-500 text-sm">Nenhum registro encontrado</td></tr>';
+  } else if (tbody) {
     tbody.innerHTML = rows.length ? rows.map((k) => {
       const d = drivers.find((x) => x.id === k.driver_id);
       return `
@@ -2035,6 +2057,33 @@ function renderKmAdmin() {
   if (resumo) {
     const motoristas = new Set(rows.map((k) => k.driver_id).filter(Boolean)).size;
     const dias = new Set(rows.map((k) => k.log_date).filter(Boolean)).size;
+    if (ehCoopKm) {
+      // Somatórias de ATF/PCD das viagens da cooperativa, pelos mesmos filtros (motorista, tipo, período).
+      const fMot = document.getElementById('kmAdminFiltroMotorista')?.value || '';
+      const fTipo = document.getElementById('kmAdminFiltroTipo')?.value || '';
+      const fIni = document.getElementById('kmAdminFiltroInicio')?.value || '';
+      const fFim = document.getElementById('kmAdminFiltroFim')?.value || '';
+      const viagensCoop = getVisibleAgenda().filter((a) => {
+        if (fIni && (a.trip_date || '') < fIni) return false;
+        if (fFim && (a.trip_date || '') > fFim) return false;
+        const mots = (a.driver_ids || []).filter((id) => driverBelongsToCooperativa(id, currentUser.cooperativaId));
+        if (fMot && !mots.includes(fMot)) return false;
+        if (fTipo && !mots.some((id) => (driverVehicle(id)?.type || '') === fTipo)) return false;
+        return true;
+      });
+      const card = (label, valor, cls) => `<div class="rounded-lg border px-2 py-1.5 ${cls}"><div class="text-[10px] font-semibold">${label}</div><div class="text-base font-bold">${valor}</div></div>`;
+      resumo.innerHTML = `<div class="grid gap-1.5" style="grid-template-columns:repeat(auto-fit,minmax(105px,1fr))">${[
+        card('Registros', rows.length, 'border-slate-200 bg-slate-50 text-slate-800'),
+        card('KM rodados', total.toLocaleString('pt-BR', { maximumFractionDigits: 1 }), 'border-blue-200 bg-blue-50 text-blue-900'),
+        card('Motoristas', motoristas, 'border-emerald-200 bg-emerald-50 text-emerald-900'),
+        card('Dias com registro', dias, 'border-violet-200 bg-violet-50 text-violet-900'),
+        card('ATF emitidas', viagensCoop.filter((a) => a.atf_status === 'emitida').length, 'border-emerald-200 bg-emerald-50 text-emerald-900'),
+        card('ATF negadas', viagensCoop.filter((a) => a.atf_cooperativa_response === 'rejeitada').length, 'border-red-200 bg-red-50 text-red-900'),
+        card('PCD realizados', viagensCoop.filter((a) => a.pcd_cooperativa_confirmado_em).length, 'border-emerald-200 bg-emerald-50 text-emerald-900'),
+        card('PCD negados', viagensCoop.filter((a) => a.pcd_cooperativa_response === 'negada').length, 'border-red-200 bg-red-50 text-red-900'),
+      ].join('')}</div>`;
+      return;
+    }
     resumo.innerHTML = `<div class="grid grid-cols-2 gap-3 md:grid-cols-4">
       <div class="rounded-xl border border-slate-200 bg-slate-50 p-3"><div class="text-xs font-semibold text-slate-600">Registros</div><div class="mt-1 text-2xl font-bold text-slate-800">${rows.length}</div></div>
       <div class="rounded-xl border border-blue-200 bg-blue-50 p-3"><div class="text-xs font-semibold text-blue-700">KM rodados</div><div class="mt-1 text-2xl font-bold text-blue-900">${total.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</div></div>
@@ -2996,7 +3045,7 @@ function renderAgenda() {
       }
 
       // Admin: listagem ATF já enviada à cooperativa aparece como "Envio Coop" no Status.
-      const situacaoStatus = role === 'admin' && a.atf_cooperativa_enviado_em && !['cancelada', 'reprovada'].includes(a.situacao) ? 'envio_coop' : a.situacao;
+      const situacaoStatus = role === 'admin' && a.atf_cooperativa_enviado_em && a.atf_status !== 'emitida' && !['cancelada', 'reprovada'].includes(a.situacao) ? 'envio_coop' : a.situacao;
       const situacaoBase = podeEditarSituacao
         ? `<select onchange="updateSituacao('${a.id}', this.value)" style="${SITUACAO_COLORS[situacaoStatus] || ''}" class="px-2 py-1 rounded text-xs font-medium border-0">
             ${Object.entries(SITUACAO_LABELS).map(([v, l]) => `<option value="${v}" ${situacaoStatus === v ? 'selected' : ''}>${l}</option>`).join('')}
@@ -7459,6 +7508,19 @@ function resumoRelatorioHtml(tipo, rows, viagens = []) {
       ? [['Solicitações', rows.length, 'slate'], ['Valor solicitado', valor.toLocaleString('pt-BR', { style:'currency', currency:'BRL' }), 'amber'], ['Deferidos', rows.filter((r) => r.Situação === 'deferido').length, 'emerald'], ['Indeferidos', rows.filter((r) => r.Situação === 'indeferido').length, 'red']]
       : [['Registros', rows.length, 'slate'], ['Passageiros', passageiros, 'blue'], ['Aprovadas', aprovadas, 'emerald'], ['Reprovadas', reprovadas, 'red'], ['Canceladas', canceladas, 'amber']];
   const tones={slate:'bg-slate-50 border-slate-200 text-slate-800',blue:'bg-blue-50 border-blue-200 text-blue-800',emerald:'bg-emerald-50 border-emerald-200 text-emerald-800',red:'bg-red-50 border-red-200 text-red-800',amber:'bg-amber-50 border-amber-200 text-amber-800'};
+  // Cooperativa: somatórias de ATF e PCD na sequência dos cards nativos, menores e ajustados à largura.
+  if (currentUser?.role === 'agente_externo') {
+    const v = viagens || [];
+    cards.push(
+      ['ATF requeridas', v.filter((a) => a.atf_cooperativa_enviado_em).length, 'slate'],
+      ['ATF emitidas', v.filter((a) => a.atf_status === 'emitida').length, 'emerald'],
+      ['ATF negadas', v.filter((a) => a.atf_cooperativa_response === 'rejeitada').length, 'red'],
+      ['PCD requeridos', v.filter((a) => a.pcd_cooperativa_enviado_em).length, 'slate'],
+      ['PCD confirmados', v.filter((a) => a.pcd_cooperativa_confirmado_em).length, 'emerald'],
+      ['PCD negados', v.filter((a) => a.pcd_cooperativa_response === 'negada').length, 'red'],
+    );
+    return `<div class="mb-4 grid gap-1.5" style="grid-template-columns:repeat(auto-fit,minmax(105px,1fr))">${cards.map(([label,value,tone]) => `<div class="rounded-lg border px-2 py-1.5 ${tones[tone]}"><div class="text-[10px] font-semibold">${label}</div><div class="text-base font-bold">${value}</div></div>`).join('')}</div>`;
+  }
   return `<div class="mb-4 grid grid-cols-2 gap-2 md:grid-cols-5">${cards.map(([label,value,tone]) => `<div class="rounded-lg border px-2.5 py-2 ${tones[tone]}"><div class="text-[11px] font-semibold">${label}</div><div class="mt-0.5 text-lg font-bold">${value}</div></div>`).join('')}</div>`;
 }
 async function renderRelatorioPreview() {

@@ -1084,6 +1084,10 @@
                     <option value="">Todos</option>
                   </select>
                 </div>
+                <div id="kmAdminFiltroTipoWrap" class="hidden">
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Tipo</label>
+                  <select id="kmAdminFiltroTipo" onchange="renderKmAdmin()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todos</option></select>
+                </div>
                 <div>
                   <label class="block text-xs font-medium text-slate-500 mb-1">Cooperativa</label>
                   <select id="kmAdminFiltroCooperativa" onchange="renderKmAdmin()" class="px-3 py-2 border rounded-lg text-sm">
@@ -1114,7 +1118,7 @@
               <div class="overflow-x-auto">
                 <table class="w-full text-left">
                   <thead>
-                    <tr class="border-b border-slate-200 text-xs uppercase text-slate-500">
+                    <tr id="kmAdminThead" class="border-b border-slate-200 text-xs uppercase text-slate-500">
                       <th class="px-4 py-2">Data</th>
                       <th class="px-4 py-2">Motorista</th>
                       <th class="px-4 py-2">Cooperativa</th>
