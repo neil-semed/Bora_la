@@ -2331,54 +2331,120 @@ function renderSolicitacoesCoop() {
   }).join('') : '<p class="rounded-xl bg-slate-50 p-6 text-center text-sm text-slate-500">Nenhuma viagem confirmada atribuída à cooperativa.</p>';
 }
 
-function renderPendenciasCoop() {
+async function renderPendenciasCoop() {
   const box = document.getElementById('pendenciasCoopLista'); if (!box) return;
   populateCoopFilters();
   const data = document.getElementById('coopFiltroData')?.value || '';
   const unidade = document.getElementById('coopFiltroUnidade')?.value || '';
   const rows = getVisibleAgenda().filter((a) => (!data || a.trip_date === data) && (!unidade || origemFiltroId(a) === unidade) && viagemConfirmadaParaMotorista(a));
-  const atf = rows.filter((a) => a.atf_status === 'aguardando');
-  const pcd = rows.filter((a) => (a.pca_count || 0) > 0 && a.pcd_cooperativa_enviado_em && !a.pcd_cooperativa_confirmado_em);
+  // Recusa da cooperativa tira o card; um novo envio do Admin (posterior à recusa) o traz de volta.
+  const recusadaAtf = (a) => a.atf_cooperativa_response === 'rejeitada' && (!a.atf_cooperativa_enviado_em || String(a.atf_cooperativa_response_at || '') >= String(a.atf_cooperativa_enviado_em));
+  const recusadaPcd = (a) => a.pcd_cooperativa_response === 'negada' && (!a.pcd_cooperativa_enviado_em || String(a.pcd_cooperativa_response_at || '') >= String(a.pcd_cooperativa_enviado_em));
+  const atf = rows.filter((a) => a.atf_status === 'aguardando' && !recusadaAtf(a));
+  const pcd = rows.filter((a) => (a.pca_count || 0) > 0 && a.pcd_cooperativa_enviado_em && !a.pcd_cooperativa_confirmado_em && !recusadaPcd(a));
+
+  // Lista digitada (contagem) x arquivo anexado, por viagem.
+  const contagem = {}, arquivos = {};
+  const ids = atf.map((a) => a.id);
+  if (ids.length) {
+    if (sb) {
+      const [pass, files] = await Promise.all([
+        sb.from('excursion_passengers').select('excursion_id,nome').in('excursion_id', ids),
+        sb.from('excursion_listagem_files').select('*').in('excursion_id', ids).order('created_at'),
+      ]);
+      (pass.data || []).forEach((p) => { if (String(p.nome || '').trim()) contagem[p.excursion_id] = (contagem[p.excursion_id] || 0) + 1; });
+      (files.data || []).forEach((f) => { (arquivos[f.excursion_id] = arquivos[f.excursion_id] || []).push(f); });
+    } else {
+      atf.forEach((a) => { contagem[a.id] = (a.passengers || []).filter((p) => String(p.nome || '').trim()).length; arquivos[a.id] = a.listagem_files || []; });
+    }
+  }
+
+  const btn = 'rounded-lg border px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50';
+  const linkDownload = (f) => {
+    const id = f.drive_file_id || (String(f.drive_url || '').match(/\/d\/([^/]+)/)?.[1]);
+    return id ? `https://drive.google.com/uc?export=download&id=${encodeURIComponent(id)}` : (f.drive_url || '');
+  };
   const makeCard = (a, tipo) => {
     const pcdCard = tipo === 'pcd';
-    const motoristas = cooperativeDriversForTrip(a).map((d) => `${escapeHtml(d.name)}${driverVehicle(d.id)?.plate ? ` · ${escapeHtml(driverVehicle(d.id).plate)}` : ''}`).join(' / ');
-    const botoes = pcdCard
-      ? `<div class="mt-3 grid gap-2 md:grid-cols-2"><input id="pcdVeiculo-${a.id}" placeholder="Veículo (opcional)" class="border rounded-lg px-3 py-2 text-sm"><input id="pcdMotorista-${a.id}" placeholder="Motorista (opcional)" class="border rounded-lg px-3 py-2 text-sm"></div><div class="mt-3 flex flex-wrap gap-2"><button onclick="confirmarPcdCoop('${a.id}')" class="rounded-lg bg-violet-600 px-3 py-2 text-sm font-bold text-white">Confirmar transporte PCD</button><button onclick="rejeitarPcdCoop('${a.id}')" class="rounded-lg border border-red-200 px-3 py-2 text-sm font-bold text-red-700">Reprovar</button></div>`
+    const motoristas = cooperativeDriversForTrip(a).map((d) => { const v = driverVehicle(d.id); return `${escapeHtml(d.name)}${v?.plate ? ` · ${escapeHtml(v.plate)}` : ''}${v?.capacity ? ` · ${escapeHtml(v.capacity)} lugares` : ''}`; }).join(' / ');
+    const destinoEnd = [a.destination_address, a.city].filter(Boolean).join(', ');
+    const qtd = contagem[a.id] || 0;
+    const extra = pcdCard
+      ? ` · ${a.pca_count || 0} estudante(s) PCD + ${a.apoio_count || 0} apoio(s)`
+      : (qtd ? ` · ${qtd} passageiros` : '');
+    let listaBtns = '';
+    if (pcdCard || qtd) {
+      listaBtns = `<button onclick="exportCoopList('${a.id}','${tipo}','pdf')" class="${btn}">⬇ PDF</button><button onclick="exportCoopList('${a.id}','${tipo}','excel')" class="${btn}">⬇ Excel</button>`;
+    } else if ((arquivos[a.id] || []).length) {
+      listaBtns = (arquivos[a.id] || []).filter((f) => f.drive_url).map((f) => `<a href="${escapeHtml(f.drive_url)}" target="_blank" rel="noopener" class="${btn} border-blue-200 text-blue-700" title="${escapeHtml(f.filename || '')}">🔗 Abrir listagem</a><a href="${escapeHtml(linkDownload(f))}" target="_blank" rel="noopener" class="${btn} border-blue-200 text-blue-700">⬇ Baixar</a>`).join('');
+    }
+    const acoes = pcdCard
+      ? `<div class="mt-3 grid gap-2 md:grid-cols-2"><input id="pcdVeiculo-${a.id}" placeholder="Veículo (opcional)" class="border rounded-lg px-3 py-2 text-sm"><input id="pcdMotorista-${a.id}" placeholder="Motorista (opcional)" class="border rounded-lg px-3 py-2 text-sm"></div><div class="mt-3 flex flex-wrap gap-2"><button onclick="confirmarPcdCoop('${a.id}')" class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white">Confirmar atendimento</button><button onclick="rejeitarPcdCoop('${a.id}')" class="rounded-lg border border-red-200 px-3 py-2 text-sm font-bold text-red-700">Recusar</button></div>`
       : `<div class="mt-3 flex flex-wrap gap-2"><button onclick="aceitarAtfCoop('${a.id}')" class="rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-white">Aprovar e emitir ATF</button><button onclick="rejeitarAtfCoop('${a.id}')" class="rounded-lg border border-red-200 px-3 py-2 text-sm font-bold text-red-700">Reprovar</button></div>`;
-    return `${pendenciaCard(a, { badge: pcdCard ? 'Transporte e lista PCD' : 'ATF aguardando emissão', tone: pcdCard ? 'blue' : 'amber', detail: `Motorista(s) escalado(s): ${motoristas || 'não informado'}` })}<div class="-mt-3 rounded-b-xl border border-t-0 bg-white px-4 pb-4 shadow-sm"><div class="flex flex-wrap gap-2"><button onclick="exportCoopList('${a.id}','${tipo}','pdf')" class="rounded-lg border px-3 py-2 text-xs font-bold text-slate-700">PDF</button><button onclick="exportCoopList('${a.id}','${tipo}','excel')" class="rounded-lg border px-3 py-2 text-xs font-bold text-slate-700">Excel</button></div>${botoes}</div>`;
+    const tone = pcdCard ? 'border-blue-200 bg-blue-50/40' : 'border-amber-200 bg-amber-50/40';
+    const badge = pcdCard ? '<span class="rounded-full bg-blue-100 px-3 py-1 text-sm font-extrabold text-blue-700">♿ Transporte e lista PCD</span>' : '<span class="rounded-full bg-amber-100 px-3 py-1 text-sm font-extrabold text-amber-800">🕒 ATF aguardando emissão</span>';
+    return `<article class="rounded-xl border ${tone} p-4 shadow-sm">${badge}
+      <h3 class="mt-2 font-bold text-slate-800">${escapeHtml(originName(a))} <span class="text-slate-400">→</span> ${escapeHtml(a.destination || '-')}</h3>
+      <div class="mt-1 text-sm"><b>${a.trip_date ? new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'}</b> | <b>${horaComH(a.departure_time)} → ${horaComH(a.return_time)}</b>${extra}</div>
+      <div class="mt-1 text-sm"><b>Origem:</b> ${escapeHtml(originName(a))}${originAddress(a) ? ` <span class="text-xs text-slate-500">→ ${escapeHtml(originAddress(a))}</span>` : ''}</div>
+      <div class="text-sm"><b>Destino:</b> ${escapeHtml(a.destination || '-')}${destinoEnd ? ` <span class="text-xs text-slate-500">→ ${escapeHtml(destinoEnd)}</span>` : ''}</div>
+      <div class="mt-1 text-xs font-medium text-slate-600">Motorista(s) escalado(s): ${motoristas || 'não informado'}</div>
+    </article><div class="-mt-3 rounded-b-xl border border-t-0 bg-white px-4 pb-4 pt-5 shadow-sm">${listaBtns ? `<div class="flex flex-wrap gap-2">${listaBtns}</div>` : ''}${acoes}</div>`;
   };
   box.innerHTML = `${pendenciaBloco('ATF para emissão', 'Solicitações que aguardam a confirmação de emissão pela cooperativa.', atf.map((a) => makeCard(a, 'atf')), '📄', 'amber')}${pendenciaBloco('Transporte e listagem PCD', 'Atendimentos adaptados encaminhados para confirmação.', pcd.map((a) => makeCard(a, 'pcd')), '♿', 'blue')}`;
   safeIcons();
 }
 
+// Janela de confirmação das respostas da cooperativa (ATF / PCD).
+function confirmarRespostaCoop({ titulo, info = '', texto = '', tom = 'amber', botao = 'Confirmar' }) {
+  return new Promise((resolve) => {
+    const cores = { amber: ['#fffbeb', '#fde68a', '#f59e0b'], blue: ['#eff6ff', '#bfdbfe', '#2563eb'], red: ['#fff1f2', '#fecdd3', '#e11d48'] }[tom] || ['#fffbeb', '#fde68a', '#f59e0b'];
+    const wrap = document.createElement('div');
+    wrap.className = 'fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4';
+    wrap.innerHTML = `<div class="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"><h4 class="text-base font-bold text-slate-900">${escapeHtml(titulo)}</h4>${info ? `<p class="mt-1 text-sm text-slate-600">${escapeHtml(info)}</p>` : ''}${texto ? `<p class="mt-3 rounded-lg p-3 text-xs leading-relaxed text-slate-700" style="background:${cores[0]};border:1px solid ${cores[1]}">${escapeHtml(texto)}</p>` : ''}<div class="mt-4 flex justify-end gap-2"><button data-r="0" class="rounded-lg border px-4 py-2 text-sm font-semibold text-slate-700">Voltar</button><button data-r="1" class="rounded-lg px-4 py-2 text-sm font-bold text-white" style="background:${cores[2]}">${escapeHtml(botao)}</button></div></div>`;
+    wrap.addEventListener('click', (e) => { const r = e.target?.dataset?.r; if (r === undefined) return; wrap.remove(); resolve(r === '1'); });
+    document.body.appendChild(wrap);
+  });
+}
+function infoViagemCoop(id) {
+  const a = agenda.find((x) => x.id === id); if (!a) return '';
+  const mot = cooperativeDriversForTrip(a).map((d) => `${d.name}${driverVehicle(d.id)?.plate ? ' · ' + driverVehicle(d.id).plate : ''}`).join(' / ');
+  return `${a.destination || '-'} · ${a.trip_date ? new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'}${mot ? ' · ' + mot : ''}`;
+}
+
 async function aceitarAtfCoop(id) {
   if (!sb) { toast('⚠️ Este aceite precisa do Supabase.', true); return; }
+  if (!await confirmarRespostaCoop({ titulo: 'Confirmar emissão da ATF?', info: infoViagemCoop(id), tom: 'amber', botao: 'Confirmar emissão',
+    texto: 'Declaro, em nome desta cooperativa, que a Autorização de Tráfego (ATF) referente a esta viagem foi emitida, sendo sua emissão e regularidade de inteira responsabilidade da cooperativa. A Secretaria Municipal de Educação (SEMED) considerará este aceite como comprovação de emissão do documento.' })) return;
   const { error } = await sb.rpc('agent_accept_atf', { p_excursion_id: id });
   if (error) { toast('❌ ' + error.message, true); return; }
-  await loadAgenda(); await loadNotifications(); renderPendenciasCoop(); toast('✅ ATF marcada como emitida e os envolvidos foram notificados.');
+  await loadAgenda(); await loadNotifications(); renderPendenciasCoop(); toast('✅ ATF marcada como emitida. Admin, Pedagogia e unidade foram notificados.');
 }
 
 async function confirmarPcdCoop(id) {
   if (!sb) { toast('⚠️ Esta confirmação precisa do Supabase.', true); return; }
+  const tripPcd = agenda.find((x) => x.id === id);
+  if (!await confirmarRespostaCoop({ titulo: 'Confirmar o transporte adaptado?', info: `${tripPcd?.destination || '-'} · ${tripPcd?.trip_date ? new Date(tripPcd.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'} · ${tripPcd?.pca_count || 0} estudante(s) PCD + ${tripPcd?.apoio_count || 0} apoio(s)`, tom: 'blue', botao: 'Confirmar atendimento',
+    texto: 'Declaro, em nome desta cooperativa, que o atendimento em veículo adaptado para os estudantes relacionados está confirmado, sendo sua execução de inteira responsabilidade da cooperativa. A SEMED considerará este aceite como confirmação do atendimento.' })) return;
   const veiculo = document.getElementById(`pcdVeiculo-${id}`)?.value.trim() || null;
   const motorista = document.getElementById(`pcdMotorista-${id}`)?.value.trim() || null;
   const { error } = await sb.rpc('agent_confirm_pcd', { p_excursion_id: id, p_vehicle: veiculo, p_driver: motorista });
   if (error) { toast('❌ ' + error.message, true); return; }
-  await loadAgenda(); await loadNotifications(); renderPendenciasCoop(); toast('✅ Transporte PCD confirmado e os envolvidos foram notificados.');
+  await loadAgenda(); await loadNotifications(); renderPendenciasCoop(); toast('✅ Atendimento PCD confirmado. Admin e unidade foram notificados.');
 }
 async function rejeitarAtfCoop(id) {
   if (!sb) { toast('⚠️ Esta resposta precisa do Supabase.', true); return; }
-  if (!window.confirm('POR GENTILEZA, ENTRE EM CONTATO COM O ADMINISTRADOR SEMED. Confirmar a recusa da ATF?')) return;
+  if (!await confirmarRespostaCoop({ titulo: 'Recusar a emissão da ATF?', texto: 'POR GENTILEZA, ENTRE EM CONTATO COM O ADMINISTRADOR SEMED.', tom: 'red', botao: 'Confirmar recusa' })) return;
   const { error } = await sb.rpc('agent_reject_atf', { p_excursion_id: id });
   if (error) { toast('❌ ' + error.message, true); return; }
   await loadAgenda(); await loadNotifications(); renderPendenciasCoop(); toast('ℹ️ Administrador notificado da recusa da ATF.');
 }
 async function rejeitarPcdCoop(id) {
   if (!sb) { toast('⚠️ Esta resposta precisa do Supabase.', true); return; }
-  if (!window.confirm('Confirmar que a cooperativa não atenderá este transporte PCD?')) return;
+  if (!await confirmarRespostaCoop({ titulo: 'Recusar o transporte adaptado?', texto: 'POR GENTILEZA, ENTRE EM CONTATO COM O ADMINISTRADOR SEMED.', tom: 'red', botao: 'Confirmar recusa' })) return;
   const { error } = await sb.rpc('agent_reject_pcd', { p_excursion_id: id });
   if (error) { toast('❌ ' + error.message, true); return; }
-  await loadAgenda(); await loadNotifications(); renderPendenciasCoop(); toast('ℹ️ Resposta registrada e envolvidos notificados.');
+  await loadAgenda(); await loadNotifications(); renderPendenciasCoop(); toast('ℹ️ Administrador notificado da recusa do transporte PCD.');
 }
 
 // Deriva "precisa de contato com cooperativa" direto da viagem (destino fora de Nova
@@ -2978,7 +3044,11 @@ function renderAgenda() {
         exigePcd ? (role === 'admin' ? `<div class="text-xs"><div>PCD${a.pcd_lista_conferida_em ? ' ✅' : ''}</div><div class="text-slate-500">${a.pcd_lista_conferida_em ? dt(a.pcd_lista_conferida_em) : '—'}</div></div>` : `<div class="text-xs">PCD ${a.pcd_lista_conferida_em ? '✅ ' + dt(a.pcd_lista_conferida_em) : '—'}</div>`) : '',
       ].filter(Boolean).join('') || '—';
       const envioCoopCell = [
-        exigeAtf ? `<div class="text-xs">ATF: ${a.atf_cooperativa_enviado_em ? dt(a.atf_cooperativa_enviado_em) : '—'}</div>` : '',
+        exigeAtf ? (role === 'admin' && a.atf_status === 'emitida' && (a.atf_emitida_em || a.atf_cooperativa_response_at)
+          ? `<div class="text-xs"><div>ATF ✅</div><div class="text-slate-500">${dt(a.atf_emitida_em || a.atf_cooperativa_response_at)}</div></div>`
+          : role === 'admin' && a.atf_cooperativa_response === 'rejeitada'
+            ? `<div class="text-xs"><div>ATF ❌ Recusada</div><div class="text-slate-500">${dt(a.atf_cooperativa_response_at)}</div></div>`
+            : `<div class="text-xs">ATF: ${a.atf_cooperativa_enviado_em ? dt(a.atf_cooperativa_enviado_em) : '—'}</div>`) : '',
         exigePcd ? `<div class="text-xs">PCD: ${a.pcd_cooperativa_enviado_em ? dt(a.pcd_cooperativa_enviado_em) : '—'}</div>` : '',
       ].filter(Boolean).join('') || '—';
       const parecerDataValidador = `<div class="text-xs text-slate-500">${a.doc_parecer_em ? new Date(a.doc_parecer_em).toLocaleDateString('pt-BR') : ''}</div><div class="text-xs text-slate-500">${validatorFullName(a.doc_parecer_por) || ''}</div>`;
