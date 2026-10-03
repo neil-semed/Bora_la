@@ -2909,12 +2909,13 @@ function renderAgenda() {
         exigeAtf ? `<div class="text-xs">ATF: ${a.atf_cooperativa_enviado_em ? dt(a.atf_cooperativa_enviado_em) : '—'}</div>` : '',
         exigePcd ? `<div class="text-xs">PCD: ${a.pcd_cooperativa_enviado_em ? dt(a.pcd_cooperativa_enviado_em) : '—'}</div>` : '',
       ].filter(Boolean).join('') || '—';
+      const parecerDataValidador = `<div class="text-xs text-slate-500">${a.doc_parecer_em ? new Date(a.doc_parecer_em).toLocaleDateString('pt-BR') : ''}</div><div class="text-xs text-slate-500">${validatorFullName(a.doc_parecer_por) || ''}</div>`;
       const validacaoPedagogicaCell = a.doc_status === 'aceito'
-        ? `<div class="text-xs font-semibold text-emerald-700">Aprovado</div><div class="text-xs text-slate-500">${a.doc_parecer_em ? new Date(a.doc_parecer_em).toLocaleDateString('pt-BR') : ''} ${validatorFullName(a.doc_parecer_por) || ''}</div>`
+        ? `<div class="text-xs font-semibold text-emerald-700">Aprovado</div>${parecerDataValidador}`
         : a.doc_status === 'rejeitado'
-          ? `<div class="text-xs font-semibold text-red-700">Reprovado</div><div class="text-xs text-slate-500">${a.doc_parecer_em ? new Date(a.doc_parecer_em).toLocaleDateString('pt-BR') : ''} ${validatorFullName(a.doc_parecer_por) || ''}</div>`
+          ? `<div class="text-xs font-semibold text-red-700">Reprovado</div>${parecerDataValidador}`
           : a.doc_status === 'correcoes'
-            ? `<div class="text-xs font-semibold text-amber-700">Correções</div><div class="text-xs text-slate-500">${a.doc_parecer_em ? new Date(a.doc_parecer_em).toLocaleDateString('pt-BR') : ''} ${validatorFullName(a.doc_parecer_por) || ''}</div>`
+            ? `<div class="text-xs font-semibold text-amber-700">Correções</div>${parecerDataValidador}`
             : a.doc_status === 'solicitada' || a.doc_status === 'nao_enviado'
               ? '<div class="text-xs font-semibold text-slate-500">Sem proposta</div>'
               : '<div class="text-xs font-semibold text-sky-700">Em análise</div>';
@@ -2925,12 +2926,18 @@ function renderAgenda() {
       // Para a própria unidade, repetir o endereço da origem não agrega informação.
       // Mantemos-o para qualquer origem diferente da escola que está logada.
       const ocultarEnderecoDaOrigem = role === 'escola' && a.school_id === currentUser.schoolId;
+      // Escola: origem/destino diferente da unidade logada mostra o endereço com a cidade.
+      const comCidade = (endereco, cidade) => [endereco, cidade].map((x) => String(x || '').trim()).filter(Boolean).filter((x, i, arr) => !(i === 1 && arr[0].toLocaleLowerCase('pt-BR').includes(x.toLocaleLowerCase('pt-BR')))).join(' - ');
+      const enderecoOrigemTxt = role === 'escola' ? comCidade(originAddress(a), originCity(a)) : originAddress(a);
+      const nomeUnidadeLogada = role === 'escola' ? String(schoolName(currentUser.schoolId) || '').trim().toLocaleLowerCase('pt-BR') : '';
+      const destinoEhUnidadeLogada = !!nomeUnidadeLogada && String(a.destination || '').trim().toLocaleLowerCase('pt-BR') === nomeUnidadeLogada;
+      const enderecoDestinoTxt = role === 'escola' && !destinoEhUnidadeLogada ? comCidade(a.destination_address, a.city) : (a.destination_address || a.city);
       const enderecoOrigemTabela = ocultarEnderecoDaOrigem
         ? ''
-        : `<div class="text-xs text-slate-500">${originAddress(a) || '-'}</div>`;
+        : `<div class="text-xs text-slate-500">${enderecoOrigemTxt || '-'}</div>`;
       const enderecoOrigemCard = ocultarEnderecoDaOrigem
         ? ''
-        : `<div class="text-xs text-slate-500">${originAddress(a) || '-'}</div>`;
+        : `<div class="text-xs text-slate-500">${enderecoOrigemTxt || '-'}</div>`;
       const temAcoes = !acoes.includes('text-slate-300');
       const exibeMotoristas = isAgendaEditor || a.admin_decision === 'aprovada';
       const motoristasCell = exibeMotoristas ? driversLabelHtml(a.driver_ids) : '<span class="text-slate-400">Aguardando aprovação</span>';
@@ -2959,7 +2966,7 @@ function renderAgenda() {
       </td>
       <td class="px-4 py-3 text-sm">
         <div>${a.destination}</div>
-        <div class="text-xs text-slate-500">${a.destination_address || a.city || '-'}</div>
+        <div class="text-xs text-slate-500">${enderecoDestinoTxt || '-'}</div>
       </td>
       <td class="px-4 py-3 text-sm">
         <div class="font-medium">${totalPax} total</div>
@@ -3005,7 +3012,7 @@ function renderAgenda() {
         <div>
           <div class="text-slate-500 text-xs">Destino</div>
           <div class="font-medium">${a.destination}</div>
-          <div class="text-xs text-slate-500">${a.destination_address || a.city || '-'}</div>
+          <div class="text-xs text-slate-500">${enderecoDestinoTxt || '-'}</div>
         </div>
         <div class="flex items-center justify-between gap-2">
           <span class="text-slate-500 text-xs">Passageiros</span>
@@ -3850,7 +3857,7 @@ async function confirmCancel() {
       const data = trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
       await notifyAssignedDrivers(trip, 'CANCELADA!', `${data} - ${originName(trip)} - ${hhmm(trip.departure_time)}H → ${hhmm(trip.return_time)}H`);
     }
-    await loadAgenda(); await loadNotifications(); renderAgenda(); renderDashboard(); toast('🚫 Viagem cancelada.');
+    await loadAgenda(); await loadNotifications(); renderAgenda(); renderDashboard(); if (currentUser?.role === 'escola') renderValidacoesEscola(); toast('🚫 Viagem cancelada.');
   }
   closeCancelModal();
 }
@@ -3989,13 +3996,18 @@ function renderValidacoesEscola() {
       // Sempre mostra o nome completo de quem deu o parecer (não só o comentário) - fica
       // claro pra escola quem exatamente aprovou/pediu correção/rejeitou.
       const parecerPorTxt = a.doc_parecer_por ? ` <span class="text-slate-500">— ${validatorFullName(a.doc_parecer_por)}</span>` : '';
+      const aprovadoDataValidador = `${a.doc_parecer_em ? `<div class="text-xs text-slate-500">${new Date(a.doc_parecer_em).toLocaleDateString('pt-BR')}</div>` : ''}${a.doc_parecer_por ? `<div class="text-xs text-slate-500">${validatorFullName(a.doc_parecer_por)}</div>` : ''}`;
+      // Viagem futura com validação pedagógica aprovada pode ser cancelada pela unidade,
+      // mesmo sem motorista atribuído ou decisão do Admin.
+      const podeCancelarValidada = a.doc_status === 'aceito' && (a.trip_date || '') >= fmtDate(new Date())
+        && !['cancelada', 'reprovada'].includes(a.situacao) && !['rejected', 'completed', 'in_transit'].includes(a.status);
       let parecerCell = '<span class="text-xs text-slate-400">—</span>';
       if ((a.doc_status === 'correcoes' || a.doc_status === 'solicitada') && a.doc_parecer_comentario) {
         parecerCell = `<span class="text-xs text-amber-700">✏️ ${a.doc_parecer_comentario}${parecerPorTxt}</span>`;
       } else if (a.doc_status === 'rejeitado' && a.doc_parecer_comentario) {
         parecerCell = `<span class="text-xs text-red-700">🚫 ${a.doc_parecer_comentario}${parecerPorTxt}</span>`;
       } else if (a.doc_status === 'aceito') {
-        parecerCell = `<span class="text-xs text-emerald-700">✅ Aprovado${parecerPorTxt}</span>`;
+        parecerCell = `<div class="text-xs text-emerald-700">✅ Aprovado</div>${aprovadoDataValidador}`;
       }
       return `
     <tr class="hover:bg-slate-50">
@@ -4011,7 +4023,8 @@ function renderValidacoesEscola() {
       <td class="px-4 py-3 text-sm">
         ${podeEnviar ? `<button onclick="openDocUploadModal('${a.id}')" class="text-xs text-emerald-600 hover:text-emerald-800">${btnLabel}</button>` : ''}
         ${a.status === 'approved' && (a.driver_ids || []).length && precisaListagemComNomesDocumentos(a) ? `<button onclick="openListagemVeiculoModal('${a.id}')" class="ml-2 text-xs text-indigo-600 hover:text-indigo-800">📋 ${a.listagem_status === 'rejeitada' ? 'Corrigir listagem' : 'Passageiros'}</button>` : ''}
-        ${!podeEnviar && !(a.status === 'approved' && (a.driver_ids || []).length && precisaListagemComNomesDocumentos(a)) ? '<span class="text-slate-300 text-xs">—</span>' : ''}
+        ${podeCancelarValidada ? `<button onclick="openCancelModal('${a.id}')" class="ml-2 text-xs text-orange-600 hover:text-orange-800">🚫 Cancelar</button>` : ''}
+        ${!podeEnviar && !podeCancelarValidada && !(a.status === 'approved' && (a.driver_ids || []).length && precisaListagemComNomesDocumentos(a)) ? '<span class="text-slate-300 text-xs">—</span>' : ''}
       </td>
     </tr>`;
     }).join('');
