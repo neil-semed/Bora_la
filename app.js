@@ -3023,6 +3023,10 @@ function renderAgenda() {
           <span class="text-slate-500 text-xs">ATF</span>
           ${atfCell}
         </div>
+        ${!ehMotorista ? `<div class="flex items-start justify-between gap-2">
+          <span class="text-slate-500 text-xs">Validação pedagógica</span>
+          <span class="text-right">${validacaoPedagogicaCell}</span>
+        </div>` : ''}
         ${!ehMotorista ? `<div class="flex items-center justify-between gap-2">
           <span class="text-slate-500 text-xs">Motorista(s)</span>
           <span class="text-right">${motoristasCell}</span>
