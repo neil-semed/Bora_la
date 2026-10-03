@@ -1632,7 +1632,7 @@ async function refreshDadosDaTela(name) {
     if (name === 'usuarios') await loadAllProfiles();
     if (name === 'perfisacesso') await loadRoleScreenPermissions();
     if (name === 'validacoes') {
-      if (currentUser.role === 'escola') { populateValidacaoDestinoEscolaFilter(); renderValidacoesEscola(); }
+      if (currentUser.role === 'escola') { await loadValidationConfig(); populateValidacaoDestinoEscolaFilter(); populatePublicoAlvoFilter('validacaoFiltroPublicoEscola', 'Todos os públicos'); renderValidacoesEscola(); }
       else { await loadValidationConfig(); populateValidacaoOrigemFilter(); populatePublicoAlvoFilter('validacaoFiltroPublico', 'Todos os públicos'); renderValidacoesPedagogia(); }
     }
     if (name === 'agenda') { populateAgendaUnidadeFilter(); renderAgenda(); }
@@ -3917,6 +3917,7 @@ async function openValidacoesScreen() {
 
   if (isEscola) {
     populateValidacaoDestinoEscolaFilter();
+    populatePublicoAlvoFilter('validacaoFiltroPublicoEscola', 'Todos os públicos');
     renderValidacoesEscola();
   } else {
     // Por padrão, mostra primeiro o setor da própria pessoa (se ela tiver um definido em
@@ -3949,9 +3950,16 @@ function populateValidacaoDestinoEscolaFilter() {
 async function atualizarValidacoesEscola() {
   await loadSchools();
   await loadAgenda();
+  await loadValidationConfig();
   populateValidacaoDestinoEscolaFilter();
+  populatePublicoAlvoFilter('validacaoFiltroPublicoEscola', 'Todos os públicos');
   renderValidacoesEscola();
   toast('🔄 Validações atualizadas.');
+}
+
+function limparFiltrosValidacoesEscola() {
+  ['validacaoFiltroDestinoEscola', 'validacaoFiltroDataEscola', 'validacaoFiltroPublicoEscola'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+  renderValidacoesEscola();
 }
 
 function renderValidacoesEscola() {
@@ -3962,6 +3970,12 @@ function renderValidacoesEscola() {
   let minhas = getVisibleAgenda().filter((a) => a.school_id === currentUser.schoolId);
   if (destinoFiltro) minhas = minhas.filter((a) => (a.destination || '') === destinoFiltro);
   if (dataFiltro) minhas = minhas.filter((a) => (a.trip_date || '') === dataFiltro);
+  const publicoFiltro = document.getElementById('validacaoFiltroPublicoEscola')?.value || '';
+  if (publicoFiltro) minhas = minhas.filter((a) => publicoAlvoCorresponde(a, publicoFiltro));
+  // Origem/destino igual à unidade logada: não repete o endereço da própria unidade.
+  const nomeUnidade = String(schoolName(currentUser.schoolId) || '').trim().toLocaleLowerCase('pt-BR');
+  const origemEhMinha = (a) => a.solicitation_type !== 'agendamento' && a.school_id === currentUser.schoolId;
+  const destinoEhMinha = (a) => !!nomeUnidade && String(a.destination || '').trim().toLocaleLowerCase('pt-BR') === nomeUnidade;
   if (minhas.length === 0) {
     tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Nenhuma solicitação encontrada</td></tr>';
     return;
@@ -3986,8 +4000,8 @@ function renderValidacoesEscola() {
       return `
     <tr class="hover:bg-slate-50">
       <td class="px-4 py-3 text-sm">${new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR')}</td>
-      <td class="px-4 py-3 text-sm">${originName(a)}<div class="text-xs text-slate-500">${originAddress(a) || '-'}<div class="text-xs text-slate-400">${originCity(a) || ''}</div></div></td>
-      <td class="px-4 py-3 text-sm">${a.destination}<div class="text-xs text-slate-500">${a.destination_address || a.city || '-'}</div></td>
+      <td class="px-4 py-3 text-sm">${originName(a)}${origemEhMinha(a) ? '' : `<div class="text-xs text-slate-500">${originAddress(a) || '-'}<div class="text-xs text-slate-400">${originCity(a) || ''}</div></div>`}</td>
+      <td class="px-4 py-3 text-sm">${a.destination}${destinoEhMinha(a) ? '' : `<div class="text-xs text-slate-500">${a.destination_address || a.city || '-'}</div>`}</td>
       <td class="px-4 py-3 text-sm">${publicoAlvoLabel(a.validation_target_id || a.publico_alvo)}</td>
       <td class="px-4 py-3 text-sm">
         <span style="${DOC_STATUS_COLORS[a.doc_status] || ''}" class="px-2 py-1 rounded text-xs font-medium">${DOC_STATUS_LABELS[a.doc_status] || a.doc_status}</span>
@@ -4742,9 +4756,7 @@ async function downloadListagemModelo(excursionId, driverId) {
   for (let r=6; r<=capacidade+5; r++) { ws.getCell(r,1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF1F5F9'}}; ws.getCell(r,1).alignment={horizontal:'center',vertical:'middle'}; }
   // Linhas e colunas não utilizadas adotam altura/largura zero; só A:C e a lista ficam visíveis.
   try { const response=await fetch('assets/favicon-512.png'); const buffer=await response.arrayBuffer(); const imageId=wb.addImage({buffer,extension:'png'}); ws.addImage(imageId,{tl:{col:0.12,row:0.12},ext:{width:24,height:24}}); } catch (_) { /* o título continua legível se a imagem não puder ser carregada */ }
-  const destinoArquivo=String(trip.destination || 'Destino').replace(/[\\/:*?"<>|]/g,'').trim() || 'Destino';
-  const dataArquivo=trip.trip_date ? new Date(trip.trip_date+'T00:00').toLocaleDateString('pt-BR').replace(/\//g,'-') : 'data';
-  const bytes=await wb.xlsx.writeBuffer(); const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}); const link=document.createElement('a'); link.href=URL.createObjectURL(blob); link.download=`Excursão ${destinoArquivo} - ${dataArquivo}.xlsx`; link.click(); URL.revokeObjectURL(link.href);
+  const bytes=await wb.xlsx.writeBuffer(); const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}); const link=document.createElement('a'); link.href=URL.createObjectURL(blob); link.download=`${trip.trip_date || 'data'}_${slugify(schoolName(trip.school_id) || trip.requester_name || originName(trip))}_${slugify(d?.name || v?.plate || 'motorista')}.xlsx`; document.body.appendChild(link); link.click(); setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 1000);
 }
 
 function addListagemRow(driverId) {
@@ -4946,11 +4958,13 @@ async function confirmEnviarListagem() {
       try {
         const v = driverVehicle(did);
         const unidadeSlug = slugify(schoolName(trip.school_id) || trip.requester_name);
+        const motoristaSlug = slugify(driverName(did) || (v ? v.plate : did));
         const arquivoEnviado = listagemMetodoByDriver[did] === 'pdf' ? listagemUploadsByDriver[did] : null;
         const blob = arquivoEnviado || gerarListagemPdf(trip, did);
         if (!blob) continue;
         const base64 = await blobToBase64(blob);
-        const filename = arquivoEnviado ? `${trip.trip_date}_${unidadeSlug}_${v ? v.plate : did}_${arquivoEnviado.name.replace(/[^a-z0-9._-]/gi, '_')}` : `${trip.trip_date}_${unidadeSlug}_${v ? v.plate : did}.pdf`;
+        const extEnviado = arquivoEnviado ? ((arquivoEnviado.name.match(/\.(xlsx|pdf)$/i)?.[1] || (arquivoEnviado.type === 'application/pdf' ? 'pdf' : 'xlsx')).toLowerCase()) : '';
+        const filename = arquivoEnviado ? `${trip.trip_date}_${unidadeSlug}_${motoristaSlug}.${extEnviado}` : `${trip.trip_date}_${unidadeSlug}_${v ? v.plate : did}.pdf`;
         const mimeType = arquivoEnviado?.type || (filename.toLowerCase().endsWith('.xlsx') ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/pdf');
         const respJson = await uploadToGoogleDrive(driveUrl, { excursionId: id, filename, mimeType, fileBase64: base64, accessToken: session.access_token });
         if (!await registrarListagemFile(id, did, filename, respJson.fileId, respJson.url)) { arquivosSalvos = false; break; }

@@ -899,6 +899,8 @@
                 <div class="flex flex-wrap gap-2 items-end">
                   <div><label class="block text-xs font-medium text-slate-500 mb-1">Destino</label><select id="validacaoFiltroDestinoEscola" onchange="renderValidacoesEscola()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todos os destinos</option></select></div>
                   <div><label class="block text-xs font-medium text-slate-500 mb-1">Data</label><input type="date" id="validacaoFiltroDataEscola" onchange="renderValidacoesEscola()" class="px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label class="block text-xs font-medium text-slate-500 mb-1">Público-alvo</label><select id="validacaoFiltroPublicoEscola" onchange="renderValidacoesEscola()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todos os públicos</option></select></div>
+                  <button onclick="limparFiltrosValidacoesEscola()" class="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Limpar filtros</button>
                   <button onclick="atualizarValidacoesEscola()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm">🔄 Atualizar</button>
                 </div>
               </div>
