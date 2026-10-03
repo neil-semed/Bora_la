@@ -3590,15 +3590,24 @@ function populatePendenciasPublicoFilter() {
   populatePublicoAlvoFilter('pendenciasFiltroPublico', 'Todos os públicos');
 }
 
+function normalizaPublicoAlvo(txt) {
+  return String(txt || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/\bens\.?(?=\s)/g, 'ensino').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
 function publicoAlvoFiltroOptions() {
   const opcoes = new Map();
   const incluir = (id, nome) => {
     const label = String(nome || '').trim();
     if (!id || !label || label === '-') return;
-    // Mesmo público pode vir com ids diferentes (cadastro, rótulos fixos, agenda):
-    // agrupa pelo nome pra não repetir no filtro (publicoAlvoCorresponde casa por nome).
-    const chave = label.toLocaleLowerCase('pt-BR');
-    if ([...opcoes.values()].some((l) => l.toLocaleLowerCase('pt-BR') === chave)) return;
+    // Mesmo público pode vir com ids/grafias diferentes ("Ens." x "Ensino"):
+    // agrupa pelo nome normalizado e mantém a grafia mais completa.
+    const chave = normalizaPublicoAlvo(label);
+    const existente = [...opcoes.entries()].find(([, l]) => normalizaPublicoAlvo(l) === chave);
+    if (existente) {
+      if (label.length > existente[1].length) { opcoes.delete(existente[0]); opcoes.set(String(id), label); }
+      return;
+    }
     opcoes.set(String(id), label);
   };
   validationTargets.filter((t) => t.active !== false).forEach((t) => incluir(t.id, t.name));
@@ -3623,12 +3632,12 @@ function populatePublicoAlvoFilter(selectId, placeholder) {
 function publicoAlvoCorresponde(a, filtro) {
   if (!filtro) return true;
   const alvo = validationTargets.find((t) => String(t.id) === String(filtro));
-  const nomeFiltro = String(alvo?.name || PUBLICO_ALVO_LABELS[filtro] || filtro).trim().toLocaleLowerCase('pt-BR');
+  const nomeFiltro = normalizaPublicoAlvo(alvo?.name || PUBLICO_ALVO_LABELS[filtro] || filtro);
   const candidatos = [a.validation_target_id, a.publico_alvo]
     .filter(Boolean)
     .map((id) => String(id));
   if (candidatos.includes(String(filtro))) return true;
-  return candidatos.some((id) => String(publicoAlvoLabel(id) === '-' ? id : publicoAlvoLabel(id)).trim().toLocaleLowerCase('pt-BR') === nomeFiltro);
+  return candidatos.some((id) => normalizaPublicoAlvo(publicoAlvoLabel(id) === '-' ? id : publicoAlvoLabel(id)) === nomeFiltro);
 }
 
 function limparFiltrosPendencias() {
@@ -4027,6 +4036,11 @@ function origemEhUnidade(a) {
 function destinoEhUnidade(a) {
   const nome = String(a?.destination || '').trim().toLocaleLowerCase('pt-BR');
   return !!nome && schools.some((s) => String(s.name || '').trim().toLocaleLowerCase('pt-BR') === nome);
+}
+
+function limparFiltrosValidacoesPedagogia() {
+  ['validacaoFiltroOrigem', 'validacaoFiltroSetor', 'validacaoFiltroPublico'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+  renderValidacoesPedagogia();
 }
 
 function renderValidacoesPedagogia() {
