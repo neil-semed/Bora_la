@@ -3,6 +3,7 @@
 -- As funções conferiam a cooperativa apenas por drivers.cooperativa_id; motoristas
 -- vinculados à cooperativa somente pelo veículo geravam erro ao aprovar/recusar.
 -- Usa public.motorista_da_cooperativa_atual(), criada na migration_034.
+-- Ao aprovar e emitir a ATF, o Status da viagem passa a "Aprovada".
 
 create or replace function public.agent_accept_atf(p_excursion_id uuid)
 returns void language plpgsql security definer set search_path = public as $$
@@ -17,7 +18,7 @@ declare v excursions%rowtype; begin
   perform set_config('app.bora_la_system_write','true',true);
   update excursions set atf_status='emitida', atf_emitida_por=auth.uid(), atf_emitida_em=now(),
     atf_cooperativa_response='aceita', atf_cooperativa_response_at=now(),
-    situacao=case when situacao='aguarda_atf' then 'aprovada' else situacao end
+    situacao=case when situacao in ('cancelada','reprovada') then situacao else 'aprovada' end
   where id=v.id;
   insert into notifications(user_id,excursion_id,title,message)
   select p.id,v.id,'ATF emitida pela cooperativa','A cooperativa confirmou a emissão da ATF da viagem de ' || to_char(v.trip_date,'DD/MM/YYYY') || '.' from profiles p where p.active and (p.role in ('admin','pedagogia') or (p.role='escola' and p.school_id=v.school_id));
