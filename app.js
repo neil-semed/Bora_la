@@ -3595,6 +3595,10 @@ function publicoAlvoFiltroOptions() {
   const incluir = (id, nome) => {
     const label = String(nome || '').trim();
     if (!id || !label || label === '-') return;
+    // Mesmo público pode vir com ids diferentes (cadastro, rótulos fixos, agenda):
+    // agrupa pelo nome pra não repetir no filtro (publicoAlvoCorresponde casa por nome).
+    const chave = label.toLocaleLowerCase('pt-BR');
+    if ([...opcoes.values()].some((l) => l.toLocaleLowerCase('pt-BR') === chave)) return;
     opcoes.set(String(id), label);
   };
   validationTargets.filter((t) => t.active !== false).forEach((t) => incluir(t.id, t.name));
@@ -4016,6 +4020,15 @@ async function atualizarValidacoesPedagogia() {
   toast('🔄 Validações atualizadas.');
 }
 
+// Unidade cadastrada (schools) não precisa de endereço na listagem de validação.
+function origemEhUnidade(a) {
+  return a?.solicitation_type !== 'agendamento' && !!a?.school_id && schools.some((s) => s.id === a.school_id);
+}
+function destinoEhUnidade(a) {
+  const nome = String(a?.destination || '').trim().toLocaleLowerCase('pt-BR');
+  return !!nome && schools.some((s) => String(s.name || '').trim().toLocaleLowerCase('pt-BR') === nome);
+}
+
 function renderValidacoesPedagogia() {
   const tbody = document.getElementById('validacoesPedagogiaTable');
   if (!tbody) return;
@@ -4048,8 +4061,8 @@ function renderValidacoesPedagogia() {
       return `
     <tr class="hover:bg-slate-50">
       <td class="px-4 py-3 text-sm">${new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR')}</td>
-      <td class="px-4 py-3 text-sm">${originName(a)}<div class="text-xs text-slate-500">${originAddress(a) || '-'}</div></td>
-      <td class="px-4 py-3 text-sm">${a.destination}<div class="text-xs text-slate-500">${a.destination_address || a.city || '-'}</div></td>
+      <td class="px-4 py-3 text-sm">${originName(a)}${origemEhUnidade(a) ? '' : `<div class="text-xs text-slate-500">${originAddress(a) || '-'}</div>`}</td>
+      <td class="px-4 py-3 text-sm">${a.destination}${destinoEhUnidade(a) ? '' : `<div class="text-xs text-slate-500">${a.destination_address || a.city || '-'}</div>`}</td>
       <td class="px-4 py-3 text-sm">${publicoAlvoLabel(a.validation_target_id || a.publico_alvo)}</td>
       <td class="px-4 py-3 text-sm">${totalPax}</td>
       <td class="px-4 py-3 text-sm">${validationSectors.find((s) => s.id === a.validation_sector_id)?.name || SETOR_PEDAGOGICO_LABELS[a.setor_pedagogico_atual] || '-'}</td>
