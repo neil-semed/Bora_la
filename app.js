@@ -2747,7 +2747,7 @@ function renderAgenda() {
   }
 
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="16" class="text-center py-8 text-slate-500 text-sm">Nenhuma viagem encontrada</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="${currentUser?.role === 'escola' ? 17 : 16}" class="text-center py-8 text-slate-500 text-sm">Nenhuma viagem encontrada</td></tr>`;
     if (cardsWrapVazio) cardsWrapVazio.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm bg-white border rounded-lg" data-placeholder="1">Nenhuma viagem encontrada</div>';
     return;
   }
@@ -2761,10 +2761,17 @@ function renderAgenda() {
 
   // Cabeçalhos: Admin (e demais perfis) com Agenda | Confirmação lado a lado e
   // "Validação / Pedagógica" em duas linhas; Escola com Agenda sobre Confirmação.
-  const thSitSub = document.getElementById('agendaThSituacaoSub');
-  if (thSitSub) thSitSub.innerHTML = role === 'escola' ? '<span>Agenda<br>Confirmação</span>' : '<span>Agenda</span><span>|</span><span>Confirmação</span>';
+  // Escola: "Situação" vira "Agenda" e ganha a coluna "Confirmar Viagem" (só nesse perfil).
+  const ehEscolaAgenda = role === 'escola';
+  const thSit = document.getElementById('agendaThSituacao');
+  if (thSit) thSit.innerHTML = ehEscolaAgenda ? 'Agenda' : 'Situação<div id="agendaThSituacaoSub" class="mt-0.5 flex gap-3 text-[10px] font-medium normal-case text-slate-400"><span>Agenda</span><span>|</span><span>Confirmação</span></div>';
+  // A coluna só existe no DOM para a Escola (no Admin a tabela fica idêntica à original).
+  const thConf = document.getElementById('agendaThConfirmar');
+  if (ehEscolaAgenda && !thConf && thSit) thSit.insertAdjacentHTML('afterend', '<th id="agendaThConfirmar" class="px-1 py-2">Confirmar<br>Viagem</th>');
+  if (!ehEscolaAgenda && thConf) thConf.remove();
+  document.querySelector('.agenda-table-wrap')?.classList.toggle('agenda-escola', ehEscolaAgenda);
   const thValid = document.getElementById('agendaThValidacao');
-  if (thValid) thValid.innerHTML = role === 'escola' ? 'Validação Pedagógica' : 'Validação<br>Pedagógica';
+  if (thValid) thValid.innerHTML = 'Validação<br>Pedagógica';
 
   const cardsWrap = document.getElementById('agendaCardsList');
   const linhas = filtered
@@ -2810,10 +2817,10 @@ function renderAgenda() {
           const aprovadaAdmin = a.admin_decision === 'aprovada';
           const confirmBtn = podeConfirmar
             ? (aprovadaAdmin
-              ? `<button onclick="confirmarViagemEscola('${a.id}')" class="w-24 rounded bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700">Confirmar</button>`
-              : '<button disabled title="Disponível após a aprovação do Admin" class="w-24 cursor-not-allowed rounded bg-blue-200 px-3 py-1.5 text-xs font-bold text-white">Confirmar</button>')
+              ? `<button onclick="confirmarViagemEscola('${a.id}')" class="w-20 rounded border border-blue-200 bg-blue-100 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-200">Confirmar</button>`
+              : '<button disabled title="Disponível após a aprovação do Admin" class="w-20 cursor-not-allowed rounded border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-400">Confirmar</button>')
             : '';
-          cancelBtn = `<div class="inline-flex flex-col items-start gap-1.5 align-top">${confirmBtn}<button onclick="openCancelModal('${a.id}')" class="w-24 rounded bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700">Cancelar</button></div>`;
+          cancelBtn = `<div class="inline-flex flex-col items-start gap-1 align-top">${confirmBtn}<button onclick="openCancelModal('${a.id}')" class="w-20 rounded border border-red-200 bg-red-100 px-2 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-200">Cancelar</button></div>`;
         }
         acoes = acoes.includes('text-slate-300') ? cancelBtn : acoes + cancelBtn;
       }
@@ -2916,10 +2923,12 @@ function renderAgenda() {
         ? `<span class="text-xs font-bold text-blue-600" title="Confirmada em ${new Date(a.escola_confirmada_em).toLocaleDateString('pt-BR')}">Confirmada</span>`
         : '<span class="text-xs font-bold text-black">Pendente</span>';
       const situacaoCell = role === 'escola'
-        ? `<div>${agendaSit}</div><div>${confirmacaoSit}</div>`
+        ? agendaSit
         : `<div class="flex gap-3 whitespace-nowrap">${agendaSit}${confirmacaoSit}</div>`;
       // Status = exatamente o conteúdo original da coluna Situação (decisão + dropdown).
-      const statusCell = `${decisaoAdministrativa}${situacaoBase}`;
+      // Escola: só o selo, pois a decisão já aparece na coluna "Agenda".
+      const statusCell = role === 'escola' ? situacaoBase : `${decisaoAdministrativa}${situacaoBase}`;
+      const confirmarViagemTd = role === 'escola' ? `<td class="py-3">${confirmacaoSit}</td>` : '';
 
       const atfCell = podeEditarOperacional
         ? `<select onchange="updateAtf('${a.id}', this.value)" style="${ATF_COLORS[a.atf_status] || ''}" class="px-2 py-1 rounded text-xs font-medium border-0">
@@ -3011,7 +3020,7 @@ function renderAgenda() {
       </td>
       <td class="px-4 py-3 text-xs text-slate-500">${validacaoPedagogicaCell}</td>
       <td class="px-4 py-3">${atfCell}</td>
-      <td class="px-4 py-3">${situacaoCell}</td>
+      <td class="px-4 py-3">${situacaoCell}</td>${confirmarViagemTd}
       <td class="px-4 py-3">${statusCell}</td>
       <td class="px-4 py-3 text-xs">${motoristasCell}</td>
       <td class="px-4 py-3 whitespace-nowrap">${acoes}</td>
@@ -3058,8 +3067,12 @@ function renderAgenda() {
           ${atfCell}
         </div>
         ${!ehMotorista ? `<div class="flex items-start justify-between gap-2">
-          <span class="text-slate-500 text-xs">Situação</span>
+          <span class="text-slate-500 text-xs">${role === 'escola' ? 'Agenda' : 'Situação'}</span>
           <span class="text-right">${situacaoCell}</span>
+        </div>` : ''}
+        ${role === 'escola' ? `<div class="flex items-start justify-between gap-2">
+          <span class="text-slate-500 text-xs">Confirmar viagem</span>
+          <span class="text-right">${confirmacaoSit}</span>
         </div>` : ''}
         ${!ehMotorista ? `<div class="flex items-start justify-between gap-2">
           <span class="text-slate-500 text-xs">Validação pedagógica</span>

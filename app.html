@@ -107,6 +107,14 @@
     /* Validações: Escola 40% e Pedagogia 20% mais largas que o padrão (1440px). */
     #validacoesEscola.screen-shell { max-width: 2016px; }
     #validacoesPedagogia.screen-shell { max-width: 1728px; }
+    /* Escola › Validações: colunas mais próximas. */
+    #validacoesEscola table th, #validacoesEscola table td { padding-left:.5rem; padding-right:.5rem; }
+    /* Escola › Agenda: só no perfil Escola (classe aplicada em renderAgenda). Admin não muda. */
+    .agenda-table-wrap.agenda-escola .sticky-table th:nth-child(n), .agenda-table-wrap.agenda-escola .sticky-table td:nth-child(n) { width:auto; min-width:0; }
+    .agenda-table-wrap.agenda-escola .sticky-table th:nth-child(10), .agenda-table-wrap.agenda-escola .sticky-table td:nth-child(10),
+    .agenda-table-wrap.agenda-escola .sticky-table th:nth-child(11), .agenda-table-wrap.agenda-escola .sticky-table td:nth-child(11),
+    .agenda-table-wrap.agenda-escola .sticky-table th:nth-child(12), .agenda-table-wrap.agenda-escola .sticky-table td:nth-child(12) { padding-left:.25rem; padding-right:.25rem; white-space:nowrap; width:1%; }
+    .agenda-table-wrap.agenda-escola .sticky-table th:nth-child(14), .agenda-table-wrap.agenda-escola .sticky-table td:nth-child(14) { min-width:110px; }
     .data-table-modern thead th { background:#f8fafc; color:#64748b; font-size:.7rem; letter-spacing:.05em; text-transform:uppercase; }
     .data-table-modern tbody tr { transition:background .15s ease; }
     .data-table-modern tbody tr:hover { background:#f8fafc; }
@@ -556,7 +564,7 @@
                       <th class="px-4 py-2">Pedido</th>
                       <th id="agendaThValidacao" class="px-4 py-2">Validação Pedagógica</th>
                       <th class="px-4 py-2">ATF</th>
-                      <th class="px-4 py-2 align-bottom">Situação<div id="agendaThSituacaoSub" class="mt-0.5 flex gap-3 text-[10px] font-medium normal-case text-slate-400"><span>Agenda</span><span>|</span><span>Confirmação</span></div></th>
+                      <th id="agendaThSituacao" class="px-4 py-2 align-bottom">Situação<div id="agendaThSituacaoSub" class="mt-0.5 flex gap-3 text-[10px] font-medium normal-case text-slate-400"><span>Agenda</span><span>|</span><span>Confirmação</span></div></th>
                       <th class="px-4 py-2">Status</th>
                       <th class="px-4 py-2">Motorista(s)</th>
                       <th class="px-4 py-2">Ações</th>
@@ -904,6 +912,7 @@
                 <div class="flex flex-wrap gap-2 items-end">
                   <div><label class="block text-xs font-medium text-slate-500 mb-1">Destino</label><select id="validacaoFiltroDestinoEscola" onchange="renderValidacoesEscola()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todos os destinos</option></select></div>
                   <div><label class="block text-xs font-medium text-slate-500 mb-1">Data</label><input type="date" id="validacaoFiltroDataEscola" onchange="renderValidacoesEscola()" class="px-3 py-2 border rounded-lg text-sm" /></div>
+                  <button onclick="document.getElementById('validacaoFiltroDataEscola').value=fmtDate(new Date());renderValidacoesEscola();" class="px-3 py-2 text-sm font-semibold text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-50">Hoje</button>
                   <div><label class="block text-xs font-medium text-slate-500 mb-1">Público-alvo</label><select id="validacaoFiltroPublicoEscola" onchange="renderValidacoesEscola()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todos os públicos</option></select></div>
                   <label class="flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm font-semibold text-slate-700 bg-white cursor-pointer"><input type="checkbox" id="validacaoMostrarPassadasEscola" onchange="renderValidacoesEscola()"> Mostrar solicitações passadas</label>
                   <button onclick="limparFiltrosValidacoesEscola()" class="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Limpar filtros</button>
