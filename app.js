@@ -2893,12 +2893,6 @@ function renderAgenda() {
           acoes = acoes.includes('text-slate-300') ? listaInfo : acoes + listaInfo;
         }
       }
-      if (isAgendaEditor && validadaCompletamente && precisaCoop) {
-        const coopBtn = a.envio_coop_data
-          ? `<button onclick="openCooperativaEmailModal('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-medium ml-2" title="Enviado em ${new Date(a.envio_coop_data + 'T00:00').toLocaleDateString('pt-BR')} - clique para reenviar">✉️ Reenviar</button>`
-          : `<button onclick="openCooperativaEmailModal('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-medium ml-2">✉️ Cooperativa</button>`;
-        acoes = acoes.includes('text-slate-300') ? coopBtn : acoes + coopBtn;
-      }
       if (role === 'admin') {
         const propostaBtn = `<button onclick="openValidacaoModal('${a.id}', true)" class="text-violet-600 hover:text-violet-800 text-xs font-medium ml-2" title="Visualizar a proposta pedagógica">📄 Proposta</button>`;
         const pcdView = (a.pca_count || 0) > 0
@@ -2923,15 +2917,23 @@ function renderAgenda() {
         if (role === 'admin' && ['enviada', 'aceita'].includes(a.listagem_status)) {
           acoes += `<button onclick="openListagemVeiculoModal('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-bold ml-2" title="Abrir a listagem enviada para verificação">👁️ Ver listagem</button>`;
         }
+        // "✉️ Cooperativa" depois de "Ver listagem": viagem com motorista(s) que exige ATF/PCD.
+        if ((a.driver_ids || []).length && precisaCoop) {
+          acoes += a.envio_coop_data
+            ? `<button onclick="openCooperativaEmailModal('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-medium ml-2" title="Enviado em ${new Date(a.envio_coop_data + 'T00:00').toLocaleDateString('pt-BR')} - clique para reenviar">✉️ Reenviar</button>`
+            : `<button onclick="openCooperativaEmailModal('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-medium ml-2">✉️ Cooperativa</button>`;
+        }
       }
       if (role === 'escola' && a.school_id === currentUser.schoolId && a.recurrence_group_id && a.situacao !== 'cancelada' && a.status !== 'rejected') {
         const addDateBtn = '';
         acoes = acoes.includes('text-slate-300') ? addDateBtn : acoes + addDateBtn;
       }
 
+      // Admin: listagem ATF já enviada à cooperativa aparece como "Envio Coop" no Status.
+      const situacaoStatus = role === 'admin' && a.atf_cooperativa_enviado_em && !['cancelada', 'reprovada'].includes(a.situacao) ? 'envio_coop' : a.situacao;
       const situacaoBase = podeEditarSituacao
-        ? `<select onchange="updateSituacao('${a.id}', this.value)" style="${SITUACAO_COLORS[a.situacao] || ''}" class="px-2 py-1 rounded text-xs font-medium border-0">
-            ${Object.entries(SITUACAO_LABELS).map(([v, l]) => `<option value="${v}" ${a.situacao === v ? 'selected' : ''}>${l}</option>`).join('')}
+        ? `<select onchange="updateSituacao('${a.id}', this.value)" style="${SITUACAO_COLORS[situacaoStatus] || ''}" class="px-2 py-1 rounded text-xs font-medium border-0">
+            ${Object.entries(SITUACAO_LABELS).map(([v, l]) => `<option value="${v}" ${situacaoStatus === v ? 'selected' : ''}>${l}</option>`).join('')}
           </select>`
         : `<span style="${SITUACAO_COLORS[a.situacao] || ''}" class="px-2 py-1 rounded text-xs font-medium">${SITUACAO_LABELS[a.situacao] || a.situacao}</span>`;
       const decisaoAdministrativa = a.admin_decision === 'aprovada'
@@ -2972,8 +2974,8 @@ function renderAgenda() {
         exigePcd ? `<div class="text-xs">PCD: ${a.pcd_lista_enviada_em ? dt(a.pcd_lista_enviada_em) : '—'}</div>` : '',
       ].filter(Boolean).join('') || '—';
       const conferenciaCell = [
-        exigeAtf ? `<div class="text-xs">ATF ${a.atf_lista_conferida_em ? '✅ ' + dt(a.atf_lista_conferida_em) : '—'}</div>` : '',
-        exigePcd ? `<div class="text-xs">PCD ${a.pcd_lista_conferida_em ? '✅ ' + dt(a.pcd_lista_conferida_em) : '—'}</div>` : '',
+        exigeAtf ? (role === 'admin' ? `<div class="text-xs"><div>ATF${a.atf_lista_conferida_em ? ' ✅' : ''}</div><div class="text-slate-500">${a.atf_lista_conferida_em ? dt(a.atf_lista_conferida_em) : '—'}</div></div>` : `<div class="text-xs">ATF ${a.atf_lista_conferida_em ? '✅ ' + dt(a.atf_lista_conferida_em) : '—'}</div>`) : '',
+        exigePcd ? (role === 'admin' ? `<div class="text-xs"><div>PCD${a.pcd_lista_conferida_em ? ' ✅' : ''}</div><div class="text-slate-500">${a.pcd_lista_conferida_em ? dt(a.pcd_lista_conferida_em) : '—'}</div></div>` : `<div class="text-xs">PCD ${a.pcd_lista_conferida_em ? '✅ ' + dt(a.pcd_lista_conferida_em) : '—'}</div>`) : '',
       ].filter(Boolean).join('') || '—';
       const envioCoopCell = [
         exigeAtf ? `<div class="text-xs">ATF: ${a.atf_cooperativa_enviado_em ? dt(a.atf_cooperativa_enviado_em) : '—'}</div>` : '',
