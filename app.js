@@ -2764,7 +2764,7 @@ function renderAgenda() {
   // Escola: "Situação" vira "Agenda" e ganha a coluna "Confirmar Viagem" (só nesse perfil).
   const ehEscolaAgenda = role === 'escola';
   const thSit = document.getElementById('agendaThSituacao');
-  if (thSit) thSit.innerHTML = ehEscolaAgenda ? 'Agenda' : 'Situação<div id="agendaThSituacaoSub" class="mt-0.5 flex gap-3 text-[10px] font-medium normal-case text-slate-400"><span>Agenda</span><span>|</span><span>Confirmação</span></div>';
+  if (thSit) thSit.innerHTML = ehEscolaAgenda ? '<div class="text-center">Viagem</div>' : 'Situação<div id="agendaThSituacaoSub" class="mt-0.5 flex gap-3 text-[10px] font-medium normal-case text-slate-400"><span>Agenda</span><span>|</span><span>Confirmação</span></div>';
   // A coluna só existe no DOM para a Escola (no Admin a tabela fica idêntica à original).
   const thConf = document.getElementById('agendaThConfirmar');
   if (ehEscolaAgenda && !thConf && thSit) thSit.insertAdjacentHTML('afterend', '<th id="agendaThConfirmar" class="px-1 py-2">Confirmar<br>Viagem</th>');
@@ -2922,8 +2922,9 @@ function renderAgenda() {
       const confirmacaoSit = a.escola_confirmada_em
         ? `<span class="text-xs font-bold text-blue-600" title="Confirmada em ${new Date(a.escola_confirmada_em).toLocaleDateString('pt-BR')}">Confirmada</span>`
         : '<span class="text-xs font-bold text-black">Pendente</span>';
+      // Escola: coluna "Viagem" centralizada; aprovada pelo Admin aparece como "Agendada".
       const situacaoCell = role === 'escola'
-        ? agendaSit
+        ? `<div class="text-center">${a.admin_decision === 'aprovada' ? '<span class="text-xs font-bold text-emerald-700">Agendada</span>' : agendaSit}</div>`
         : `<div class="flex gap-3 whitespace-nowrap">${agendaSit}${confirmacaoSit}</div>`;
       // Status = exatamente o conteúdo original da coluna Situação (decisão + dropdown).
       // Escola: só o selo, pois a decisão já aparece na coluna "Agenda".
@@ -3067,7 +3068,7 @@ function renderAgenda() {
           ${atfCell}
         </div>
         ${!ehMotorista ? `<div class="flex items-start justify-between gap-2">
-          <span class="text-slate-500 text-xs">${role === 'escola' ? 'Agenda' : 'Situação'}</span>
+          <span class="text-slate-500 text-xs">${role === 'escola' ? 'Viagem' : 'Situação'}</span>
           <span class="text-right">${situacaoCell}</span>
         </div>` : ''}
         ${role === 'escola' ? `<div class="flex items-start justify-between gap-2">
@@ -4032,13 +4033,20 @@ async function atualizarValidacoesEscola() {
   toast('🔄 Validações atualizadas.');
 }
 
+function populateValidacaoStatusEscolaFilter() {
+  const sel = document.getElementById('validacaoFiltroStatusEscola');
+  if (!sel || sel.options.length > 1) return;
+  sel.innerHTML = '<option value="">Todos os status</option>' + Object.entries(SITUACAO_LABELS).map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+}
+
 function limparFiltrosValidacoesEscola() {
-  ['validacaoFiltroDestinoEscola', 'validacaoFiltroDataEscola', 'validacaoFiltroPublicoEscola'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['validacaoFiltroDestinoEscola', 'validacaoFiltroDataEscola', 'validacaoFiltroPublicoEscola', 'validacaoFiltroStatusEscola', 'validacaoFiltroConfirmacaoEscola'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
   const passadasEl = document.getElementById('validacaoMostrarPassadasEscola'); if (passadasEl) passadasEl.checked = false;
   renderValidacoesEscola();
 }
 
 function renderValidacoesEscola() {
+  populateValidacaoStatusEscolaFilter();
   const tbody = document.getElementById('validacoesEscolaTable');
   if (!tbody) return;
   const destinoFiltro = document.getElementById('validacaoFiltroDestinoEscola')?.value || '';
@@ -4048,6 +4056,10 @@ function renderValidacoesEscola() {
   if (dataFiltro) minhas = minhas.filter((a) => (a.trip_date || '') === dataFiltro);
   const publicoFiltro = document.getElementById('validacaoFiltroPublicoEscola')?.value || '';
   if (publicoFiltro) minhas = minhas.filter((a) => publicoAlvoCorresponde(a, publicoFiltro));
+  const statusFiltro = document.getElementById('validacaoFiltroStatusEscola')?.value || '';
+  if (statusFiltro) minhas = minhas.filter((a) => a.situacao === statusFiltro);
+  const confirmacaoFiltro = document.getElementById('validacaoFiltroConfirmacaoEscola')?.value || '';
+  if (confirmacaoFiltro) minhas = minhas.filter((a) => (confirmacaoFiltro === 'confirmada') === !!a.escola_confirmada_em);
   // Origem/destino igual à unidade logada: não repete o endereço da própria unidade.
   const nomeUnidade = String(schoolName(currentUser.schoolId) || '').trim().toLocaleLowerCase('pt-BR');
   const origemEhMinha = (a) => a.solicitation_type !== 'agendamento' && a.school_id === currentUser.schoolId;
