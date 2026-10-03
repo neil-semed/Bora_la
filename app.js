@@ -1633,7 +1633,7 @@ async function refreshDadosDaTela(name) {
     if (name === 'perfisacesso') await loadRoleScreenPermissions();
     if (name === 'validacoes') {
       if (currentUser.role === 'escola') { populateValidacaoDestinoEscolaFilter(); renderValidacoesEscola(); }
-      else { populateValidacaoOrigemFilter(); renderValidacoesPedagogia(); }
+      else { populateValidacaoOrigemFilter(); populatePublicoAlvoFilter('validacaoFiltroPublico', 'Todos os públicos'); renderValidacoesPedagogia(); }
     }
     if (name === 'agenda') { populateAgendaUnidadeFilter(); renderAgenda(); }
     if (name === 'dashboard') renderDashboard();
@@ -3538,20 +3538,44 @@ function populatePendenciasUnidadeFilter() {
 }
 
 function populatePendenciasPublicoFilter() {
-  const select = document.getElementById('pendenciasFiltroPublico');
-  if (!select) return;
-  const atual = select.value;
+  populatePublicoAlvoFilter('pendenciasFiltroPublico', 'Todos os públicos');
+}
+
+function publicoAlvoFiltroOptions() {
   const opcoes = new Map();
-  validationTargets.filter((t) => t.active !== false).forEach((t) => opcoes.set(String(t.id), t.name));
-  Object.entries(PUBLICO_ALVO_LABELS).forEach(([id, nome]) => opcoes.set(id, nome));
+  const incluir = (id, nome) => {
+    const label = String(nome || '').trim();
+    if (!id || !label || label === '-') return;
+    opcoes.set(String(id), label);
+  };
+  validationTargets.filter((t) => t.active !== false).forEach((t) => incluir(t.id, t.name));
+  Object.entries(PUBLICO_ALVO_LABELS).forEach(([id, nome]) => incluir(id, nome));
   agenda.forEach((a) => {
     const id = a.validation_target_id || a.publico_alvo;
-    if (id && !opcoes.has(String(id))) opcoes.set(String(id), publicoAlvoLabel(id));
+    const label = publicoAlvoLabel(id) !== '-' ? publicoAlvoLabel(id) : (a.publico_alvo || '');
+    incluir(id, label);
   });
-  select.innerHTML = '<option value="">Todos os públicos</option>' + [...opcoes.entries()]
-    .sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'pt-BR'))
+  return [...opcoes.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'pt-BR'));
+}
+
+function populatePublicoAlvoFilter(selectId, placeholder) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+  const atual = select.value;
+  select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>` + publicoAlvoFiltroOptions()
     .map(([id, nome]) => `<option value="${escapeHtml(id)}">${escapeHtml(nome)}</option>`).join('');
   if ([...select.options].some((option) => option.value === atual)) select.value = atual;
+}
+
+function publicoAlvoCorresponde(a, filtro) {
+  if (!filtro) return true;
+  const alvo = validationTargets.find((t) => String(t.id) === String(filtro));
+  const nomeFiltro = String(alvo?.name || PUBLICO_ALVO_LABELS[filtro] || filtro).trim().toLocaleLowerCase('pt-BR');
+  const candidatos = [a.validation_target_id, a.publico_alvo]
+    .filter(Boolean)
+    .map((id) => String(id));
+  if (candidatos.includes(String(filtro))) return true;
+  return candidatos.some((id) => String(publicoAlvoLabel(id) === '-' ? id : publicoAlvoLabel(id)).trim().toLocaleLowerCase('pt-BR') === nomeFiltro);
 }
 
 function limparFiltrosPendencias() {
@@ -3592,7 +3616,7 @@ function renderPendencias() {
   const recentes = agenda.slice()
     .filter((a) => (!unidadeFiltro || a.school_id === unidadeFiltro)
       && (!dataFiltro || a.trip_date === dataFiltro)
-      && (!publicoFiltro || String(a.validation_target_id || a.publico_alvo || '') === publicoFiltro))
+      && publicoAlvoCorresponde(a, publicoFiltro))
     .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
   const abertas = recentes.filter((a) => !['cancelada', 'reprovada'].includes(a.situacao) && a.status !== 'rejected');
   const semValidacao = abertas.filter((a) => a.status === 'pending' && a.situacao === 'sem_validacao');
@@ -3630,7 +3654,7 @@ function renderPendencias() {
           return !!trip
             && (!unidadeFiltro || trip.school_id === unidadeFiltro)
             && (!dataFiltro || trip.trip_date === dataFiltro)
-            && (!publicoFiltro || String(trip.validation_target_id || trip.publico_alvo || '') === publicoFiltro);
+            && publicoAlvoCorresponde(trip, publicoFiltro);
         }).map((f) => {
           const trip = agenda.find((a) => a.finance_request_id === f.id) || agenda.find((a) => a.id === f.root_excursion_id) || {};
           const itens = (f.items || []).map((i) => `${escapeHtml(i.description || 'Item')} · ${i.quantity || 0} · R$ ${Number(i.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`).join(' | ');
@@ -3936,6 +3960,7 @@ async function atualizarValidacoesPedagogia() {
   await loadSchools();
   await loadAgenda();
   populateValidacaoOrigemFilter();
+  populatePublicoAlvoFilter('validacaoFiltroPublico', 'Todos os públicos');
   renderValidacoesPedagogia();
   toast('🔄 Validações atualizadas.');
 }
@@ -3945,8 +3970,10 @@ function renderValidacoesPedagogia() {
   if (!tbody) return;
   const setorEl = document.getElementById('validacaoFiltroSetor');
   const origemEl = document.getElementById('validacaoFiltroOrigem');
+  const publicoEl = document.getElementById('validacaoFiltroPublico');
   const setorFiltro = setorEl ? setorEl.value : '';
   const origemFiltro = origemEl ? origemEl.value : '';
+  const publicoFiltro = publicoEl ? publicoEl.value : '';
   const meusSetores = new Set(validatorSectorAssignments.filter((v) => v.profile_id === currentUser?.id).map((v) => v.sector_id));
   // A proposta solicitada pelo Admin aparece em Pendências como aviso à
   // Pedagogia, mas não pode ser analisada antes de a unidade enviar o arquivo.
@@ -3955,6 +3982,7 @@ function renderValidacoesPedagogia() {
     lista = lista.filter((a) => setorFiltro ? a.validation_sector_id === setorFiltro : (!meusSetores.size || meusSetores.has(a.validation_sector_id)));
   } else if (setorFiltro) lista = lista.filter((a) => a.setor_pedagogico_atual === setorFiltro);
   if (origemFiltro) lista = lista.filter((a) => origemFiltroId(a) === origemFiltro);
+  if (publicoFiltro) lista = lista.filter((a) => publicoAlvoCorresponde(a, publicoFiltro));
 
   if (lista.length === 0) {
     tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-500 text-sm">Nenhuma solicitação pendente de validação</td></tr>';
@@ -6903,7 +6931,7 @@ function buildNotificacaoViagensHtml(rows, somenteQuadro = false) {
     ? new Date(`${rows[0].trip_date}T00:00`).toLocaleDateString('pt-BR')
     : '';
   const table = rows.length
-    ? `<table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;table-layout:fixed;font-family:Arial,sans-serif;font-size:13px"><thead><tr style="background:#e5e7eb;color:#111827"><th style="width:9%;border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">TURNO</th><th style="width:9%;border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">SAÍDA</th><th style="width:10%;border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">RETORNO</th><th style="width:27%;border:1px solid #cbd5e1;padding:9px 6px;font-size:11px;text-align:center">ORIGEM</th><th style="width:36%;border:1px solid #cbd5e1;padding:9px 6px;font-size:11px;text-align:center">DESTINO</th><th style="width:9%;border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">PASSAGEIROS</th></tr></thead><tbody>${rows.map((a, index) => `<tr style="background:${index % 2 ? '#f8fafc' : '#ffffff'}"><td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;vertical-align:middle">${escapeHtml(TURNO_LABELS[a.turno || turnoFromHora(a.departure_time)] || '-')}</td><td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;vertical-align:middle">${escapeHtml(horaComH(a.departure_time))}</td><td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;vertical-align:middle">${escapeHtml(horaComH(a.return_time))}</td><td style="border:1px solid #dbe2ea;padding:10px 6px;vertical-align:middle;word-break:break-word"><strong style="font-size:11px">${escapeHtml(textoEmailSemHiperlink(`${originName(a)}${a.origin_acronym ? ` (${a.origin_acronym})` : ''}`))}</strong>${originAddress(a) ? `<br><span style="color:#64748b;font-size:10px">${escapeHtml(textoEmailSemHiperlink(originAddress(a)))}</span>` : ''}</td><td style="border:1px solid #dbe2ea;padding:10px 6px;vertical-align:middle;word-break:break-word"><strong style="font-size:11px">${escapeHtml(textoEmailSemHiperlink(a.destination || '-'))}</strong>${a.destination_address || a.city ? `<br><span style="color:#64748b;font-size:10px">${escapeHtml(textoEmailSemHiperlink(a.destination_address || a.city))}</span>` : ''}</td><td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;vertical-align:middle">${totalPassengers(a)}</td></tr>`).join('')}</tbody></table>`
+    ? `<table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;table-layout:fixed;font-family:Arial,sans-serif;font-size:13px"><thead><tr style="background:#e5e7eb;color:#111827"><th style="width:9%;border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">TURNO</th><th style="width:9%;border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">SAÍDA</th><th style="width:10%;border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">RETORNO</th><th style="width:27%;border:1px solid #cbd5e1;padding:9px 6px;font-size:11px;text-align:center">ORIGEM</th><th style="width:36%;border:1px solid #cbd5e1;padding:9px 6px;font-size:11px;text-align:center">DESTINO</th><th style="width:9%;border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">PASS</th></tr></thead><tbody>${rows.map((a, index) => { const origem = `${originName(a)}${a.origin_acronym ? ` (${a.origin_acronym})` : ''}`; const destinoDaMesmaUnidade = String(a.destination || '').trim().toLocaleLowerCase('pt-BR') === String(originName(a) || '').trim().toLocaleLowerCase('pt-BR'); const enderecoDestino = destinoDaMesmaUnidade ? '' : (a.destination_address || a.city || ''); return `<tr style="background:${index % 2 ? '#f8fafc' : '#ffffff'}"><td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;vertical-align:middle">${escapeHtml(TURNO_LABELS[a.turno || turnoFromHora(a.departure_time)] || '-')}</td><td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;vertical-align:middle">${escapeHtml(horaComH(a.departure_time))}</td><td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;vertical-align:middle">${escapeHtml(horaComH(a.return_time))}</td><td style="border:1px solid #dbe2ea;padding:10px 6px;vertical-align:middle;word-break:break-word"><strong style="font-size:11px">${escapeHtml(textoEmailSemHiperlink(origem))}</strong></td><td style="border:1px solid #dbe2ea;padding:10px 6px;vertical-align:middle;word-break:break-word"><strong style="font-size:11px">${escapeHtml(textoEmailSemHiperlink(a.destination || '-'))}</strong>${enderecoDestino ? `<br><span style="color:#64748b;font-size:10px">${escapeHtml(textoEmailSemHiperlink(enderecoDestino))}</span>` : ''}</td><td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;vertical-align:middle">${totalPassengers(a)}</td></tr>`; }).join('')}</tbody></table>`
     : '<p style="padding:16px">Selecione ao menos uma origem com viagem escalada.</p>';
   if (somenteQuadro) return table;
   return `<div style="max-width:820px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.45"><style>a{color:inherit!important;text-decoration:none!important;pointer-events:none!important}</style><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | Confirmação de viagens</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:3px;background:#16a34a;margin:3px 0 14px"></div><p style="margin:0 0 8px"><strong>Data:</strong> ${escapeHtml(dataLabel || '-')} &nbsp;·&nbsp; <strong>Viagens:</strong> ${rows.length}</p><p style="margin:0 0 14px">Prezados(as),<br>Solicitamos a confirmação da(s) viagem(ns) abaixo para a liberação do(s) veículo(s). Solicitamos atenção aos horários e à quantidade de passageiros.</p>${table}<p style="border-left:4px solid #f59e0b;background:#fffbeb;color:#78350f;margin:18px 0 0;padding:11px 13px;font-size:13px">Informa-se que eventuais vandalismos ao(s) veículo(s) são de responsabilidade da solicitante.</p><p style="margin:18px 0 0">Atenciosamente,<br><strong>Bora Lá - Excursões / Semed Nova Lima</strong></p><p style="border-top:1px solid #e2e8f0;color:#475569;font-size:11px;margin-top:28px;padding-top:10px">(Essa mensagem foi gerada automaticamente)</p></div>`;
@@ -6965,17 +6993,11 @@ function renderNotificarViagensModal(inicializarOrigens = true) {
   const destinatarios = [...new Set(selecionadas.map(emailUnidadeDaViagem).filter(Boolean))];
   const semEmail = [...new Set(selecionadas.filter((a) => !emailUnidadeDaViagem(a)).map((a) => originName(a)))];
   const titulo = tituloNotificacaoViagens(data);
-  const tabela = selecionadas.length
-    ? buildNotificacaoViagensHtml(selecionadas, true)
-    : '<p class="rounded-lg bg-white p-4 text-center text-sm text-slate-500">Selecione ao menos uma origem com viagem escalada.</p>';
-  const lista = document.getElementById('notificarViagensLista'); if (lista) lista.innerHTML = tabela;
-  const tituloEl = document.getElementById('notificarViagensTitulo'); if (tituloEl) tituloEl.textContent = titulo;
   const assunto = document.getElementById('notificarViagensAssunto'); if (assunto) assunto.value = titulo;
   const mensagem = document.getElementById('notificarViagensMensagemPreview');
   if (mensagem) mensagem.innerHTML = buildNotificacaoViagensHtml(selecionadas);
   const destinoEl = document.getElementById('notificarViagensDestinatarios');
   if (destinoEl) destinoEl.innerHTML = destinatarios.length ? `${destinatarios.map(escapeHtml).join('<br>')}${semEmail.length ? `<p class="mt-2 text-xs text-red-600">Sem e-mail: ${semEmail.map(escapeHtml).join(', ')}</p>` : ''}` : 'Nenhuma unidade selecionada';
-  const resumo = document.getElementById('notificarViagensResumo'); if (resumo) resumo.textContent = `${selecionadas.length} viagem(ns) · ${destinatarios.length} destinatário(s)`;
   const enviar = document.getElementById('btnEnviarNotificacaoViagens'); if (enviar) enviar.disabled = !selecionadas.length || !destinatarios.length;
 }
 
