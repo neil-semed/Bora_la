@@ -2764,6 +2764,7 @@ function renderAgenda() {
   // Escola: "Situação" vira "Agenda" e ganha a coluna "Confirmar Viagem" (só nesse perfil).
   const ehEscolaAgenda = role === 'escola';
   const thSit = document.getElementById('agendaThSituacao');
+  if (thSit) thSit.classList.toggle('align-bottom', !ehEscolaAgenda);
   if (thSit) thSit.innerHTML = ehEscolaAgenda ? '<div class="text-center">Viagem</div>' : 'Situação<div id="agendaThSituacaoSub" class="mt-0.5 flex gap-3 text-[10px] font-medium normal-case text-slate-400"><span>Agenda</span><span>|</span><span>Confirmação</span></div>';
   // A coluna só existe no DOM para a Escola (no Admin a tabela fica idêntica à original).
   const thConf = document.getElementById('agendaThConfirmar');
@@ -3779,7 +3780,7 @@ function renderPendencias() {
     const listagens = minhas.filter((a) => viagemValidadaCompletamente(a) && precisaListagemComNomesDocumentos(a) && ['nao_enviada', 'rejeitada'].includes(a.listagem_status || 'nao_enviada'));
     const pcdPendentes = minhas.filter((a) => a.pcd_list_status === 'rejeitada');
     const botaoProposta = (a) => `<button onclick="openDocUploadModal('${a.id}')" class="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700">${a.doc_status === 'correcoes' ? 'Reenviar proposta' : 'Enviar proposta'}</button>`;
-    const botaoLista = (a) => `<button onclick="openListagemVeiculoModal('${a.id}')" class="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-700">${a.listagem_status === 'rejeitada' ? 'Corrigir listagem' : 'Preencher listagem'}</button>`;
+    const botaoLista = (a) => `<button onclick="openListagemVeiculoModal('${a.id}')" class="shrink-0 rounded-lg border border-emerald-200 bg-emerald-100 px-3 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-200">${a.listagem_status === 'rejeitada' ? 'Corrigir listagem' : 'Preencher listagem'}</button>`;
     const blocosEscola = [
       ['proposta', pendenciaBloco('Proposta pedagógica', 'Envie ou reenvie o arquivo solicitado pelo fluxo administrativo/pedagógico.', propostas.map((a) => pendenciaCard(a, { badge: a.doc_status === 'correcoes' ? 'Correções solicitadas' : 'Proposta solicitada', tone: 'blue', detail: escapeHtml(a.doc_parecer_comentario || 'Envie a proposta pedagógica para a continuidade do fluxo.'), action: botaoProposta(a) })), '📄', 'blue')],
       ['listagem', pendenciaBloco('Listagem de passageiros', 'Viagens aprovadas que exigem lista por ATF e/ou PCD.', listagens.map((a) => pendenciaCard(a, { badge: a.listagem_status === 'rejeitada' ? 'Listagem para corrigir' : 'Listagem para enviar', tone: 'emerald', action: botaoLista(a) })), '👥', 'emerald')],
@@ -4839,27 +4840,51 @@ async function downloadListagemModelo(excursionId, driverId) {
   if (!trip || !window.ExcelJS) { toast('⚠️ O gerador do modelo ainda não carregou. Verifique a internet e tente novamente.', true); return; }
   const capacidade = Number(v?.capacity || 0), dataViagem = trip.trip_date ? new Date(trip.trip_date+'T00:00').toLocaleDateString('pt-BR') : '-';
   const destinoCompleto = `${trip.destination || '-'}${trip.destination_address ? ' — ' + trip.destination_address : ''}${trip.city ? ' · ' + trip.city : ''}`;
-  const info = `DATA: ${dataViagem}   |   SAÍDA: ${horaComH(trip.departure_time)}   |   RETORNO: ${horaComH(trip.return_time)}\nORIGEM: ${originName(trip) || '-'} — ${originAddress(trip) || '-'}\nDESTINO: ${destinoCompleto}\nMOTORISTA: ${d?.name || '-'}   |   VEÍCULO: ${v?.type || 'Veículo'}${v?.plate ? ' · ' + v.plate : ''}   |   CAPACIDADE: ${capacidade} lugares`;
-  const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Listagem', { views:[{state:'frozen', ySplit:5, showGridLines:false}], properties:{defaultRowHeight:0,defaultColWidth:0} });
+  const linhasInfo = [
+    `DATA: ${dataViagem}   |   SAÍDA: ${horaComH(trip.departure_time)}   |   RETORNO: ${horaComH(trip.return_time)}`,
+    `ORIGEM: ${originName(trip) || '-'} — ${originAddress(trip) || '-'}`,
+    `DESTINO: ${destinoCompleto}`,
+    `MOTORISTA: ${d?.name || '-'}   |   VEÍCULO: ${v?.type || 'Veículo'}${v?.plate ? ' · ' + v.plate : ''}   |   CAPACIDADE: ${capacidade} lugares`,
+  ];
+  // Layout: título centralizado com o favicon antes, sem fundos verdes; dados da viagem
+  // separados por linhas finas; só as colunas A–C visíveis; cabeçalho e dados travados
+  // (planilha protegida) e apenas Nome/Documento liberados para digitação.
+  const HEADER_ROW = 6, FIRST = HEADER_ROW + 1, LAST = HEADER_ROW + capacidade;
+  const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Listagem', { views:[{state:'frozen', ySplit:HEADER_ROW, topLeftCell:`A${FIRST}`, activeCell:`B${FIRST}`, showGridLines:false}], properties:{defaultRowHeight:0} });
   ws.columns = [{width:6},{width:58},{width:30}];
-  ws.mergeCells('B1:C1'); ws.getCell('B1').value = 'BORA LÁ — EXCURSÕES / SEMED NOVA LIMA';
-  ws.mergeCells('A2:C4'); ws.getCell('A2').value = info;
-  ws.getRow(5).values = ['Nº','NOME COMPLETO','DOCUMENTO'];
-  for (let i=1; i<=capacidade; i++) ws.getRow(5+i).values = [i,'',''];
-  const thin = {style:'thin',color:{argb:'FF94A3B8'}};
-  for (let r=1; r<=capacidade+5; r++) for (let c=1; c<=3; c++) {
-    const target=ws.getCell(r,c); target.font={name:'Arial',size:10,color:{argb:'FF0F172A'}}; target.alignment={vertical:'middle',wrapText:true}; target.border={top:thin,bottom:thin,left:thin,right:thin};
+  for (let c=4; c<=60; c++) ws.getColumn(c).hidden = true;
+  const thin = {style:'thin',color:{argb:'FF94A3B8'}}, sep = {style:'thin',color:{argb:'FFCBD5E1'}};
+  ws.mergeCells('A1:C1'); ws.getCell('A1').value = 'BORA LÁ — EXCURSÕES / SEMED NOVA LIMA';
+  ws.getCell('A1').font = {name:'Arial',size:14,bold:true,color:{argb:'FF065F46'}};
+  ws.getCell('A1').alignment = {horizontal:'center',vertical:'middle'};
+  ws.getRow(1).height = 30;
+  linhasInfo.forEach((texto, i) => {
+    const r = 2 + i; ws.mergeCells(`A${r}:C${r}`);
+    const cell = ws.getCell(`A${r}`); cell.value = texto;
+    cell.font = {name:'Arial',size:10,color:{argb:'FF0F172A'}}; cell.alignment = {vertical:'middle',wrapText:true};
+    ws.getRow(r).height = texto.length > 95 ? 30 : 18;
+  });
+  for (let r=1; r<=5; r++) for (let c=1; c<=3; c++) {
+    const cell = ws.getCell(r,c);
+    cell.border = { left: c===1 ? thin : undefined, right: c===3 ? thin : undefined, top: r===1 ? thin : undefined, bottom: r===1 ? thin : (r===5 ? thin : sep) };
   }
-  ws.getRow(1).height=28; ws.getRow(2).height=32; ws.getRow(3).height=32; ws.getRow(4).height=32; ws.getRow(5).height=24;
-  for (let r=6; r<=capacidade+5; r++) ws.getRow(r).height=21;
-  ws.getCell('B1').font={name:'Arial',size:14,bold:true,color:{argb:'FFFFFFFF'}}; ws.getCell('B1').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF047857'}}; ws.getCell('B1').alignment={horizontal:'center',vertical:'middle'};
-  ws.getCell('A1').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF047857'}};
-  for (const ref of ['A2','B2','C2']) { const cell=ws.getCell(ref); cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFECFDF5'}}; cell.border={top:{style:'medium',color:{argb:'FF059669'}},bottom:{style:'medium',color:{argb:'FF059669'}},left:{style:'medium',color:{argb:'FF059669'}},right:{style:'medium',color:{argb:'FF059669'}}}; }
-  ws.getCell('A2').alignment={vertical:'middle',wrapText:true};
-  for (const ref of ['A5','B5','C5']) { const cell=ws.getCell(ref); cell.font={name:'Arial',size:10,bold:true,color:{argb:'FF0F172A'}}; cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFACC15'}}; cell.alignment={horizontal:'center',vertical:'middle'}; }
-  for (let r=6; r<=capacidade+5; r++) { ws.getCell(r,1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF1F5F9'}}; ws.getCell(r,1).alignment={horizontal:'center',vertical:'middle'}; }
-  // Linhas e colunas não utilizadas adotam altura/largura zero; só A:C e a lista ficam visíveis.
-  try { const response=await fetch('assets/favicon-512.png'); const buffer=await response.arrayBuffer(); const imageId=wb.addImage({buffer,extension:'png'}); ws.addImage(imageId,{tl:{col:0.12,row:0.12},ext:{width:24,height:24}}); } catch (_) { /* o título continua legível se a imagem não puder ser carregada */ }
+  ws.getRow(HEADER_ROW).values = ['Nº','NOME COMPLETO','DOCUMENTO'];
+  ws.getRow(HEADER_ROW).height = 22;
+  for (let c=1; c<=3; c++) { const cell=ws.getCell(HEADER_ROW,c); cell.font={name:'Arial',size:10,bold:true,color:{argb:'FF0F172A'}}; cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFACC15'}}; cell.alignment={horizontal:'center',vertical:'middle'}; cell.border={top:thin,bottom:thin,left:thin,right:thin}; }
+  for (let r=FIRST; r<=LAST; r++) {
+    ws.getRow(r).height = 21;
+    ws.getCell(r,1).value = r - HEADER_ROW;
+    for (let c=1; c<=3; c++) {
+      const cell = ws.getCell(r,c);
+      cell.font = {name:'Arial',size:10,color:{argb:'FF0F172A'}}; cell.alignment = {vertical:'middle',wrapText:true,horizontal: c===1 ? 'center' : undefined};
+      cell.border = {top:thin,bottom:thin,left:thin,right:thin};
+      if (c===1) cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FFF1F5F9'}};
+      else cell.protection = {locked:false};
+    }
+  }
+  // Favicon antes do título (o título fica centralizado na faixa A:C).
+  try { const response=await fetch('assets/favicon-512.png'); const buffer=await response.arrayBuffer(); const imageId=wb.addImage({buffer,extension:'png'}); ws.addImage(imageId,{tl:{col:1.2,row:0.12},ext:{width:24,height:24}}); } catch (_) { /* o título continua legível se a imagem não puder ser carregada */ }
+  await ws.protect('', { selectLockedCells:true, selectUnlockedCells:true });
   const bytes=await wb.xlsx.writeBuffer(); const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}); const link=document.createElement('a'); link.href=URL.createObjectURL(blob); link.download=`${trip.trip_date || 'data'}_${slugify(schoolName(trip.school_id) || trip.requester_name || originName(trip))}_${slugify(d?.name || v?.plate || 'motorista')}.xlsx`; document.body.appendChild(link); link.click(); setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 1000);
 }
 
