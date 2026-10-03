@@ -2699,6 +2699,28 @@ function renderDashboard() {
   if (dashUnidadeWrap) dashUnidadeWrap.classList.toggle('hidden', escondeFiltroUnidadeDash);
   renderDashboardCharts(visible);
 
+  // Admin: cards de ATF/PCD e ranking Top 15 de viagens realizadas (mesmos filtros do dashboard).
+  const ehAdminDash = currentUser?.role === 'admin';
+  document.body.classList.toggle('dash-admin', ehAdminDash);
+  document.querySelectorAll('.dash-admin-card').forEach((el) => el.classList.toggle('hidden', !ehAdminDash));
+  document.getElementById('dashRanking')?.classList.toggle('hidden', !ehAdminDash);
+  if (ehAdminDash) {
+    const setStat = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    setStat('statAtfEmitidas', visible.filter((a) => a.atf_status === 'emitida').length);
+    setStat('statAtfNegadas', visible.filter((a) => a.atf_cooperativa_response === 'rejeitada').length);
+    setStat('statPcdRealizados', visible.filter((a) => a.pcd_cooperativa_confirmado_em).length);
+    setStat('statPcdNegados', visible.filter((a) => a.pcd_cooperativa_response === 'negada').length);
+    const realizadas = visible.filter((a) => !['cancelada', 'reprovada'].includes(a.situacao)
+      && (a.status === 'completed' || (['approved', 'in_transit'].includes(a.status) && (a.trip_date || '') < hoje)));
+    const porUnidade = {};
+    realizadas.forEach((a) => { const nome = a.school_id ? schoolName(a.school_id) : originName(a); porUnidade[nome] = (porUnidade[nome] || 0) + 1; });
+    const top = Object.entries(porUnidade).sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0], 'pt-BR')).slice(0, 15);
+    const lista = document.getElementById('dashRankingLista');
+    if (lista) lista.innerHTML = top.length
+      ? top.map(([nome, n]) => `<li class="py-0.5"><span class="flex justify-between gap-2"><span class="truncate">${escapeHtml(nome)}</span><b>${n}</b></span></li>`).join('')
+      : '<li class="list-none -ml-5 text-slate-400">Nenhuma viagem realizada no período.</li>';
+  }
+
   // Pedagogia: "Próximas Viagens" sai e entram os gráficos de solicitações por
   // público-alvo e o ranking top 7 de unidades solicitantes (mesmos filtros do topo).
   const ehPedagogiaDash = currentUser?.role === 'pedagogia';
@@ -7188,6 +7210,13 @@ function populateRelatorioFilters() {
     motorista.innerHTML = '<option value="">Todos</option>' + motoristasVisiveis.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}${driverVehicle(d.id)?.plate ? ' · ' + escapeHtml(driverVehicle(d.id).plate) : ''}</option>`).join('');
     motorista.value = atual;
   }
+  // Admin: relatório Veículos e filtros de Tipo de veículo / Cooperativa.
+  const ehAdminRel = currentUser?.role === 'admin';
+  document.getElementById('relFiltroTipoVeiculoWrap')?.classList.toggle('hidden', !ehAdminRel);
+  document.getElementById('relFiltroCooperativaWrap')?.classList.toggle('hidden', !ehAdminRel);
+  if (tipo) { const opt = [...tipo.options].find((o) => o.value === 'veiculos'); if (opt) { opt.hidden = !ehAdminRel; opt.disabled = !ehAdminRel; } if (!ehAdminRel && tipo.value === 'veiculos') tipo.value = 'escala'; }
+  const relCoop = document.getElementById('relFiltroCooperativa');
+  if (relCoop && ehAdminRel) { const atual = relCoop.value; relCoop.innerHTML = '<option value="">Todas</option>' + cooperativas.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join(''); relCoop.value = atual; }
   const podeEnviar = currentUser?.role === 'admin';
   document.getElementById('btnEnviarEscala')?.classList.toggle('hidden', !podeEnviar);
   document.getElementById('btnConfigurarEmailsEscala')?.classList.toggle('hidden', !podeEnviar);
@@ -7198,6 +7227,7 @@ function clearRelatorioFilters() {
   const unidade = document.getElementById('relFiltroUnidade'); if (unidade) unidade.value = '';
   const motorista = document.getElementById('relFiltroMotorista'); if (motorista) motorista.value = '';
   const situacao = document.getElementById('relFiltroSituacao'); if (situacao) situacao.value = '';
+  ['relFiltroTipoVeiculo', 'relFiltroCooperativa'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
   renderRelatorioPreview();
 }
 
@@ -7451,7 +7481,11 @@ function relatorioFiltroBase() {
   const unidade = document.getElementById('relFiltroUnidade')?.value || '';
   const motorista = document.getElementById('relFiltroMotorista')?.value || '';
   const situacao = document.getElementById('relFiltroSituacao')?.value || '';
+  const tipoVeic = currentUser?.role === 'admin' ? (document.getElementById('relFiltroTipoVeiculo')?.value || '') : '';
+  const coopRel = currentUser?.role === 'admin' ? (document.getElementById('relFiltroCooperativa')?.value || '') : '';
   return getVisibleAgenda().filter((a) => {
+    if (tipoVeic && !(a.driver_ids || []).some((id) => (driverVehicle(id)?.type || '') === tipoVeic)) return false;
+    if (coopRel && !(a.driver_ids || []).some((id) => driverBelongsToCooperativa(id, coopRel))) return false;
     if (inicio && a.trip_date < inicio) return false;
     if (fim && a.trip_date > fim) return false;
     if (unidade && origemFiltroId(a) !== unidade) return false;
@@ -7486,6 +7520,25 @@ async function relatorioLinhas() {
     if (sb) { const { data } = await sb.from('finance_requests').select('*').order('created_at', { ascending: false }); financeRequests = data || []; }
     return financeRequests.map((f) => { const a = viagens.find((x) => x.finance_request_id === f.id || x.id === f.root_excursion_id) || agenda.find((x) => x.finance_request_id === f.id || x.id === f.root_excursion_id); return { 'Data do pedido': f.created_at ? new Date(f.created_at).toLocaleDateString('pt-BR') : '-', 'Unidade / solicitante': a ? (schoolName(a.school_id) || a.requester_name || '-') : '-', Destino: a?.destination || '-', Itens: (f.items || []).map((i) => `${i.description || 'Item'} (${i.quantity || 0})`).join('; ') || '-', 'Valor solicitado': Number(f.requested_total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), Situação: f.status || 'solicitado', Parecer: f.decision_comment || '-' }; });
   }
+  if (tipo === 'veiculos') {
+    const tipoVeic = document.getElementById('relFiltroTipoVeiculo')?.value || '';
+    const coopRel = document.getElementById('relFiltroCooperativa')?.value || '';
+    const motoristaRel = document.getElementById('relFiltroMotorista')?.value || '';
+    const tipoLabel = { van: 'Van', 'micro-onibus': 'Micro-ônibus', onibus: 'Ônibus' };
+    const hojeRel = fmtDate(new Date());
+    const linhas = [];
+    vehicles.filter((v) => v.active !== false && (!tipoVeic || v.type === tipoVeic)).forEach((v) => {
+      const mots = drivers.filter((d) => d.vehicle_id === v.id && d.active !== false);
+      (mots.length ? mots : [null]).forEach((d) => {
+        if (motoristaRel && d?.id !== motoristaRel) return;
+        const coopId = d ? driverCooperativaId(d) : (cooperativas.some((c) => c.id === v.cooperative) ? v.cooperative : cooperativas.find((c) => String(c.name).toLowerCase() === String(v.cooperative || '').toLowerCase())?.id);
+        if (coopRel && coopId !== coopRel) return;
+        const venc = d?.cnh_vencimento || '';
+        linhas.push({ Placa: v.plate || '-', Tipo: tipoLabel[v.type] || v.type || '-', Capacidade: v.capacity ? `${v.capacity} lugares` : '-', Cooperativa: cooperativaById(coopId)?.name || v.cooperative || '-', Motorista: d?.name || '-', Telefone: d?.phone || '-', 'Vencimento CNH': venc ? `${new Date(venc + 'T00:00').toLocaleDateString('pt-BR')}${venc < hojeRel ? ' · vencida' : ''}` : '-' });
+      });
+    });
+    return linhas.sort((x, y) => String(x.Placa).localeCompare(String(y.Placa)));
+  }
   if (tipo === 'km') {
     const inicio = document.getElementById('relFiltroInicio')?.value || '', fim = document.getElementById('relFiltroFim')?.value || '', motorista = document.getElementById('relFiltroMotorista')?.value || '';
     const cooperativaId = currentUser?.role === 'agente_externo' ? currentUser.cooperativaId : '';
@@ -7502,12 +7555,25 @@ function resumoRelatorioHtml(tipo, rows, viagens = []) {
   const canceladas = viagens.filter((a) => a.situacao === 'cancelada').length;
   const km = rows.reduce((sum, r) => sum + (Number(r['KM rodado']) || 0), 0);
   const valor = tipo === 'financeiro' ? financeRequests.reduce((sum, f) => sum + Number(f.requested_total || 0), 0) : 0;
-  const cards = tipo === 'km'
+  const cards = tipo === 'veiculos'
+    ? [['Veículos', new Set(rows.map((r) => r.Placa)).size, 'slate'], ['Lugares', [...new Map(rows.map((r) => [r.Placa, parseInt(r.Capacidade, 10) || 0])).values()].reduce((x, y) => x + y, 0), 'blue'], ['Motoristas', rows.filter((r) => r.Motorista !== '-').length, 'emerald'], ['CNH vencida', rows.filter((r) => String(r['Vencimento CNH']).includes('vencida')).length, 'red']]
+    : tipo === 'km'
     ? [['Registros', rows.length, 'slate'], ['KM rodados', km.toLocaleString('pt-BR'), 'blue'], ['Motoristas', new Set(rows.map((r) => r.Motorista).filter(Boolean)).size, 'emerald']]
     : tipo === 'financeiro'
       ? [['Solicitações', rows.length, 'slate'], ['Valor solicitado', valor.toLocaleString('pt-BR', { style:'currency', currency:'BRL' }), 'amber'], ['Deferidos', rows.filter((r) => r.Situação === 'deferido').length, 'emerald'], ['Indeferidos', rows.filter((r) => r.Situação === 'indeferido').length, 'red']]
       : [['Registros', rows.length, 'slate'], ['Passageiros', passageiros, 'blue'], ['Aprovadas', aprovadas, 'emerald'], ['Reprovadas', reprovadas, 'red'], ['Canceladas', canceladas, 'amber']];
   const tones={slate:'bg-slate-50 border-slate-200 text-slate-800',blue:'bg-blue-50 border-blue-200 text-blue-800',emerald:'bg-emerald-50 border-emerald-200 text-emerald-800',red:'bg-red-50 border-red-200 text-red-800',amber:'bg-amber-50 border-amber-200 text-amber-800'};
+  // Admin: somatórias de ATF e PCD na sequência dos cards (exceto no relatório Veículos).
+  if (currentUser?.role === 'admin' && tipo !== 'veiculos') {
+    const v = viagens || [];
+    cards.push(
+      ['ATF emitidas', v.filter((a) => a.atf_status === 'emitida').length, 'emerald'],
+      ['ATF negadas', v.filter((a) => a.atf_cooperativa_response === 'rejeitada').length, 'red'],
+      ['PCD realizados', v.filter((a) => a.pcd_cooperativa_confirmado_em).length, 'emerald'],
+      ['PCD negados', v.filter((a) => a.pcd_cooperativa_response === 'negada').length, 'red'],
+    );
+    return `<div class="mb-4 grid gap-1.5" style="grid-template-columns:repeat(auto-fit,minmax(105px,1fr))">${cards.map(([label,value,tone]) => `<div class="rounded-lg border px-2 py-1.5 ${tones[tone]}"><div class="text-[10px] font-semibold">${label}</div><div class="text-base font-bold">${value}</div></div>`).join('')}</div>`;
+  }
   // Cooperativa: somatórias de ATF e PCD na sequência dos cards nativos, menores e ajustados à largura.
   if (currentUser?.role === 'agente_externo') {
     const v = viagens || [];

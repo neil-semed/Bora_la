@@ -143,6 +143,12 @@
        junto ao atalho de troca de senha. */
     body.driver-mobile #topUserName { display: none; }
     .dashboard-chart { height: 185px; }
+    /* Admin › Dashboard: 80% (cards + gráficos) | 20% (ranking); cards menores. */
+    @media (min-width: 1024px) { body.dash-admin #dashMainGrid { display:grid; grid-template-columns:4fr 1fr; gap:12px; align-items:start; } }
+    body.dash-admin #dashStatsGrid { grid-template-columns:repeat(auto-fit,minmax(92px,1fr)); gap:.35rem; }
+    body.dash-admin #dashStatsGrid > div { padding:.35rem .5rem; }
+    body.dash-admin #dashStatsGrid .text-xl { font-size:1.05rem; line-height:1.3rem; }
+    body.dash-admin #dashStatsGrid .text-xs { font-size:.65rem; margin-bottom:.1rem; }
     .pedagogia-compact .grid.grid-cols-2.md\:grid-cols-6 { gap:.65rem; }
     .pedagogia-compact .grid.grid-cols-2.md\:grid-cols-6 > div { padding:.8rem; }
     .pedagogia-compact .text-3xl { font-size:1.55rem; }
@@ -394,7 +400,10 @@
                  grid fixo de 3 colunas em qualquer tamanho de tela (3x3, com
                  o card novo completando a última fileira), cartões e fontes
                  menores que antes. -->
-            <div class="grid grid-cols-3 gap-2 mb-5">
+            <!-- Admin: cards e gráficos em 80% e ranking Top 15 em 20% (classe dash-admin no body). -->
+            <div id="dashMainGrid">
+            <div id="dashMainLeft">
+            <div id="dashStatsGrid" class="grid grid-cols-3 gap-2 mb-5">
               <div class="bg-white rounded-lg p-2 border shadow-sm">
                 <div class="text-xs text-slate-500 mb-1">Viagens Hoje</div>
                 <div class="text-xl font-bold text-emerald-600" id="statHoje">0</div>
@@ -431,6 +440,10 @@
                 <div class="text-xs text-slate-500 mb-1">Acumulado de Viagens</div>
                 <div class="text-xl font-bold text-indigo-700" id="statAcumulado">0</div>
               </div>
+              <div class="dash-admin-card hidden bg-white rounded-lg p-2 border shadow-sm"><div class="text-xs text-slate-500 mb-1">ATF emitidas</div><div class="text-xl font-bold text-green-700" id="statAtfEmitidas">0</div></div>
+              <div class="dash-admin-card hidden bg-white rounded-lg p-2 border shadow-sm"><div class="text-xs text-slate-500 mb-1">ATF negadas</div><div class="text-xl font-bold text-red-700" id="statAtfNegadas">0</div></div>
+              <div class="dash-admin-card hidden bg-white rounded-lg p-2 border shadow-sm"><div class="text-xs text-slate-500 mb-1">PCD realizados</div><div class="text-xl font-bold text-green-700" id="statPcdRealizados">0</div></div>
+              <div class="dash-admin-card hidden bg-white rounded-lg p-2 border shadow-sm"><div class="text-xs text-slate-500 mb-1">PCD negados</div><div class="text-xl font-bold text-red-700" id="statPcdNegados">0</div></div>
             </div>
 
             <div class="bg-white rounded-xl border shadow-sm p-5 mb-6">
@@ -460,6 +473,13 @@
                 <div class="dashboard-chart"><canvas id="chartPorMes"></canvas></div>
                 <div class="dashboard-chart"><canvas id="chartPorUnidade"></canvas></div>
               </div>
+            </div>
+
+            </div>
+            <aside id="dashRanking" class="hidden bg-white rounded-xl border shadow-sm p-3 mb-6 self-start">
+              <h3 class="text-sm font-bold text-slate-800 mb-2">🏆 Top 15 · viagens realizadas</h3>
+              <ol id="dashRankingLista" class="text-xs leading-relaxed text-slate-700 list-decimal pl-5"></ol>
+            </aside>
             </div>
 
             <div id="dashboardSemValidacao" class="hidden bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
@@ -1314,6 +1334,7 @@
                     <option value="financeiro">Aportes financeiros</option>
                     <option value="cancelamentos">Cancelamentos</option>
                     <option value="km">Quilometragem registrada</option>
+                    <option value="veiculos">Veículos</option>
                   </select>
                 </div>
                 <div>
@@ -1340,6 +1361,14 @@
                 <div class="w-48">
                   <label class="block text-xs font-medium text-slate-500 mb-1">Situação</label>
                   <select id="relFiltroSituacao" onchange="renderRelatorioPreview()" class="w-full px-3 py-2 border rounded-lg text-sm"><option value="">Todas</option><option value="aprovada">Aprovada</option><option value="reprovada">Reprovada</option><option value="cancelada">Cancelada</option><option value="pendente">Pendente</option></select>
+                </div>
+                <div id="relFiltroTipoVeiculoWrap" class="hidden w-44">
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Tipo de veículo</label>
+                  <select id="relFiltroTipoVeiculo" onchange="renderRelatorioPreview()" class="w-full px-3 py-2 border rounded-lg text-sm"><option value="">Todos</option><option value="van">Van</option><option value="micro-onibus">Micro-ônibus</option><option value="onibus">Ônibus</option></select>
+                </div>
+                <div id="relFiltroCooperativaWrap" class="hidden w-48">
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Cooperativa</label>
+                  <select id="relFiltroCooperativa" onchange="renderRelatorioPreview()" class="w-full px-3 py-2 border rounded-lg text-sm"><option value="">Todas</option></select>
                 </div>
               </div>
               <div class="flex flex-wrap gap-3">
