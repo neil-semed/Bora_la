@@ -2771,6 +2771,8 @@ function renderAgenda() {
   if (ehEscolaAgenda && !thConf && thSit) thSit.insertAdjacentHTML('afterend', '<th id="agendaThConfirmar" class="px-1 py-2">Confirmar<br>Viagem</th>');
   if (!ehEscolaAgenda && thConf) thConf.remove();
   document.querySelector('.agenda-table-wrap')?.classList.toggle('agenda-escola', ehEscolaAgenda);
+  const thLista = document.getElementById('agendaThListaPdf');
+  if (thLista) thLista.textContent = ehEscolaAgenda ? 'Listagem' : 'Lista PDF';
   const thValid = document.getElementById('agendaThValidacao');
   if (thValid) thValid.innerHTML = 'Validação<br>Pedagógica';
 
@@ -2844,7 +2846,9 @@ function renderAgenda() {
         const verListaBtn = `<button onclick="openPassengerModal('${a.id}')" class="text-slate-600 hover:text-slate-800 text-xs font-medium ml-2" title="Visualizar cadastro de passageiros">👥 Passageiros</button>`;
         acoes = acoes.includes('text-slate-300') ? verListaBtn : acoes + verListaBtn;
       }
-      if (podeVerListagem && !ehSolicitacaoExterna) {
+      // Escola: com ATF "Não Precisa" não há ação de listagem na Agenda.
+      const escolaSemListagem = role === 'escola' && a.atf_status === 'nao_precisa';
+      if (podeVerListagem && !ehSolicitacaoExterna && !escolaSemListagem) {
         if (precisaAtf) {
           // Viagem pra fora de Nova Lima (ou com aluno PCD) e já com motorista(s)/veículo(s)
           // atribuído(s) -> listagem por veículo, com envio pro Drive e conferência do gestor
@@ -2897,6 +2901,10 @@ function renderAgenda() {
         const editBtn = `<button onclick="openExcursionEditor('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-medium ml-2" title="Editar todos os dados da viagem">✏️ Editar</button>`;
         const delBtn = `<button onclick="openDeleteExcursionModal('${a.id}')" class="text-red-600 hover:text-red-800 text-xs font-medium ml-2" title="Excluir permanentemente (diferente de Cancelar)">🗑️ Excluir</button>`;
         acoes = acoes.includes('text-slate-300') ? editBtn + delBtn : acoes + editBtn + delBtn;
+        // Admin: "Ver listagem" depois de Editar/Excluir quando a unidade já enviou a listagem.
+        if (role === 'admin' && ['enviada', 'aceita'].includes(a.listagem_status)) {
+          acoes += `<button onclick="openListagemVeiculoModal('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-bold ml-2" title="Abrir a listagem enviada para verificação">👁️ Ver listagem</button>`;
+        }
       }
       if (role === 'escola' && a.school_id === currentUser.schoolId && a.recurrence_group_id && a.situacao !== 'cancelada' && a.status !== 'rejected') {
         const addDateBtn = '';
@@ -2930,7 +2938,7 @@ function renderAgenda() {
       // Status = exatamente o conteúdo original da coluna Situação (decisão + dropdown).
       // Escola: só o selo, pois a decisão já aparece na coluna "Agenda".
       const statusCell = role === 'escola' ? situacaoBase : `${decisaoAdministrativa}${situacaoBase}`;
-      const confirmarViagemTd = role === 'escola' ? `<td class="py-3">${confirmacaoSit}</td>` : '';
+      const confirmarViagemTd = role === 'escola' ? `<td class="py-3">${a.situacao === 'reprovada' ? '' : confirmacaoSit}</td>` : '';
 
       const atfCell = podeEditarOperacional
         ? `<select onchange="updateAtf('${a.id}', this.value)" style="${ATF_COLORS[a.atf_status] || ''}" class="px-2 py-1 rounded text-xs font-medium border-0">
@@ -2984,7 +2992,7 @@ function renderAgenda() {
         : `<div class="text-xs text-slate-500">${enderecoOrigemTxt || '-'}</div>`;
       const temAcoes = !acoes.includes('text-slate-300');
       const exibeMotoristas = isAgendaEditor || a.admin_decision === 'aprovada';
-      const motoristasCell = exibeMotoristas ? driversLabelHtml(a.driver_ids) : '<span class="text-slate-400">Aguardando aprovação</span>';
+      const motoristasCell = exibeMotoristas ? driversLabelHtml(a.driver_ids) : (role === 'escola' && a.situacao === 'reprovada' ? '' : '<span class="text-slate-400">Aguardando aprovação</span>');
       const motoristaVinculado = ehMotorista && (a.driver_ids || []).includes(currentUser.driverId);
       const outros = ehMotorista
         ? (a.driver_ids || []).filter((id) => id !== currentUser.driverId).map((id) => drivers.find((d) => d.id === id)).filter(Boolean)
@@ -4835,6 +4843,12 @@ async function visualizarListagemExcel(driverId) {
     preview.innerHTML = `<p class="text-sm text-amber-800">Não foi possível ler a planilha nesta tela. Use “Abrir arquivo” para consultá-la no Drive.</p><button onclick="abrirArquivoListagem('${driverId}')" class="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-bold text-amber-800">Abrir arquivo</button>`;
   }
 }
+// Data no nome dos arquivos de listagem: dd-mm-aaaa ("/" não é aceito em nome de arquivo).
+function dataArquivoListagem(trip) {
+  const [y, m, d] = String(trip?.trip_date || '').split('-');
+  return y && m && d ? `${d}-${m}-${y}` : 'data';
+}
+
 async function downloadListagemModelo(excursionId, driverId) {
   const trip = agenda.find((a) => a.id === excursionId), d = drivers.find((x) => x.id === driverId), v = driverVehicle(driverId);
   if (!trip || !window.ExcelJS) { toast('⚠️ O gerador do modelo ainda não carregou. Verifique a internet e tente novamente.', true); return; }
@@ -4852,7 +4866,7 @@ async function downloadListagemModelo(excursionId, driverId) {
   const HEADER_ROW = 6, FIRST = HEADER_ROW + 1, LAST = HEADER_ROW + capacidade;
   const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Listagem', { views:[{state:'frozen', ySplit:HEADER_ROW, topLeftCell:`A${FIRST}`, activeCell:`B${FIRST}`, showGridLines:false}], properties:{defaultRowHeight:0} });
   ws.columns = [{width:6},{width:58},{width:30}];
-  for (let c=4; c<=60; c++) ws.getColumn(c).hidden = true;
+  for (let c=4; c<=16384; c++) ws.getColumn(c).hidden = true;
   const thin = {style:'thin',color:{argb:'FF94A3B8'}}, sep = {style:'thin',color:{argb:'FFCBD5E1'}};
   ws.mergeCells('A1:C1'); ws.getCell('A1').value = 'BORA LÁ — EXCURSÕES / SEMED NOVA LIMA';
   ws.getCell('A1').font = {name:'Arial',size:14,bold:true,color:{argb:'FF065F46'}};
@@ -4862,7 +4876,8 @@ async function downloadListagemModelo(excursionId, driverId) {
     const r = 2 + i; ws.mergeCells(`A${r}:C${r}`);
     const cell = ws.getCell(`A${r}`); cell.value = texto;
     cell.font = {name:'Arial',size:10,color:{argb:'FF0F172A'}}; cell.alignment = {vertical:'middle',wrapText:true};
-    ws.getRow(r).height = texto.length > 95 ? 30 : 18;
+    // Altura pelo tamanho do texto (célula mesclada não ajusta sozinha no Excel).
+    ws.getRow(r).height = Math.max(1, Math.ceil(texto.length / 80)) * 14 + 5;
   });
   for (let r=1; r<=5; r++) for (let c=1; c<=3; c++) {
     const cell = ws.getCell(r,c);
@@ -4885,7 +4900,7 @@ async function downloadListagemModelo(excursionId, driverId) {
   // Favicon antes do título (o título fica centralizado na faixa A:C).
   try { const response=await fetch('assets/favicon-512.png'); const buffer=await response.arrayBuffer(); const imageId=wb.addImage({buffer,extension:'png'}); ws.addImage(imageId,{tl:{col:1.2,row:0.12},ext:{width:24,height:24}}); } catch (_) { /* o título continua legível se a imagem não puder ser carregada */ }
   await ws.protect('', { selectLockedCells:true, selectUnlockedCells:true });
-  const bytes=await wb.xlsx.writeBuffer(); const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}); const link=document.createElement('a'); link.href=URL.createObjectURL(blob); link.download=`${trip.trip_date || 'data'}_${slugify(schoolName(trip.school_id) || trip.requester_name || originName(trip))}_${slugify(d?.name || v?.plate || 'motorista')}.xlsx`; document.body.appendChild(link); link.click(); setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 1000);
+  const bytes=await wb.xlsx.writeBuffer(); const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}); const link=document.createElement('a'); link.href=URL.createObjectURL(blob); link.download=`${dataArquivoListagem(trip)}_${slugify(schoolName(trip.school_id) || trip.requester_name || originName(trip))}_${slugify(d?.name || v?.plate || 'motorista')}.xlsx`; document.body.appendChild(link); link.click(); setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 1000);
 }
 
 function addListagemRow(driverId) {
@@ -5093,7 +5108,7 @@ async function confirmEnviarListagem() {
         if (!blob) continue;
         const base64 = await blobToBase64(blob);
         const extEnviado = arquivoEnviado ? ((arquivoEnviado.name.match(/\.(xlsx|pdf)$/i)?.[1] || (arquivoEnviado.type === 'application/pdf' ? 'pdf' : 'xlsx')).toLowerCase()) : '';
-        const filename = arquivoEnviado ? `${trip.trip_date}_${unidadeSlug}_${motoristaSlug}.${extEnviado}` : `${trip.trip_date}_${unidadeSlug}_${v ? v.plate : did}.pdf`;
+        const filename = arquivoEnviado ? `${dataArquivoListagem(trip)}_${unidadeSlug}_${motoristaSlug}.${extEnviado}` : `${trip.trip_date}_${unidadeSlug}_${v ? v.plate : did}.pdf`;
         const mimeType = arquivoEnviado?.type || (filename.toLowerCase().endsWith('.xlsx') ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/pdf');
         const respJson = await uploadToGoogleDrive(driveUrl, { excursionId: id, filename, mimeType, fileBase64: base64, accessToken: session.access_token });
         if (!await registrarListagemFile(id, did, filename, respJson.fileId, respJson.url)) { arquivosSalvos = false; break; }
