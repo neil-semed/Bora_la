@@ -2747,7 +2747,7 @@ function renderAgenda() {
   }
 
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="15" class="text-center py-8 text-slate-500 text-sm">Nenhuma viagem encontrada</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="16" class="text-center py-8 text-slate-500 text-sm">Nenhuma viagem encontrada</td></tr>';
     if (cardsWrapVazio) cardsWrapVazio.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm bg-white border rounded-lg" data-placeholder="1">Nenhuma viagem encontrada</div>';
     return;
   }
@@ -2758,6 +2758,13 @@ function renderAgenda() {
   const podeEditarSituacao = role === 'admin' || (role === 'operacional' && canEditScreen('agenda'));
   const podeEditarOperacional = role === 'admin' || (role === 'operacional' && canEditScreen('agenda'));
   const isAgendaEditor = podeEditarOperacional;
+
+  // Cabeçalhos: Admin (e demais perfis) com Agenda | Confirmação lado a lado e
+  // "Validação / Pedagógica" em duas linhas; Escola com Agenda sobre Confirmação.
+  const thSitSub = document.getElementById('agendaThSituacaoSub');
+  if (thSitSub) thSitSub.innerHTML = role === 'escola' ? '<span>Agenda<br>Confirmação</span>' : '<span>Agenda</span><span>|</span><span>Confirmação</span>';
+  const thValid = document.getElementById('agendaThValidacao');
+  if (thValid) thValid.innerHTML = role === 'escola' ? 'Validação Pedagógica' : 'Validação<br>Pedagógica';
 
   const cardsWrap = document.getElementById('agendaCardsList');
   const linhas = filtered
@@ -2795,7 +2802,19 @@ function renderAgenda() {
         acoes = acoes.includes('text-slate-300') ? reativar : acoes + reativar;
       }
       if (podeCancelar) {
-        const cancelBtn = `<button onclick="openCancelModal('${a.id}')" class="text-orange-600 hover:text-orange-800 text-xs font-medium ml-2">Cancelar</button>`;
+        let cancelBtn = `<button onclick="openCancelModal('${a.id}')" class="text-orange-600 hover:text-orange-800 text-xs font-medium ml-2">Cancelar</button>`;
+        // Escola: "Confirmar" (azul) acima de "Cancelar"; só ativo após a aprovação do
+        // Admin. Depois de confirmada, resta apenas cancelar. Não bloqueia o Admin.
+        if (role === 'escola') {
+          const podeConfirmar = !a.escola_confirmada_em && !['rejected', 'completed', 'in_transit'].includes(a.status);
+          const aprovadaAdmin = a.admin_decision === 'aprovada';
+          const confirmBtn = podeConfirmar
+            ? (aprovadaAdmin
+              ? `<button onclick="confirmarViagemEscola('${a.id}')" class="w-24 rounded bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700">Confirmar</button>`
+              : '<button disabled title="Disponível após a aprovação do Admin" class="w-24 cursor-not-allowed rounded bg-blue-200 px-3 py-1.5 text-xs font-bold text-white">Confirmar</button>')
+            : '';
+          cancelBtn = `<div class="inline-flex flex-col items-start gap-1.5 align-top">${confirmBtn}<button onclick="openCancelModal('${a.id}')" class="w-24 rounded bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700">Cancelar</button></div>`;
+        }
         acoes = acoes.includes('text-slate-300') ? cancelBtn : acoes + cancelBtn;
       }
 
@@ -2886,7 +2905,21 @@ function renderAgenda() {
         : a.admin_decision === 'reprovada'
           ? '<div class="mb-1 text-xs font-bold text-red-700">Reprovada</div>'
           : '';
-      const situacaoCell = `${decisaoAdministrativa}${situacaoBase}`;
+      // Situação = Agenda (decisão do Admin) + Confirmação (da unidade).
+      // O dropdown/selo de situação passa para a coluna Status.
+      const agendaSit = a.admin_decision === 'aprovada'
+        ? '<span class="text-xs font-bold text-emerald-700">Aprovada</span>'
+        : a.admin_decision === 'reprovada'
+          ? '<span class="text-xs font-bold text-red-700">Reprovada</span>'
+          : '<span class="text-xs text-slate-400">—</span>';
+      const confirmacaoSit = a.escola_confirmada_em
+        ? `<span class="text-xs font-bold text-blue-600" title="Confirmada em ${new Date(a.escola_confirmada_em).toLocaleDateString('pt-BR')}">Confirmada</span>`
+        : '<span class="text-xs font-bold text-black">Pendente</span>';
+      const situacaoCell = role === 'escola'
+        ? `<div>${agendaSit}</div><div>${confirmacaoSit}</div>`
+        : `<div class="flex gap-3 whitespace-nowrap">${agendaSit}${confirmacaoSit}</div>`;
+      const statusCell = situacaoBase;
+      void decisaoAdministrativa;
 
       const atfCell = podeEditarOperacional
         ? `<select onchange="updateAtf('${a.id}', this.value)" style="${ATF_COLORS[a.atf_status] || ''}" class="px-2 py-1 rounded text-xs font-medium border-0">
@@ -2979,6 +3012,7 @@ function renderAgenda() {
       <td class="px-4 py-3 text-xs text-slate-500">${validacaoPedagogicaCell}</td>
       <td class="px-4 py-3">${atfCell}</td>
       <td class="px-4 py-3">${situacaoCell}</td>
+      <td class="px-4 py-3">${statusCell}</td>
       <td class="px-4 py-3 text-xs">${motoristasCell}</td>
       <td class="px-4 py-3 whitespace-nowrap">${acoes}</td>
       <td class="px-4 py-3 text-sm text-center">${listaEscolaCell}</td>
@@ -2997,7 +3031,7 @@ function renderAgenda() {
           <span class="font-semibold">${dataFmt}</span>
           <span class="text-slate-500"> • ${turnoLabel}</span>
         </div>
-        ${situacaoCell}
+        ${statusCell}
       </div>
       <div class="p-4 space-y-2.5 text-sm">
         <div class="flex items-center justify-between gap-2">
@@ -3023,6 +3057,10 @@ function renderAgenda() {
           <span class="text-slate-500 text-xs">ATF</span>
           ${atfCell}
         </div>
+        ${!ehMotorista ? `<div class="flex items-start justify-between gap-2">
+          <span class="text-slate-500 text-xs">Situação</span>
+          <span class="text-right">${situacaoCell}</span>
+        </div>` : ''}
         ${!ehMotorista ? `<div class="flex items-start justify-between gap-2">
           <span class="text-slate-500 text-xs">Validação pedagógica</span>
           <span class="text-right">${validacaoPedagogicaCell}</span>
@@ -3841,6 +3879,19 @@ async function confirmReject() {
   closeRejectModal();
 }
 
+async function confirmarViagemEscola(id) {
+  const trip = agenda.find((a) => a.id === id);
+  if (!trip || currentUser?.role !== 'escola' || trip.school_id !== currentUser.schoolId) return;
+  if (trip.admin_decision !== 'aprovada') { toast('⚠️ A confirmação é liberada após a aprovação do Admin.', true); return; }
+  if (trip.escola_confirmada_em) return;
+  const data = trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
+  if (!window.confirm(`Confirmar a viagem de ${data} para ${trip.destination || '-'}? Depois de confirmada, só será possível cancelar.`)) return;
+  const ok = await updateExcursion(id, { escola_confirmada_em: new Date().toISOString(), escola_confirmada_por: currentUser.id });
+  if (!ok) return;
+  await loadAgenda(); renderAgenda(); renderValidacoesEscola();
+  toast('✅ Viagem confirmada.');
+}
+
 function openCancelModal(id) {
   cancelTargetId = id;
   document.getElementById('cancelMotivoSelect').value = CANCEL_REASONS[0];
@@ -3989,7 +4040,7 @@ function renderValidacoesEscola() {
   const origemEhMinha = (a) => a.solicitation_type !== 'agendamento' && a.school_id === currentUser.schoolId;
   const destinoEhMinha = (a) => !!nomeUnidade && String(a.destination || '').trim().toLocaleLowerCase('pt-BR') === nomeUnidade;
   if (minhas.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Nenhuma solicitação encontrada</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-slate-500 text-sm">Nenhuma solicitação encontrada</td></tr>';
     return;
   }
   // Ordem cronológica; ativas (hoje em diante) separadas das passadas, que só
@@ -3999,7 +4050,7 @@ function renderValidacoesEscola() {
   const ordenar = (lista) => lista.slice().sort((a, b) => ((a.trip_date || '') + (a.departure_time || '')).localeCompare((b.trip_date || '') + (b.departure_time || '')));
   const ativas = ordenar(minhas.filter((a) => (a.trip_date || '') >= hojeEscola));
   const passadas = ordenar(minhas.filter((a) => (a.trip_date || '') < hojeEscola));
-  const secao = (titulo, n) => `<tr><td colspan="7" class="px-4 py-2 bg-slate-100 text-xs font-bold uppercase tracking-wide text-slate-700">${titulo} (${n})</td></tr>`;
+  const secao = (titulo, n) => `<tr><td colspan="9" class="px-4 py-2 bg-slate-100 text-xs font-bold uppercase tracking-wide text-slate-700">${titulo} (${n})</td></tr>`;
   const linhaEscola = (passada) => (a) => {
       const podeEnviar = !['cancelada', 'reprovada'].includes(a.situacao) && ['nao_enviado', 'solicitada', 'correcoes'].includes(a.doc_status);
       const btnLabel = a.doc_status === 'correcoes' ? '📎 Reenviar' : a.doc_status === 'solicitada' ? '📎 Enviar proposta' : '📎 Anexar';
@@ -4036,11 +4087,13 @@ function renderValidacoesEscola() {
         ${podeCancelarValidada ? `<button onclick="openCancelModal('${a.id}')" class="ml-2 text-xs text-orange-600 hover:text-orange-800">🚫 Cancelar</button>` : ''}
         ${!podeEnviar && !podeCancelarValidada && !(a.status === 'approved' && (a.driver_ids || []).length && precisaListagemComNomesDocumentos(a)) ? '<span class="text-slate-300 text-xs">—</span>' : ''}
       </td>
+      <td class="px-4 py-3">${a.escola_confirmada_em ? '<span class="text-xs font-bold text-blue-600">Confirmada</span>' : '<span class="text-xs font-bold text-black">Pendente</span>'}</td>
+      <td class="px-4 py-3"><span style="${SITUACAO_COLORS[a.situacao] || ''}" class="px-2 py-1 rounded text-xs font-medium whitespace-nowrap">${SITUACAO_LABELS[a.situacao] || a.situacao || '-'}</span></td>
     </tr>`;
     };
   tbody.innerHTML = secao('Solicitações ativas', ativas.length)
-    + (ativas.length ? ativas.map(linhaEscola(false)).join('') : '<tr><td colspan="7" class="text-center py-6 text-slate-500 text-sm">Nenhuma solicitação ativa</td></tr>')
-    + (mostrarPassadas ? secao('Solicitações passadas', passadas.length) + (passadas.length ? passadas.map(linhaEscola(true)).join('') : '<tr><td colspan="7" class="text-center py-6 text-slate-500 text-sm">Nenhuma solicitação passada</td></tr>') : '');
+    + (ativas.length ? ativas.map(linhaEscola(false)).join('') : '<tr><td colspan="9" class="text-center py-6 text-slate-500 text-sm">Nenhuma solicitação ativa</td></tr>')
+    + (mostrarPassadas ? secao('Solicitações passadas', passadas.length) + (passadas.length ? passadas.map(linhaEscola(true)).join('') : '<tr><td colspan="9" class="text-center py-6 text-slate-500 text-sm">Nenhuma solicitação passada</td></tr>') : '');
 }
 
 async function atualizarValidacoesPedagogia() {

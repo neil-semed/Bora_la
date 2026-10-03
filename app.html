@@ -104,6 +104,9 @@
     .request-section--recurrence { border-color:#c7d2fe; background:linear-gradient(150deg,#ffffff,#f5f7ff); }
     .validation-panel { border-top:4px solid #2563eb; }
     .validation-panel--school { border-top-color:#059669; }
+    /* Validações: Escola 40% e Pedagogia 20% mais largas que o padrão (1440px). */
+    #validacoesEscola.screen-shell { max-width: 2016px; }
+    #validacoesPedagogia.screen-shell { max-width: 1728px; }
     .data-table-modern thead th { background:#f8fafc; color:#64748b; font-size:.7rem; letter-spacing:.05em; text-transform:uppercase; }
     .data-table-modern tbody tr { transition:background .15s ease; }
     .data-table-modern tbody tr:hover { background:#f8fafc; }
@@ -113,8 +116,9 @@
     /* Agenda Mestra compacta: prioriza as ações sem sacrificar a leitura. */
     .agenda-table-wrap .sticky-table th { padding:.48rem .55rem; }
     .agenda-table-wrap .sticky-table td { padding:.58rem .55rem; }
-    .agenda-table-wrap .sticky-table th:nth-child(10), .agenda-table-wrap .sticky-table td:nth-child(10) { width:112px; min-width:112px; }
-    .agenda-table-wrap .sticky-table th:nth-child(12), .agenda-table-wrap .sticky-table td:nth-child(12) { width:280px; min-width:280px; white-space:normal; }
+    .agenda-table-wrap .sticky-table th:nth-child(10), .agenda-table-wrap .sticky-table td:nth-child(10) { min-width:150px; }
+    .agenda-table-wrap .sticky-table th:nth-child(11), .agenda-table-wrap .sticky-table td:nth-child(11) { width:112px; min-width:112px; }
+    .agenda-table-wrap .sticky-table th:nth-child(13), .agenda-table-wrap .sticky-table td:nth-child(13) { width:280px; min-width:280px; white-space:normal; }
     /* Cabeçalhos ficam visíveis em qualquer tabela rolável do sistema. */
     .agenda-table-wrap thead th, .sticky-table thead th, .overflow-x-auto thead th { position: sticky; top: 0; z-index: 10; background: #f8fafc; box-shadow: 0 1px 0 #e2e8f0; }
     .overflow-x-auto { max-height: calc(100vh - 230px); overflow: auto !important; scrollbar-color:#059669 #e2e8f0; scrollbar-width:auto; }
@@ -550,9 +554,10 @@
                       <th class="px-4 py-2 min-w-[220px]">Destino</th>
                       <th class="px-4 py-2">Passageiros</th>
                       <th class="px-4 py-2">Pedido</th>
-                      <th class="px-4 py-2">Validação Pedagógica</th>
+                      <th id="agendaThValidacao" class="px-4 py-2">Validação Pedagógica</th>
                       <th class="px-4 py-2">ATF</th>
-                      <th class="px-4 py-2">Situação</th>
+                      <th class="px-4 py-2 align-bottom">Situação<div id="agendaThSituacaoSub" class="mt-0.5 flex gap-3 text-[10px] font-medium normal-case text-slate-400"><span>Agenda</span><span>|</span><span>Confirmação</span></div></th>
+                      <th class="px-4 py-2">Status</th>
                       <th class="px-4 py-2">Motorista(s)</th>
                       <th class="px-4 py-2">Ações</th>
                       <th class="px-4 py-2">Lista PDF</th>
@@ -915,7 +920,9 @@
                       <th class="px-4 py-2">Público-alvo</th>
                       <th class="px-4 py-2">Documento</th>
                       <th class="px-4 py-2 min-w-[220px]">Parecer da Pedagogia</th>
-                      <th class="px-4 py-2"></th>
+                      <th class="px-4 py-2">Ações</th>
+                      <th class="px-4 py-2">Confirmação</th>
+                      <th class="px-4 py-2">Status</th>
                     </tr>
                   </thead>
                   <tbody id="validacoesEscolaTable" class="divide-y divide-slate-100"></tbody>
@@ -967,7 +974,7 @@
                       <th class="px-4 py-2">Pessoas</th>
                       <th class="px-4 py-2">Setor atual</th>
                       <th class="px-4 py-2">Documento</th>
-                      <th class="px-4 py-2"></th>
+                      <th class="px-4 py-2">Ações</th>
                     </tr>
                   </thead>
                   <tbody id="validacoesPedagogiaTable" class="divide-y divide-slate-100"></tbody>
