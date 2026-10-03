@@ -3970,6 +3970,7 @@ async function atualizarValidacoesEscola() {
 
 function limparFiltrosValidacoesEscola() {
   ['validacaoFiltroDestinoEscola', 'validacaoFiltroDataEscola', 'validacaoFiltroPublicoEscola'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const passadasEl = document.getElementById('validacaoMostrarPassadasEscola'); if (passadasEl) passadasEl.checked = false;
   renderValidacoesEscola();
 }
 
@@ -3991,10 +3992,15 @@ function renderValidacoesEscola() {
     tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Nenhuma solicitação encontrada</td></tr>';
     return;
   }
-  tbody.innerHTML = minhas
-    .slice()
-    .sort((a, b) => (b.trip_date || '').localeCompare(a.trip_date || ''))
-    .map((a) => {
+  // Ordem cronológica; ativas (hoje em diante) separadas das passadas, que só
+  // aparecem com "Mostrar solicitações passadas" marcado.
+  const hojeEscola = fmtDate(new Date());
+  const mostrarPassadas = !!document.getElementById('validacaoMostrarPassadasEscola')?.checked;
+  const ordenar = (lista) => lista.slice().sort((a, b) => ((a.trip_date || '') + (a.departure_time || '')).localeCompare((b.trip_date || '') + (b.departure_time || '')));
+  const ativas = ordenar(minhas.filter((a) => (a.trip_date || '') >= hojeEscola));
+  const passadas = ordenar(minhas.filter((a) => (a.trip_date || '') < hojeEscola));
+  const secao = (titulo, n) => `<tr><td colspan="7" class="px-4 py-2 bg-slate-100 text-xs font-bold uppercase tracking-wide text-slate-700">${titulo} (${n})</td></tr>`;
+  const linhaEscola = (passada) => (a) => {
       const podeEnviar = !['cancelada', 'reprovada'].includes(a.situacao) && ['nao_enviado', 'solicitada', 'correcoes'].includes(a.doc_status);
       const btnLabel = a.doc_status === 'correcoes' ? '📎 Reenviar' : a.doc_status === 'solicitada' ? '📎 Enviar proposta' : '📎 Anexar';
       // Sempre mostra o nome completo de quem deu o parecer (não só o comentário) - fica
@@ -4014,7 +4020,7 @@ function renderValidacoesEscola() {
         parecerCell = `<div class="text-xs text-emerald-700">✅ Aprovado</div>${aprovadoDataValidador}`;
       }
       return `
-    <tr class="hover:bg-slate-50">
+    <tr class="hover:bg-slate-50${passada ? ' text-slate-400 opacity-70' : ''}">
       <td class="px-4 py-3 text-sm">${new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR')}</td>
       <td class="px-4 py-3 text-sm">${originName(a)}${origemEhMinha(a) ? '' : `<div class="text-xs text-slate-500">${originAddress(a) || '-'}<div class="text-xs text-slate-400">${originCity(a) || ''}</div></div>`}</td>
       <td class="px-4 py-3 text-sm">${a.destination}${destinoEhMinha(a) ? '' : `<div class="text-xs text-slate-500">${a.destination_address || a.city || '-'}</div>`}</td>
@@ -4031,7 +4037,10 @@ function renderValidacoesEscola() {
         ${!podeEnviar && !podeCancelarValidada && !(a.status === 'approved' && (a.driver_ids || []).length && precisaListagemComNomesDocumentos(a)) ? '<span class="text-slate-300 text-xs">—</span>' : ''}
       </td>
     </tr>`;
-    }).join('');
+    };
+  tbody.innerHTML = secao('Solicitações ativas', ativas.length)
+    + (ativas.length ? ativas.map(linhaEscola(false)).join('') : '<tr><td colspan="7" class="text-center py-6 text-slate-500 text-sm">Nenhuma solicitação ativa</td></tr>')
+    + (mostrarPassadas ? secao('Solicitações passadas', passadas.length) + (passadas.length ? passadas.map(linhaEscola(true)).join('') : '<tr><td colspan="7" class="text-center py-6 text-slate-500 text-sm">Nenhuma solicitação passada</td></tr>') : '');
 }
 
 async function atualizarValidacoesPedagogia() {
