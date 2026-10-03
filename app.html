@@ -2059,7 +2059,7 @@
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */
     (() => {
-      const actionCellIndex = 11;
+      const actionCellIndex = 12; // coluna "Ações" (após a inclusão da coluna "Status")
       const getExcursionId = (cell) => {
         const match = cell.innerHTML.match(/(?:openExcursionEditor|openDeleteExcursionModal)\('([^']+)'\)/);
         return match ? match[1] : null;

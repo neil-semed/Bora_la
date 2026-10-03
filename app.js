@@ -2918,8 +2918,8 @@ function renderAgenda() {
       const situacaoCell = role === 'escola'
         ? `<div>${agendaSit}</div><div>${confirmacaoSit}</div>`
         : `<div class="flex gap-3 whitespace-nowrap">${agendaSit}${confirmacaoSit}</div>`;
-      const statusCell = situacaoBase;
-      void decisaoAdministrativa;
+      // Status = exatamente o conteúdo original da coluna Situação (decisão + dropdown).
+      const statusCell = `${decisaoAdministrativa}${situacaoBase}`;
 
       const atfCell = podeEditarOperacional
         ? `<select onchange="updateAtf('${a.id}', this.value)" style="${ATF_COLORS[a.atf_status] || ''}" class="px-2 py-1 rounded text-xs font-medium border-0">
