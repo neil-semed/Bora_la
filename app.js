@@ -2469,6 +2469,49 @@ async function renderPendenciasCoop() {
   safeIcons();
 }
 
+// Aviso por e-mail ao setor quando a cooperativa confirma a ATF ou o transporte PCD
+// (mesmo padrão do e-mail de preenchimento de listagem). Destino: e-mail do setor
+// cadastrado em Admin › Cooperativas › Envio de e-mail.
+async function avisarSetorRespostaCoop(id, tipo) {
+  const destino = appSettings.email_copia_setor || appSettings.remetente_email || '';
+  const a = agenda.find((x) => x.id === id);
+  if (!destino || !a) return;
+  const pcd = tipo === 'pcd';
+  const coop = cooperativaById(currentUser?.cooperativaId)?.name || 'a cooperativa';
+  const quem = currentUser?.user_metadata?.full_name || currentUser?.email || '';
+  const agora = new Date();
+  const data = a.trip_date ? new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
+  const origem = `${originName(a) || '-'}${originAddress(a) ? ' - ' + originAddress(a) : ''}${originCity(a) ? ' - ' + originCity(a) : ''}`;
+  const destinoViagem = `${a.destination || '-'}${a.destination_address ? ' - ' + a.destination_address : ''}${a.city ? ' - ' + a.city : ''}`;
+  const motoristas = cooperativeDriversForTrip(a).map((d) => { const v = driverVehicle(d.id); return `${d.name}${v?.plate ? ' · ' + v.plate : ''}${v?.capacity ? ' · ' + v.capacity + ' lugares' : ''}`; }).join(' / ') || '-';
+  const titulo = pcd ? 'Transporte PCD confirmado' : 'ATF emitida';
+  const assunto = `Bora Lá - ${pcd ? 'transporte PCD confirmado' : 'ATF emitida'} - ${a.destination || '-'} - ${data}`;
+  const quando = `${agora.toLocaleDateString('pt-BR')} às ${agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+  const intro = pcd
+    ? `A cooperativa ${coop} confirmou, pelo sistema Bora Lá, o atendimento em veículo adaptado da viagem abaixo.`
+    : `A cooperativa ${coop} confirmou, pelo sistema Bora Lá, a emissão da ATF da viagem abaixo.`;
+  const veicPcd = [document.getElementById(`pcdVeiculo-${id}`)?.value?.trim(), document.getElementById(`pcdMotorista-${id}`)?.value?.trim()].filter(Boolean).join(' · ');
+  const linhas = [
+    ['Origem', origem], ['Destino', destinoViagem], ['Data', data],
+    ['Saída', `${hhmm(a.departure_time)}h - Retorno: ${hhmm(a.return_time)}h`],
+    ...(pcd ? [['Estudantes PCD', `${a.pca_count || 0} + ${a.apoio_count || 0} apoio(s)`]] : [['Motorista(s)', motoristas]]),
+    ...(pcd && veicPcd ? [['Veículo / motorista informados', veicPcd]] : []),
+  ];
+  const declaracao = pcd
+    ? 'Conforme declarado no aceite, a execução do atendimento é de inteira responsabilidade da cooperativa, e a SEMED considera este aceite como confirmação do atendimento.'
+    : 'Conforme declarado no aceite, a emissão e a regularidade da ATF são de inteira responsabilidade da cooperativa, e a SEMED considera este aceite como comprovação de emissão do documento.';
+  const confirmado = `Confirmado em ${quando}${quem ? `, por ${quem} (${coop})` : ''}.`;
+  const texto = `Olá,\n\n${intro}\n\n${linhas.map(([k, v]) => k === 'Saída' ? `Saída: ${v}` : `${k}: ${v}`).join('\n')}\n\n${confirmado}\n\n${declaracao}\n\nBora Lá - Excursões / Semed Nova Lima`;
+  const p = (t) => `<p style="margin:0 0 12px">${t}</p>`;
+  const html = `<div style="max-width:720px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.5;font-size:14px"><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | ${escapeHtml(titulo)}</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:3px;background:#16a34a;margin:3px 0 16px"></div>`
+    + p('Olá,') + p(escapeHtml(intro))
+    + p(linhas.map(([k, v]) => k === 'Saída' ? `<strong>Saída:</strong> ${escapeHtml(hhmm(a.departure_time))}h - <strong>Retorno:</strong> ${escapeHtml(hhmm(a.return_time))}h` : `<strong>${escapeHtml(k)}:</strong> ${escapeHtml(v)}`).join('<br>'))
+    + p(escapeHtml(confirmado))
+    + `<p style="margin:0 0 12px;font-size:12px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px">${escapeHtml(declaracao)}</p>`
+    + '<p style="margin:18px 0 0">Bora Lá - Excursões / Semed Nova Lima</p></div>';
+  await tentarEnviarEmailAutomatico(destino, assunto, texto, '', html);
+}
+
 // Janela de confirmação das respostas da cooperativa (ATF / PCD).
 function confirmarRespostaCoop({ titulo, info = '', texto = '', tom = 'amber', botao = 'Confirmar' }) {
   return new Promise((resolve) => {
@@ -2492,6 +2535,7 @@ async function aceitarAtfCoop(id) {
     texto: 'Declaro, em nome desta cooperativa, que a Autorização de Tráfego (ATF) referente a esta viagem foi emitida, sendo sua emissão e regularidade de inteira responsabilidade da cooperativa. A Secretaria Municipal de Educação (SEMED) considerará este aceite como comprovação de emissão do documento.' })) return;
   const { error } = await sb.rpc('agent_accept_atf', { p_excursion_id: id });
   if (error) { toast('❌ ' + error.message, true); return; }
+  await avisarSetorRespostaCoop(id, 'atf');
   await loadAgenda(); await loadNotifications(); renderPendenciasCoop(); toast('✅ ATF marcada como emitida. Admin, Pedagogia e unidade foram notificados.');
 }
 
@@ -2504,6 +2548,7 @@ async function confirmarPcdCoop(id) {
   const motorista = document.getElementById(`pcdMotorista-${id}`)?.value.trim() || null;
   const { error } = await sb.rpc('agent_confirm_pcd', { p_excursion_id: id, p_vehicle: veiculo, p_driver: motorista });
   if (error) { toast('❌ ' + error.message, true); return; }
+  await avisarSetorRespostaCoop(id, 'pcd');
   await loadAgenda(); await loadNotifications(); renderPendenciasCoop(); toast('✅ Atendimento PCD confirmado. Admin e unidade foram notificados.');
 }
 async function rejeitarAtfCoop(id) {
