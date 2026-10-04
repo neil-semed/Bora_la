@@ -2516,7 +2516,7 @@ let chartMesInstance = null;
 let chartUnidadeInstance = null;
 let chartPublicoAlvoInstance = null;
 let chartRankingSolicitantesInstance = null;
-let chartRealizadasPublicoAlvoInstance = null;
+let chartViagensCooperativaInstance = null;
 
 function monthKey(dateStr) { return (dateStr || '').slice(0, 7); }
 function monthLabel(key) {
@@ -2702,10 +2702,27 @@ function renderDashboard() {
 
   // Admin: cards de ATF/PCD e ranking Top 15 de viagens realizadas (mesmos filtros do dashboard).
   const ehAdminDash = currentUser?.role === 'admin';
+  const ehPedDash = currentUser?.role === 'pedagogia';
   document.body.classList.toggle('dash-admin', ehAdminDash);
+  document.body.classList.toggle('dash-ped', ehPedDash);
+  // Pedagogia: os gráficos de público-alvo/top 7 ficam dentro da área central de gráficos.
+  const pedCharts = document.getElementById('dashboardPedagogiaCharts');
+  const chartsBox = document.getElementById('dashChartsBox');
+  if (ehPedDash && pedCharts && chartsBox && pedCharts.parentElement !== chartsBox) chartsBox.appendChild(pedCharts);
   document.querySelectorAll('.dash-admin-card').forEach((el) => el.classList.toggle('hidden', !ehAdminDash));
-  document.getElementById('dashRanking')?.classList.toggle('hidden', !ehAdminDash);
+  document.getElementById('dashRanking')?.classList.toggle('hidden', !(ehAdminDash || ehPedDash));
   if (!ehAdminDash) document.getElementById('dashPublicoAlvoBox')?.classList.add('hidden');
+  if (ehPedDash) {
+    const realizadasPed = visible.filter((a) => !['cancelada', 'reprovada'].includes(a.situacao)
+      && (a.status === 'completed' || (['approved', 'in_transit'].includes(a.status) && (a.trip_date || '') < hoje)));
+    const porUnidadePed = {};
+    realizadasPed.forEach((a) => { const nome = a.school_id ? schoolName(a.school_id) : originName(a); porUnidadePed[nome] = (porUnidadePed[nome] || 0) + 1; });
+    const topPed = Object.entries(porUnidadePed).sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0], 'pt-BR')).slice(0, 15);
+    const listaPed = document.getElementById('dashRankingLista');
+    if (listaPed) listaPed.innerHTML = topPed.length
+      ? topPed.map(([nome, n]) => `<li class="py-0.5"><span class="flex justify-between gap-2"><span class="truncate">${escapeHtml(nome)}</span><b>${n}</b></span></li>`).join('')
+      : '<li class="list-none -ml-5 text-slate-400">Nenhuma viagem realizada no período.</li>';
+  }
   if (ehAdminDash) {
     const setStat = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     setStat('statAtfEmitidas', visible.filter((a) => a.atf_status === 'emitida').length);
@@ -2717,18 +2734,22 @@ function renderDashboard() {
     const porUnidade = {};
     realizadas.forEach((a) => { const nome = a.school_id ? schoolName(a.school_id) : originName(a); porUnidade[nome] = (porUnidade[nome] || 0) + 1; });
     const top = Object.entries(porUnidade).sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0], 'pt-BR')).slice(0, 15);
-    // Ranking de viagens realizadas por público-alvo (área ao lado de Próximas Viagens).
+    // Rosca: viagens realizadas por cooperativa (área ao lado de Próximas Viagens).
     document.getElementById('dashPublicoAlvoBox')?.classList.remove('hidden');
-    const porPublico = {};
-    realizadas.forEach((a) => { const id = a.validation_target_id || a.publico_alvo; const l = id ? publicoAlvoLabel(id) : '-'; const nome = (!l || l === '-') ? 'Não informado' : l; porPublico[nome] = (porPublico[nome] || 0) + 1; });
-    const pub = Object.entries(porPublico).sort((x, y) => y[1] - x[1]);
-    const ctxPub = document.getElementById('chartRealizadasPublicoAlvo');
-    if (ctxPub && window.Chart) {
-      if (chartRealizadasPublicoAlvoInstance) chartRealizadasPublicoAlvoInstance.destroy();
-      chartRealizadasPublicoAlvoInstance = new Chart(ctxPub, {
-        type: 'bar',
-        data: { labels: pub.map(([n]) => n), datasets: [{ label: 'Viagens realizadas', data: pub.map(([, v]) => v), backgroundColor: 'rgba(124,58,237,.7)', borderRadius: 4, maxBarThickness: 18 }] },
-        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } } }, y: { ticks: { autoSkip: false, font: { size: 10 }, callback(v) { const t = this.getLabelForValue(v); return t.length > 18 ? t.slice(0, 17) + '…' : t; } }, grid: { display: false } } } },
+    const porCoop = {};
+    realizadas.forEach((a) => {
+      const coops = [...new Set((a.driver_ids || []).map((id) => cooperativaById(driverCooperativaId(id))?.name).filter(Boolean))];
+      (coops.length ? coops : ['Sem cooperativa']).forEach((c) => { porCoop[c] = (porCoop[c] || 0) + 1; });
+    });
+    const coopEntries = Object.entries(porCoop).sort((x, y) => y[1] - x[1]);
+    const ctxCoop = document.getElementById('chartViagensCooperativa');
+    if (ctxCoop && window.Chart) {
+      if (chartViagensCooperativaInstance) chartViagensCooperativaInstance.destroy();
+      const cores = ['#059669', '#2563eb', '#f59e0b', '#7c3aed', '#dc2626', '#0891b2', '#94a3b8'];
+      chartViagensCooperativaInstance = new Chart(ctxCoop, {
+        type: 'doughnut',
+        data: { labels: coopEntries.map(([n]) => n), datasets: [{ data: coopEntries.map(([, v]) => v), backgroundColor: coopEntries.map((_, i) => cores[i % cores.length]), borderWidth: 2, borderColor: '#fff' }] },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '58%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } },
       });
     }
     const lista = document.getElementById('dashRankingLista');
@@ -2991,10 +3012,10 @@ function renderAgenda() {
           const aprovadaAdmin = a.admin_decision === 'aprovada';
           const confirmBtn = podeConfirmar
             ? (aprovadaAdmin
-              ? `<button onclick="confirmarViagemEscola('${a.id}')" class="w-20 rounded border border-blue-200 bg-blue-100 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-200">Confirmar</button>`
-              : '<button disabled title="Disponível após a aprovação do Admin" class="w-20 cursor-not-allowed rounded border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-400">Confirmar</button>')
+              ? `<button onclick="confirmarViagemEscola('${a.id}')" class="bg-transparent px-0 py-0.5 text-xs font-semibold text-blue-700 hover:text-blue-900">✅ Confirmar</button>`
+              : '<button disabled title="Disponível após a aprovação do Admin" class="cursor-not-allowed bg-transparent px-0 py-0.5 text-xs font-semibold text-slate-400">✅ Confirmar</button>')
             : '';
-          cancelBtn = `<div class="inline-flex flex-col items-start gap-1 align-top">${confirmBtn}<button onclick="openCancelModal('${a.id}')" class="w-20 rounded border border-red-200 bg-red-100 px-2 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-200">Cancelar</button></div>`;
+          cancelBtn = `<div class="inline-flex flex-col items-start gap-1 align-top">${confirmBtn}<button onclick="openCancelModal('${a.id}')" class="bg-transparent px-0 py-0.5 text-xs font-semibold text-red-700 hover:text-red-900">🚫 Cancelar</button></div>`;
         }
         acoes = acoes.includes('text-slate-300') ? cancelBtn : acoes + cancelBtn;
       }

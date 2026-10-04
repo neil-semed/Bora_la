@@ -145,6 +145,18 @@
     .dashboard-chart { height: 185px; }
     /* Admin › Dashboard: 80% (cards + gráficos) | 20% (ranking); cards menores. */
     @media (min-width: 1024px) { body.dash-admin #dashMainGrid { display:grid; grid-template-columns:4fr 1fr; gap:12px; align-items:start; } }
+    /* Pedagogia › Dashboard: 80% (cards 2 a 2 + gráficos maiores) | 20% (ranking). */
+    @media (min-width: 1024px) {
+      body.dash-ped #dashMainGrid { display:grid; grid-template-columns:4fr 1fr; gap:12px; align-items:start; }
+      body.dash-ped #dashMainLeft { display:grid; grid-template-columns:1fr 3fr; gap:10px; align-items:start; }
+    }
+    body.dash-ped #dashStatsGrid { grid-template-columns:1fr 1fr; gap:.3rem; }
+    body.dash-ped #dashStatsGrid > div { padding:.3rem .45rem; }
+    body.dash-ped #dashStatsGrid .text-xl { font-size:1rem; line-height:1.25rem; }
+    body.dash-ped #dashStatsGrid .text-xs { font-size:.62rem; margin-bottom:.05rem; }
+    body.dash-ped .dashboard-chart { height:210px; }
+    body.dash-ped.pedagogia-compact canvas { max-height:none; }
+    body.dash-ped #dashChartsBox #dashboardPedagogiaCharts { margin-top:.75rem; margin-bottom:0; }
     @media (min-width: 1024px) { body.dash-admin #dashProximasGrid { display:grid; grid-template-columns:4fr 1fr; gap:12px; align-items:start; } }
     body.dash-admin #dashStatsGrid { grid-template-columns:repeat(auto-fit,minmax(92px,1fr)); gap:.35rem; }
     body.dash-admin #dashStatsGrid > div { padding:.35rem .5rem; }
@@ -447,7 +459,7 @@
               <div class="dash-admin-card hidden bg-white rounded-lg p-2 border shadow-sm"><div class="text-xs text-slate-500 mb-1">PCD negados</div><div class="text-xl font-bold text-red-700" id="statPcdNegados">0</div></div>
             </div>
 
-            <div class="bg-white rounded-xl border shadow-sm p-5 mb-6">
+            <div id="dashChartsBox" class="bg-white rounded-xl border shadow-sm p-5 mb-6">
               <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
                 <h3 class="font-semibold">Viagens por mês e por unidade solicitante</h3>
                 <div class="flex flex-wrap gap-3">
@@ -506,8 +518,8 @@
               <div id="proximasViagens" class="grid gap-2 lg:grid-cols-2"></div>
             </div>
             <div id="dashPublicoAlvoBox" class="hidden bg-white rounded-xl border shadow-sm p-3 self-start">
-              <h3 class="text-sm font-bold text-slate-800 mb-2">Viagens realizadas por público-alvo</h3>
-              <div style="height:260px"><canvas id="chartRealizadasPublicoAlvo"></canvas></div>
+              <h3 class="text-sm font-bold text-slate-800 mb-2">Viagens por cooperativa</h3>
+              <div style="height:260px"><canvas id="chartViagensCooperativa"></canvas></div>
             </div>
             </div>
           </section>
