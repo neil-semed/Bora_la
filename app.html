@@ -634,8 +634,8 @@
           <section id="screen-carrosolicitacoes" class="hidden-screen">
             <div class="bg-white rounded-xl border shadow-sm p-5">
               <div class="flex flex-wrap items-end gap-3 mb-4">
-                <div><label class="block text-xs font-medium text-slate-500 mb-1">Data da solicitação</label><input type="date" id="carroFiltroSolicitacao" onchange="renderCarroSolicitacoes()" class="px-3 py-2 border rounded-lg text-sm" /></div>
-                <div><label class="block text-xs font-medium text-slate-500 mb-1">Data da viagem</label><div class="flex gap-1"><input type="date" id="carroFiltroData" onchange="renderCarroSolicitacoes()" class="px-3 py-2 border rounded-lg text-sm" /><button type="button" onclick="filtrarCarroHoje()" class="px-3 py-2 border rounded-lg text-sm">Hoje</button></div></div>
+                <div><label class="block text-xs font-medium text-slate-500 mb-1">Data da solicitação</label><input type="date" id="carroFiltroSolicitacao" autocomplete="off" onchange="renderCarroSolicitacoes()" class="px-3 py-2 border rounded-lg text-sm" /></div>
+                <div><label class="block text-xs font-medium text-slate-500 mb-1">Data da viagem</label><div class="flex gap-1"><input type="date" id="carroFiltroData" autocomplete="off" onchange="renderCarroSolicitacoes()" class="px-3 py-2 border rounded-lg text-sm" /><button type="button" onclick="filtrarCarroHoje()" class="px-3 py-2 border rounded-lg text-sm">Hoje</button></div></div>
                 <button type="button" onclick="limparFiltrosCarro()" class="px-3 py-2 border rounded-lg text-sm">Limpar filtros</button>
                 <button type="button" onclick="openCarroSolicitacoes()" class="ml-auto px-3 py-2 border rounded-lg text-sm">⟳ Atualizar</button>
               </div>

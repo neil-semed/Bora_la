@@ -3861,11 +3861,17 @@ async function carroApi(action, payload = {}) {
   if (!sb) throw new Error('Esta tela precisa da conexão com o Supabase.');
   const { data: { session } } = await sb.auth.getSession();
   if (!session?.access_token) throw new Error('Sua sessão expirou. Entre novamente.');
-  const resp = await fetch(MARKCARRO_SOLICITACOES_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: MARKCARRO_ANON_KEY, Authorization: `Bearer ${session.access_token}` },
-    body: JSON.stringify({ action, ...payload }),
-  });
+  let resp;
+  try {
+    resp = await fetch(MARKCARRO_SOLICITACOES_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: MARKCARRO_ANON_KEY, Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ action, ...payload }),
+    });
+  } catch (err) {
+    // Bloqueio de rede/CORS: função não publicada no MarkCarro ou com "Verify JWT" ligado.
+    throw new Error('Não foi possível conectar ao MarkCarro. Confira se a função "bora-la-solicitacoes" está publicada no projeto MarkCarro e com "Enforce JWT verification" desligado.');
+  }
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok || json.error) throw new Error(json.error || `Falha na comunicação com o MarkCarro (${resp.status}).`);
   return json;
@@ -3903,6 +3909,7 @@ function carroPodeCancelar(s) {
 async function openCarroSolicitacoes() {
   const box = document.getElementById('carroSolicitacoesLista');
   if (!box) return;
+  ['carroFiltroData', 'carroFiltroSolicitacao'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
   box.innerHTML = '<p class="p-6 text-center text-sm text-slate-500">Carregando solicitações do MarkCarro…</p>';
   try {
     const r = await carroApi('listar');
