@@ -24,6 +24,9 @@ jobs:
 
       - name: Preparar Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # O pacote antigo "tools" (padrão desta ação) foi removido pelo Google.
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
       - name: Usar o ícone do Bora Lá no aplicativo
         run: |
