@@ -5,8 +5,8 @@
 // - BREVO_FROM_EMAIL: remetente já verificado no Brevo.
 // - BREVO_FROM_NAME: opcional; padrão "Bora Lá - Excursões / Semed Nova Lima".
 //
-// A função preserva a autorização: somente administradores autenticados podem
-// disparar e-mails. O destinatário e a cópia são recebidos do próprio sistema.
+// A função preserva a autorização: administradores autenticados podem disparar
+// e-mails; a cooperativa (agente_externo) só pode avisar o e-mail do setor. O destinatário e a cópia são recebidos do próprio sistema.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -50,7 +50,10 @@ Deno.serve(async (req) => {
 
     const { data: callerProfile } = await callerClient
       .from('profiles').select('role').eq('id', user.id).single();
-    if (!callerProfile || callerProfile.role !== 'admin') {
+    const ehAdmin = callerProfile?.role === 'admin';
+    // Cooperativa (agente_externo): só pode avisar o e-mail do setor (aceite de ATF/PCD).
+    const ehCooperativa = callerProfile?.role === 'agente_externo';
+    if (!ehAdmin && !ehCooperativa) {
       return json({ error: 'Somente administradores podem enviar e-mails automáticos.' }, 403);
     }
 
@@ -66,6 +69,13 @@ Deno.serve(async (req) => {
     const html = String(body?.html || '').trim();
     if (!to.length || !subject || (!text && !html)) {
       return json({ error: 'Faltam destinatário, assunto e conteúdo do e-mail.' }, 400);
+    }
+    if (ehCooperativa) {
+      const { data: settings } = await callerClient.from('app_settings').select('key,value').in('key', ['email_copia_setor', 'remetente_email']);
+      const setor = new Set((settings || []).flatMap((r: { value: string }) => emails(r.value)).map((e) => e.toLowerCase()));
+      if (cc.length || !to.every((e) => setor.has(e.toLowerCase()))) {
+        return json({ error: 'A cooperativa só pode enviar avisos para o e-mail do setor.' }, 403);
+      }
     }
 
     const payload: Record<string, unknown> = {
