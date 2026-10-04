@@ -90,6 +90,9 @@
     .mc-editado { background:#fff7ed; color:#c2410c; border-color:#fed7aa; } .mc-motoboy { background:#ffedd5; color:#9a3412; border-color:#fdba74; font-weight:700; }
     .mc-btn-editar { background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; border-radius:.5rem; padding:.375rem .625rem; font-size:.75rem; font-weight:600; white-space:nowrap; }
     .mc-btn-cancelar { background:#ef4444; color:#fff; border-radius:.5rem; padding:.375rem .625rem; font-size:.75rem; font-weight:600; white-space:nowrap; }
+    /* Tabela no computador, cards no celular (sem a classe "hidden", que aqui é !important). */
+    .mc-tabela { display:none; } .mc-cards { display:block; }
+    @media (min-width:768px) { .mc-tabela { display:block; } .mc-cards { display:none; } }
     .mc-btn-cancelar:hover { background:#dc2626; } .mc-btn-editar:hover { background:#bae6fd; }
     main > header { position:sticky; top:0; z-index:45; min-height:72px; background:linear-gradient(90deg,#ffffff 0%,#f8fffc 100%); }
     /* Título e subtítulo na mesma linha (Admin, Escola, Pedagogia, Co_Admin/administrativo, Cooperativa). */

@@ -3923,8 +3923,11 @@ async function openCarroSolicitacoes() {
     const r = await carroApi('listar');
     carroSolicitacoes = r.solicitacoes || [];
     carroLocais = r.locais || [];
+    carroEmailConsultado = r.email || '';
     carroCondutores = {};
     (r.condutores || []).forEach((c) => { carroCondutores[String(c.email || '').toLowerCase()] = c; });
+    // O navegador pode restaurar datas antigas nos filtros ao recarregar: a aba sempre abre sem filtro.
+    ['carroFiltroData', 'carroFiltroSolicitacao', 'carroFiltroTrajeto'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
     const st = r.setor;
     document.getElementById('carroSetorCards')?.classList.toggle('hidden', !st);
     if (st) [['Total', st.total], ['Pendentes', st.pendentes], ['Aprovadas', st.aprovadas], ['Ocupadas', st.ocupadas], ['Canceladas', st.canceladas]].forEach(([k, v]) => { const el = document.getElementById('carroSetor' + k); if (el) el.textContent = v || 0; });
@@ -3950,7 +3953,11 @@ function renderCarroSolicitacoes() {
   const rows = carroSolicitacoes.filter((s) => (!dataViagem || s.data_viagem === dataViagem)
     && (!dataSolic || String(s.data_solicitacao || '').slice(0, 10) === dataSolic)
     && (!trajeto || `${s.origem || ''} ${s.destino || ''}`.toLowerCase().includes(trajeto)));
-  if (!rows.length) { box.innerHTML = '<p class="py-8 text-center text-sm text-slate-500">Nenhuma solicitação</p>'; return; }
+  if (!rows.length) {
+    const semFiltro = !dataViagem && !dataSolic && !trajeto;
+    box.innerHTML = `<p class="py-8 text-center text-sm text-slate-500">Nenhuma solicitação${semFiltro && carroEmailConsultado ? ` no MarkCarro para o e-mail <strong>${escapeHtml(carroEmailConsultado)}</strong>` : ''}</p>`;
+    return;
+  }
   // Ordem do MarkCarro: hoje, futuras e, após o separador, as passadas (mais recente primeiro).
   const ord = [...rows].sort((a, b) => `${a.data_viagem || ''}${a.hora_saida || ''}`.localeCompare(`${b.data_viagem || ''}${b.hora_saida || ''}`));
   const hoje = fmtDate(new Date());
@@ -3979,8 +3986,8 @@ function renderCarroSolicitacoes() {
   const sepTabela = '<tr><td colspan="8" class="py-2 px-3"><hr class="border-slate-200"><p class="text-[11px] text-slate-400 mt-1">Agendas passadas</p></td></tr>';
   const sepCard = '<div><hr class="border-slate-200"><p class="text-[11px] text-slate-400 mt-1">Agendas passadas</p></div>';
   const th = 'px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-50 border-b';
-  box.innerHTML = `<div class="hidden md:block overflow-x-auto rounded-xl border"><table class="w-full text-sm" style="border-collapse:collapse"><thead><tr><th class="${th}">Solicitado em</th><th class="${th}">Data Viagem</th><th class="${th}">Horário</th><th class="${th}">Trajeto</th><th class="${th}">Justificativa</th><th class="${th}">Status</th><th class="${th}">Condutor</th><th class="${th}">Ações</th></tr></thead><tbody>${atuais.map(linha).join('')}${passadas.length ? sepTabela + passadas.map(linha).join('') : ''}</tbody></table></div>
-    <div class="md:hidden space-y-3">${atuais.map(card).join('')}${passadas.length ? sepCard + passadas.map(card).join('') : ''}</div>`;
+  box.innerHTML = `<div class="mc-tabela overflow-x-auto rounded-xl border"><table class="w-full text-sm" style="border-collapse:collapse"><thead><tr><th class="${th}">Solicitado em</th><th class="${th}">Data Viagem</th><th class="${th}">Horário</th><th class="${th}">Trajeto</th><th class="${th}">Justificativa</th><th class="${th}">Status</th><th class="${th}">Condutor</th><th class="${th}">Ações</th></tr></thead><tbody>${atuais.map(linha).join('')}${passadas.length ? sepTabela + passadas.map(linha).join('') : ''}</tbody></table></div>
+    <div class="mc-cards space-y-3">${atuais.map(card).join('')}${passadas.length ? sepCard + passadas.map(card).join('') : ''}</div>`;
 }
 async function cancelarCarroSolicitacao(id) {
   const s = carroSolicitacoes.find((x) => String(x.id) === String(id));
@@ -3994,6 +4001,7 @@ async function cancelarCarroSolicitacao(id) {
   } catch (err) { toast('❌ ' + err.message, true); }
 }
 let carroLocais = [];
+let carroEmailConsultado = '';
 function abrirEdicaoCarro(id) {
   const s = carroSolicitacoes.find((x) => String(x.id) === String(id));
   if (!s) return;
