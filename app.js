@@ -2516,6 +2516,7 @@ let chartMesInstance = null;
 let chartUnidadeInstance = null;
 let chartPublicoAlvoInstance = null;
 let chartRankingSolicitantesInstance = null;
+let chartRealizadasPublicoAlvoInstance = null;
 
 function monthKey(dateStr) { return (dateStr || '').slice(0, 7); }
 function monthLabel(key) {
@@ -2704,6 +2705,7 @@ function renderDashboard() {
   document.body.classList.toggle('dash-admin', ehAdminDash);
   document.querySelectorAll('.dash-admin-card').forEach((el) => el.classList.toggle('hidden', !ehAdminDash));
   document.getElementById('dashRanking')?.classList.toggle('hidden', !ehAdminDash);
+  if (!ehAdminDash) document.getElementById('dashPublicoAlvoBox')?.classList.add('hidden');
   if (ehAdminDash) {
     const setStat = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     setStat('statAtfEmitidas', visible.filter((a) => a.atf_status === 'emitida').length);
@@ -2715,6 +2717,20 @@ function renderDashboard() {
     const porUnidade = {};
     realizadas.forEach((a) => { const nome = a.school_id ? schoolName(a.school_id) : originName(a); porUnidade[nome] = (porUnidade[nome] || 0) + 1; });
     const top = Object.entries(porUnidade).sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0], 'pt-BR')).slice(0, 15);
+    // Ranking de viagens realizadas por público-alvo (área ao lado de Próximas Viagens).
+    document.getElementById('dashPublicoAlvoBox')?.classList.remove('hidden');
+    const porPublico = {};
+    realizadas.forEach((a) => { const id = a.validation_target_id || a.publico_alvo; const l = id ? publicoAlvoLabel(id) : '-'; const nome = (!l || l === '-') ? 'Não informado' : l; porPublico[nome] = (porPublico[nome] || 0) + 1; });
+    const pub = Object.entries(porPublico).sort((x, y) => y[1] - x[1]);
+    const ctxPub = document.getElementById('chartRealizadasPublicoAlvo');
+    if (ctxPub && window.Chart) {
+      if (chartRealizadasPublicoAlvoInstance) chartRealizadasPublicoAlvoInstance.destroy();
+      chartRealizadasPublicoAlvoInstance = new Chart(ctxPub, {
+        type: 'bar',
+        data: { labels: pub.map(([n]) => n), datasets: [{ label: 'Viagens realizadas', data: pub.map(([, v]) => v), backgroundColor: 'rgba(124,58,237,.7)', borderRadius: 4, maxBarThickness: 18 }] },
+        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } } }, y: { ticks: { autoSkip: false, font: { size: 10 }, callback(v) { const t = this.getLabelForValue(v); return t.length > 18 ? t.slice(0, 17) + '…' : t; } }, grid: { display: false } } } },
+      });
+    }
     const lista = document.getElementById('dashRankingLista');
     if (lista) lista.innerHTML = top.length
       ? top.map(([nome, n]) => `<li class="py-0.5"><span class="flex justify-between gap-2"><span class="truncate">${escapeHtml(nome)}</span><b>${n}</b></span></li>`).join('')
@@ -3067,7 +3083,9 @@ function renderAgenda() {
       }
 
       // Admin: listagem ATF já enviada à cooperativa aparece como "Envio Coop" no Status.
-      const situacaoStatus = role === 'admin' && a.atf_cooperativa_enviado_em && a.atf_status !== 'emitida' && !['cancelada', 'reprovada'].includes(a.situacao) ? 'envio_coop' : a.situacao;
+      const situacaoStatus = role === 'admin' && !['cancelada', 'reprovada'].includes(a.situacao)
+        ? (a.atf_status === 'emitida' ? 'aprovada' : (a.atf_cooperativa_enviado_em ? 'envio_coop' : a.situacao))
+        : a.situacao;
       const situacaoBase = podeEditarSituacao
         ? `<select onchange="updateSituacao('${a.id}', this.value)" style="${SITUACAO_COLORS[situacaoStatus] || ''}" class="px-2 py-1 rounded text-xs font-medium border-0">
             ${Object.entries(SITUACAO_LABELS).map(([v, l]) => `<option value="${v}" ${situacaoStatus === v ? 'selected' : ''}>${l}</option>`).join('')}

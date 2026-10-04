@@ -145,6 +145,7 @@
     .dashboard-chart { height: 185px; }
     /* Admin › Dashboard: 80% (cards + gráficos) | 20% (ranking); cards menores. */
     @media (min-width: 1024px) { body.dash-admin #dashMainGrid { display:grid; grid-template-columns:4fr 1fr; gap:12px; align-items:start; } }
+    @media (min-width: 1024px) { body.dash-admin #dashProximasGrid { display:grid; grid-template-columns:4fr 1fr; gap:12px; align-items:start; } }
     body.dash-admin #dashStatsGrid { grid-template-columns:repeat(auto-fit,minmax(92px,1fr)); gap:.35rem; }
     body.dash-admin #dashStatsGrid > div { padding:.35rem .5rem; }
     body.dash-admin #dashStatsGrid .text-xl { font-size:1.05rem; line-height:1.3rem; }
@@ -498,9 +499,16 @@
               <div class="bg-white rounded-xl border shadow-sm p-5"><div class="dashboard-chart dashboard-chart-tall"><canvas id="chartRankingSolicitantes"></canvas></div></div>
             </div>
 
+            <!-- Admin: Próximas Viagens em 80% e ranking por público-alvo em 20%. -->
+            <div id="dashProximasGrid">
             <div id="dashboardProximasBox" class="bg-white rounded-xl border shadow-sm p-5">
               <h3 class="font-semibold mb-4">Próximas Viagens</h3>
               <div id="proximasViagens" class="grid gap-2 lg:grid-cols-2"></div>
+            </div>
+            <div id="dashPublicoAlvoBox" class="hidden bg-white rounded-xl border shadow-sm p-3 self-start">
+              <h3 class="text-sm font-bold text-slate-800 mb-2">Viagens realizadas por público-alvo</h3>
+              <div style="height:260px"><canvas id="chartRealizadasPublicoAlvo"></canvas></div>
+            </div>
             </div>
           </section>
 
