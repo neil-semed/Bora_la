@@ -127,6 +127,9 @@
     .agenda-table-wrap .sticky-table th:nth-child(10), .agenda-table-wrap .sticky-table td:nth-child(10) { min-width:150px; }
     .agenda-table-wrap .sticky-table th:nth-child(11), .agenda-table-wrap .sticky-table td:nth-child(11) { width:112px; min-width:112px; }
     .agenda-table-wrap .sticky-table th:nth-child(13), .agenda-table-wrap .sticky-table td:nth-child(13) { width:280px; min-width:280px; white-space:normal; }
+    /* Admin: colunas mais próximas e Motorista(s) um pouco mais larga. */
+    .agenda-table-wrap:not(.agenda-escola) .sticky-table th, .agenda-table-wrap:not(.agenda-escola) .sticky-table td { padding-left:.35rem; padding-right:.35rem; }
+    .agenda-table-wrap:not(.agenda-escola) .sticky-table th:nth-child(12), .agenda-table-wrap:not(.agenda-escola) .sticky-table td:nth-child(12) { min-width:175px; }
     /* Cabeçalhos ficam visíveis em qualquer tabela rolável do sistema. */
     .agenda-table-wrap thead th, .sticky-table thead th, .overflow-x-auto thead th { position: sticky; top: 0; z-index: 10; background: #f8fafc; box-shadow: 0 1px 0 #e2e8f0; }
     .overflow-x-auto { max-height: calc(100vh - 230px); overflow: auto !important; scrollbar-color:#059669 #e2e8f0; scrollbar-width:auto; }
