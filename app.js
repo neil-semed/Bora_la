@@ -107,6 +107,7 @@ let passengerModalExcursionId = null;
 let passengerModalReviewMode = false;
 let passengerRows = []; // [{ nome, documento }] - listagem em edição no modal
 let emailTargetId = null;
+let emailDriverFiltro = null; // envio à cooperativa restrito a um veículo (aprovação por veículo)
 let emailHtmlBody = '';
 let editUserId = null;
 
@@ -2457,7 +2458,11 @@ async function renderPendenciasCoop() {
   // Recusa da cooperativa tira o card; um novo envio do Admin (posterior à recusa) o traz de volta.
   const recusadaAtf = (a) => a.atf_cooperativa_response === 'rejeitada' && (!a.atf_cooperativa_enviado_em || String(a.atf_cooperativa_response_at || '') >= String(a.atf_cooperativa_enviado_em));
   const recusadaPcd = (a) => a.pcd_cooperativa_response === 'negada' && (!a.pcd_cooperativa_enviado_em || String(a.pcd_cooperativa_response_at || '') >= String(a.pcd_cooperativa_enviado_em));
-  const atf = rows.filter((a) => a.atf_status === 'aguardando' && !recusadaAtf(a));
+  // Controle por veículo: card somente quando o veículo da cooperativa foi enviado e ainda não respondido.
+  const atfPendente = (a) => lvTemControle(a)
+    ? a.atf_status !== 'emitida' && cooperativeDriversForTrip(a).some((d) => lvEnvio(a, d.id) && !lvAtf(a, d.id))
+    : a.atf_status === 'aguardando' && !recusadaAtf(a);
+  const atf = rows.filter(atfPendente);
   const pcd = rows.filter((a) => (a.pca_count || 0) > 0 && a.pcd_cooperativa_enviado_em && !a.pcd_cooperativa_confirmado_em && !recusadaPcd(a));
 
   // Lista digitada (contagem) x arquivo anexado, por viagem.
@@ -2466,11 +2471,13 @@ async function renderPendenciasCoop() {
   if (ids.length) {
     if (sb) {
       const [pass, files] = await Promise.all([
-        sb.from('excursion_passengers').select('excursion_id,nome').in('excursion_id', ids),
+        sb.from('excursion_passengers').select('excursion_id,nome,driver_id').in('excursion_id', ids),
         sb.from('excursion_listagem_files').select('*').in('excursion_id', ids).order('created_at'),
       ]);
-      (pass.data || []).forEach((p) => { if (String(p.nome || '').trim()) contagem[p.excursion_id] = (contagem[p.excursion_id] || 0) + 1; });
-      (files.data || []).forEach((f) => { (arquivos[f.excursion_id] = arquivos[f.excursion_id] || []).push(f); });
+      // Somente passageiros/arquivos dos veículos desta cooperativa.
+      const daCoop = (excId, did) => { const t = atf.find((a) => a.id === excId); return !did || !t || cooperativeDriversForTrip(t).some((d) => d.id === did); };
+      (pass.data || []).forEach((p) => { if (String(p.nome || '').trim() && daCoop(p.excursion_id, p.driver_id)) contagem[p.excursion_id] = (contagem[p.excursion_id] || 0) + 1; });
+      (files.data || []).forEach((f) => { if (daCoop(f.excursion_id, f.driver_id)) (arquivos[f.excursion_id] = arquivos[f.excursion_id] || []).push(f); });
     } else {
       atf.forEach((a) => { contagem[a.id] = (a.passengers || []).filter((p) => String(p.nome || '').trim()).length; arquivos[a.id] = a.listagem_files || []; });
     }
@@ -3184,7 +3191,7 @@ function renderAgenda() {
         const delBtn = `<button onclick="openDeleteExcursionModal('${a.id}')" class="text-red-600 hover:text-red-800 text-xs font-medium ml-2" title="Excluir permanentemente (diferente de Cancelar)">🗑️ Excluir</button>`;
         acoes = acoes.includes('text-slate-300') ? editBtn + delBtn : acoes + editBtn + delBtn;
         // Admin: "Ver listagem" depois de Editar/Excluir quando a unidade já enviou a listagem.
-        if (['enviada', 'aceita'].includes(a.listagem_status)) {
+        if (['enviada', 'aceita'].includes(a.listagem_status) || (a.listagem_status === 'rejeitada' && lvTemControle(a))) {
           acoes += `<button onclick="openListagemVeiculoModal('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-bold ml-2" title="Abrir a listagem enviada para verificação">👁️ Ver listagem</button>`;
         }
         // "✉️ Cooperativa" depois de "Ver listagem": viagem com motorista(s) que exige ATF/PCD.
@@ -3229,7 +3236,16 @@ function renderAgenda() {
         : `<div class="flex gap-3 whitespace-nowrap">${agendaSit}${confirmacaoSit}</div>`;
       // Status = exatamente o conteúdo original da coluna Situação (decisão + dropdown).
       // Escola: só o selo, pois a decisão já aparece na coluna "Agenda".
-      const statusCell = role === 'escola' ? situacaoBase : `${decisaoAdministrativa}${situacaoBase}`;
+      // Mais de um veículo: andamento das ATF por cooperativa abaixo do Status.
+      let notaAtfVeiculos = '';
+      if (role !== 'escola' && lvTemControle(a) && (a.driver_ids || []).length > 1 && precisaAtf && a.atf_status !== 'emitida' && !['cancelada', 'reprovada'].includes(a.situacao)) {
+        const ids = a.driver_ids || [];
+        const recusadas = ids.filter((did) => lvAtf(a, did) === 'rejeitada');
+        const aceitas = ids.filter((did) => lvAtf(a, did) === 'aceita').length;
+        if (recusadas.length) notaAtfVeiculos = `<div class="mt-1 text-[10px] font-bold text-red-700">ATF recusada · ${escapeHtml([...new Set(recusadas.map(lvCoopNome))].join(', '))}</div>`;
+        else if (ids.some((did) => lvEnvio(a, did))) notaAtfVeiculos = `<div class="mt-1 text-[10px] text-slate-500">${aceitas} de ${ids.length} ATF aceitas</div>`;
+      }
+      const statusCell = role === 'escola' ? situacaoBase : `${decisaoAdministrativa}${situacaoBase}${notaAtfVeiculos}`;
       const confirmarViagemTd = role === 'escola' ? `<td class="py-3">${a.situacao === 'reprovada' ? '' : confirmacaoSit}</td>` : '';
 
       const atfCell = podeEditarOperacional
@@ -3245,12 +3261,23 @@ function renderAgenda() {
         exigeAtf ? `<div class="text-xs">ATF: ${a.atf_lista_enviada_em ? dt(a.atf_lista_enviada_em) : '—'}</div>` : '',
         exigePcd ? `<div class="text-xs">PCD: ${a.pcd_lista_enviada_em ? dt(a.pcd_lista_enviada_em) : '—'}</div>` : '',
       ].filter(Boolean).join('') || '—';
+      // Viagem com mais de um veículo e controle por veículo: uma linha por veículo.
+      const porVeiculo = exigeAtf && lvTemControle(a) && (a.driver_ids || []).length > 1;
+      const conferenciaAtfVeiculos = porVeiculo ? (a.driver_ids || []).map((did) => {
+        const st = lvStatus(a, did);
+        return `<div class="text-xs mb-1"><div><b>${escapeHtml(lvPlaca(did))}</b> · ATF${st === 'aceita' ? ' ✅' : st === 'rejeitada' ? ' ❌' : ''}</div><div class="text-slate-500">${st === 'aceita' ? dt(lvConferida(a, did)) : st === 'rejeitada' ? 'recusada' : 'aguardando'}</div></div>`;
+      }).join('') : '';
+      const respostaAtfVeiculos = porVeiculo ? (a.driver_ids || []).map((did) => {
+        const atf = lvAtf(a, did), env = lvEnvio(a, did), e = lvMapa(a)[did] || {};
+        const linha2 = atf === 'aceita' ? dt(lvAtfData(a, did)) : atf === 'rejeitada' ? dt(e.atf_em || a.atf_cooperativa_response_at) : (env ? 'enviada ' + dt(env) : '—');
+        return `<div class="text-xs mb-1"><div><b>${escapeHtml(lvCoopNome(did))}</b> · ATF${atf === 'aceita' ? ' ✅' : atf === 'rejeitada' ? ' ❌ Recusada' : ' —'}</div><div class="text-slate-500">${linha2}</div></div>`;
+      }).join('') : '';
       const conferenciaCell = [
-        exigeAtf ? (role === 'admin' ? `<div class="text-xs"><div>ATF${a.atf_lista_conferida_em ? ' ✅' : ''}</div><div class="text-slate-500">${a.atf_lista_conferida_em ? dt(a.atf_lista_conferida_em) : '—'}</div></div>` : `<div class="text-xs">ATF ${a.atf_lista_conferida_em ? '✅ ' + dt(a.atf_lista_conferida_em) : '—'}</div>`) : '',
+        porVeiculo ? conferenciaAtfVeiculos : exigeAtf ? (role === 'admin' ? `<div class="text-xs"><div>ATF${a.atf_lista_conferida_em ? ' ✅' : ''}</div><div class="text-slate-500">${a.atf_lista_conferida_em ? dt(a.atf_lista_conferida_em) : '—'}</div></div>` : `<div class="text-xs">ATF ${a.atf_lista_conferida_em ? '✅ ' + dt(a.atf_lista_conferida_em) : '—'}</div>`) : '',
         exigePcd ? (role === 'admin' ? `<div class="text-xs"><div>PCD${a.pcd_lista_conferida_em ? ' ✅' : ''}</div><div class="text-slate-500">${a.pcd_lista_conferida_em ? dt(a.pcd_lista_conferida_em) : '—'}</div></div>` : `<div class="text-xs">PCD ${a.pcd_lista_conferida_em ? '✅ ' + dt(a.pcd_lista_conferida_em) : '—'}</div>`) : '',
       ].filter(Boolean).join('') || '—';
       const envioCoopCell = [
-        exigeAtf ? (role === 'admin' && (a.atf_status === 'emitida' || a.atf_cooperativa_response === 'aceita') && (a.atf_emitida_em || a.atf_cooperativa_response_at)
+        porVeiculo ? respostaAtfVeiculos : exigeAtf ? (role === 'admin' && (a.atf_status === 'emitida' || a.atf_cooperativa_response === 'aceita') && (a.atf_emitida_em || a.atf_cooperativa_response_at)
           ? `<div class="text-xs"><div>ATF ✅</div><div class="text-slate-500">${dt(a.atf_emitida_em || a.atf_cooperativa_response_at)}</div></div>`
           : role === 'admin' && a.atf_cooperativa_response === 'rejeitada'
             ? `<div class="text-xs"><div>ATF ❌ Recusada</div><div class="text-slate-500">${dt(a.atf_cooperativa_response_at)}</div></div>`
@@ -4057,12 +4084,17 @@ function renderPendencias() {
     // antigas (sem admin_processed_at preenchido) elas não podem voltar à fila.
     const novas = abertas.filter((a) => !a.admin_processed_at && ['pending', 'pedagogy_approved'].includes(a.status));
     const canceladasPelaUnidade = recentes.filter((a) => a.situacao === 'cancelada' && a.cancelled_by && a.cancelled_by === a.created_by);
-    const listagensConferencia = abertas.filter((a) => a.listagem_status === 'enviada');
+    const listagensConferencia = abertas.filter((a) => a.listagem_status === 'enviada' || (lvTemControle(a) && (a.driver_ids || []).some((did) => lvStatus(a, did) === 'enviada')));
+    const cardsConferencia = listagensConferencia.flatMap((a) => {
+      const botao = semAcoesPend ? '' : `<button onclick="openListagemVeiculoModal('${a.id}')" class="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700">Conferir listagem</button>`;
+      if (!lvTemControle(a)) return [pendenciaCard(a, { badge: 'Aguardando conferência', tone: 'blue', action: botao })];
+      return (a.driver_ids || []).filter((did) => lvStatus(a, did) === 'enviada').map((did) => pendenciaCard(a, { badge: `Aguardando conferência · ${lvPlaca(did)}`, tone: 'blue', detail: escapeHtml(`${driverName(did) || ''} · ${lvCoopNome(did)}`), action: botao }));
+    });
     const blocos = [
       ['novas', pendenciaBloco('Novas solicitações', 'Aguardando a primeira tratativa do Admin.', novas.map((a) => pendenciaCard(a, { badge: 'Nova solicitação', tone: 'emerald', action: acoesAdmin(a, { incluirReprovacao: true }) })), '🚌', 'emerald')],
       ['validacao', pendenciaBloco('Sem validação pedagógica', 'Solicitações que ainda não receberam parecer pedagógico.', semValidacao.map((a) => pendenciaCard(a, { badge: 'Aguardando validação', tone: 'amber', action: acoesAdmin(a) })), '⏳', 'amber')],
       ['proposta', pendenciaBloco('Proposta pedagógica aguardada', 'Solicitada pelo Admin ou devolvida pela Pedagogia.', reenvio.map((a) => pendenciaCard(a, { badge: a.doc_status === 'solicitada' ? 'Solicitada à unidade' : 'Aguardando reenvio', tone: 'blue', detail: escapeHtml(a.doc_parecer_comentario || 'Aguardando proposta pedagógica da unidade.'), action: acoesAdmin(a) })), '📄', 'blue')],
-      ['listagem', pendenciaBloco('Listagens para conferência', 'Listagens enviadas pelas unidades e aguardando análise do Admin.', listagensConferencia.map((a) => pendenciaCard(a, { badge: 'Aguardando conferência', tone: 'blue', action: semAcoesPend ? '' : `<button onclick="openListagemVeiculoModal('${a.id}')" class="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700">Conferir listagem</button>` })), '👥', 'blue')],
+      ['listagem', pendenciaBloco('Listagens para conferência', 'Listagens enviadas pelas unidades e aguardando análise do Admin.', cardsConferencia, '👥', 'blue')],
       ['canceladas', pendenciaBloco('Canceladas pela unidade', 'Também chegam como notificação para o Admin e o motorista.', canceladasPelaUnidade.map((a) => pendenciaCard(a, { badge: 'Cancelada pela unidade', tone: 'red', detail: escapeHtml(a.cancel_reason || 'Sem motivo informado.') })), '🚫', 'red')],
     ];
     container.innerHTML = blocos.filter(([tipo]) => !tipoFiltro || tipoFiltro === tipo).map(([, html]) => html).join('') || '<p class="rounded-xl bg-slate-50 p-6 text-center text-sm text-slate-500">Nenhuma pendência para este filtro.</p>';
@@ -4094,7 +4126,11 @@ function renderPendencias() {
     const botaoLista = (a) => `<button onclick="openListagemVeiculoModal('${a.id}')" class="shrink-0 rounded-lg border border-emerald-200 bg-emerald-100 px-3 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-200">${a.listagem_status === 'rejeitada' ? 'Corrigir listagem' : 'Preencher listagem'}</button>`;
     const blocosEscola = [
       ['proposta', pendenciaBloco('Proposta pedagógica', 'Envie ou reenvie o arquivo solicitado pelo fluxo administrativo/pedagógico.', propostas.map((a) => pendenciaCard(a, { badge: a.doc_status === 'correcoes' ? 'Correções solicitadas' : 'Proposta solicitada', tone: 'blue', detail: escapeHtml(a.doc_parecer_comentario || 'Envie a proposta pedagógica para a continuidade do fluxo.'), action: botaoProposta(a) })), '📄', 'blue')],
-      ['listagem', pendenciaBloco('Listagem de passageiros', 'Viagens aprovadas que exigem lista por ATF e/ou PCD.', listagens.map((a) => pendenciaCard(a, { badge: a.listagem_status === 'rejeitada' ? 'Listagem para corrigir' : 'Listagem para enviar', tone: 'emerald', action: botaoLista(a) })), '👥', 'emerald')],
+      ['listagem', pendenciaBloco('Listagem de passageiros', 'Viagens aprovadas que exigem lista por ATF e/ou PCD.', listagens.flatMap((a) => {
+        const recusados = a.listagem_status === 'rejeitada' && lvTemControle(a) ? (a.driver_ids || []).filter((did) => lvStatus(a, did) === 'rejeitada') : [];
+        if (recusados.length) return recusados.map((did) => pendenciaCard(a, { badge: `Refazer listagem — veículo ${lvPlaca(did)}`, tone: 'emerald', detail: escapeHtml(lvMapa(a)[did]?.motivo || ''), action: botaoLista(a) }));
+        return [pendenciaCard(a, { badge: a.listagem_status === 'rejeitada' ? 'Listagem para corrigir' : 'Listagem para enviar', tone: 'emerald', action: botaoLista(a) })];
+      }), '👥', 'emerald')],
       ['listagem', pendenciaBloco('Correções em Listagem PCD', 'A unidade deve revisar os dados de estudante PCD e respectivo apoio.', pcdPendentes.map((a) => pendenciaCard(a, { badge: 'Lista PCD pendente', tone: 'amber', detail: escapeHtml(a.pcd_list_reason || 'Revise a listagem PCD.'), action: `<button onclick="openPcdCorrectionModal('${a.id}')" class="shrink-0 rounded-lg bg-amber-600 px-3 py-2 text-sm font-bold text-white">Refazer listagem PCD</button>` })), '♿', 'amber')],
     ];
     container.innerHTML = blocosEscola.filter(([tipo]) => !tipoFiltro || tipoFiltro === tipo).map(([, html]) => html).join('') || '<p class="rounded-xl bg-slate-50 p-6 text-center text-sm text-slate-500">Nenhuma pendência para este filtro.</p>';
@@ -4994,11 +5030,184 @@ async function openListagemVeiculoModal(id) {
 function closeListagemVeiculoModal() {
   document.getElementById('listagemVeiculoModal').classList.add('hidden');
   listagemVeiculoTargetId = null;
+  listagemRejeitarDriverId = null;
   listagemRowsByDriver = {};
   listagemMetodoByDriver = {};
   listagemUploadsByDriver = {};
   listagemFilesByDriver = {};
   listagemPasteText = '';
+}
+
+// ===== Listagem / ATF por veículo (excursions.listagem_veiculos — migration_039) =====
+// Cada motorista/veículo da viagem tem: status da listagem, conferência, envio à
+// cooperativa e resposta da ATF. Os campos antigos da viagem continuam como resumo.
+let listagemRejeitarDriverId = null;
+function lvMapa(trip) { const m = trip?.listagem_veiculos; return m && typeof m === 'object' && !Array.isArray(m) ? m : {}; }
+function lvTemControle(trip) { return Object.keys(lvMapa(trip)).length > 0; }
+function lvStatus(trip, did) { return lvMapa(trip)[did]?.status || trip?.listagem_status || 'nao_enviada'; }
+function lvEnvio(trip, did) { const e = lvMapa(trip)[did]; return e ? (e.coop_enviado_em || null) : (trip?.atf_cooperativa_enviado_em || null); }
+function lvAtf(trip, did) {
+  if (trip?.atf_status === 'emitida') return 'aceita';
+  const e = lvMapa(trip)[did];
+  return e ? (e.atf || null) : (trip?.atf_cooperativa_response === 'rejeitada' ? 'rejeitada' : null);
+}
+function lvAtfData(trip, did) { const e = lvMapa(trip)[did]; return (e && e.atf_em) || trip?.atf_emitida_em || trip?.atf_cooperativa_response_at || null; }
+function lvConferida(trip, did) {
+  const e = lvMapa(trip)[did];
+  if (e) return e.status === 'aceita' ? (e.parecer_em || null) : null;
+  return trip?.atf_lista_conferida_em || (trip?.listagem_status === 'aceita' ? trip.listagem_parecer_em : null) || null;
+}
+function lvEditavelEscola(trip, did) { return ['nao_enviada', 'rejeitada'].includes(lvStatus(trip, did)); }
+// Cópia completa do mapa (cria as entradas que faltam a partir dos campos antigos).
+function lvGarantir(trip) {
+  const mapa = JSON.parse(JSON.stringify(lvMapa(trip)));
+  (trip.driver_ids || []).forEach((did) => {
+    if (!mapa[did]) mapa[did] = { status: lvStatus(trip, did), parecer_em: lvConferida(trip, did), coop_enviado_em: lvEnvio(trip, did), atf: lvAtf(trip, did) };
+  });
+  return mapa;
+}
+function lvResumoStatus(trip, mapa) {
+  const st = (trip.driver_ids || []).map((did) => mapa[did]?.status || 'nao_enviada');
+  if (st.some((x) => x === 'rejeitada')) return 'rejeitada';
+  if (st.length && st.every((x) => x === 'aceita')) return 'aceita';
+  return 'enviada';
+}
+function lvTodasAtf(trip, mapa) { const ids = trip.driver_ids || []; return ids.length > 0 && ids.every((did) => mapa[did]?.atf === 'aceita'); }
+function lvPlaca(did) { return driverVehicle(did)?.plate || driverName(did) || 'veículo'; }
+function lvCoopNome(did) { return cooperativaById(driverCooperativaId(did))?.name || 'Cooperativa'; }
+
+function painelVeiculoListagemHtml(trip, did) {
+  const st = lvStatus(trip, did);
+  const e = lvMapa(trip)[did] || {};
+  const dt = (v) => v ? new Date(v).toLocaleDateString('pt-BR') : '';
+  const precisaAtf = precisaListagemComNomesDocumentos(trip);
+  const admin = ehAgendaAdmin();
+  let html = '';
+  if (st === 'aceita') html += `<div class="font-bold text-emerald-700">✅ Aceita${lvConferida(trip, did) ? ' ' + dt(lvConferida(trip, did)) : ''}</div>`;
+  else if (st === 'rejeitada') html += `<div class="font-bold text-red-700">🚫 Recusada${e.motivo ? ': ' + escapeHtml(e.motivo) : ''}</div>`;
+  else if (st === 'enviada') html += '<div class="font-bold text-amber-700">Aguardando conferência</div>';
+  if (st === 'aceita' && precisaAtf && admin) {
+    const env = lvEnvio(trip, did), atf = lvAtf(trip, did), coop = escapeHtml(lvCoopNome(did));
+    const origem = e.atf_origem && e.atf_origem !== 'cooperativa'
+      ? `registrada pelo admin · ${{ telefone: 'telefone', email: 'e-mail', outro: 'outro' }[e.atf_origem] || e.atf_origem}${e.atf_obs ? ' · ' + escapeHtml(e.atf_obs) : ''}`
+      : 'registrada pela cooperativa';
+    const resposta = atf === 'aceita' ? `ATF ✅ ${dt(lvAtfData(trip, did))} <span class="text-slate-400">(${origem})</span>`
+      : atf === 'rejeitada' ? `<span class="text-red-700">ATF ❌ Recusada ${dt(e.atf_em || trip.atf_cooperativa_response_at)}</span>` : 'aguardando';
+    html += `<div class="mt-1 text-slate-500">✉️ ${env ? `Enviada à ${coop} em ${dt(env)}` : `Ainda não enviada à ${coop}`} · Resposta: ${resposta}</div>`;
+    if (admin && atf !== 'aceita') {
+      html += `<div class="mt-2 flex flex-wrap justify-end gap-2"><button onclick="enviarCoopVeiculo('${did}')" class="rounded-lg border border-blue-300 px-3 py-1.5 text-xs font-bold text-blue-700">✉️ ${env ? 'Reenviar' : 'Enviar'} à cooperativa</button><button onclick="document.getElementById('atfManual-${did}').classList.toggle('hidden')" class="rounded-lg border border-emerald-600 px-3 py-1.5 text-xs font-bold text-emerald-700">📝 Registrar ATF emitida (manual)</button></div>
+        <div id="atfManual-${did}" class="hidden mt-3 space-y-2 rounded-lg border-t bg-slate-50 p-3">
+          <div class="font-bold">Registrar ATF emitida — ${coop}</div>
+          <div class="flex gap-4"><label><input type="radio" name="atfOrigem-${did}" value="telefone" checked> Telefone</label><label><input type="radio" name="atfOrigem-${did}" value="email"> E-mail</label><label><input type="radio" name="atfOrigem-${did}" value="outro"> Outro</label></div>
+          <input id="atfObs-${did}" class="w-full rounded border px-2 py-1" placeholder="Observação (opcional): ex. contato com Fulano, nº ATF">
+          <div class="flex justify-end gap-2"><button onclick="document.getElementById('atfManual-${did}').classList.add('hidden')" class="rounded border px-3 py-1">Cancelar</button><button onclick="registrarAtfManual('${did}')" class="rounded bg-emerald-600 px-3 py-1 font-bold text-white">Confirmar registro</button></div>
+        </div>`;
+    }
+  }
+  if (admin && st === 'enviada') {
+    html += `<div class="mt-2 flex flex-wrap justify-end gap-2"><button onclick="aceitarListagemVeiculo('${did}')" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white">✅ Aceitar este veículo</button><button onclick="abrirRecusaListagemVeiculo('${did}')" class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white">Recusar este veículo</button></div>`;
+  }
+  return html ? `<div class="mt-3 border-t pt-3 text-xs">${html}</div>` : '';
+}
+
+async function aceitarListagemVeiculo(did) {
+  const id = listagemVeiculoTargetId;
+  const trip = agenda.find((a) => a.id === id);
+  if (!id || !trip || !ehAgendaAdmin()) return;
+  const agora = new Date().toISOString();
+  const mapa = lvGarantir(trip);
+  mapa[did] = { ...mapa[did], status: 'aceita', parecer_em: agora, parecer_por: currentUser.id, motivo: null };
+  const resumo = lvResumoStatus(trip, mapa);
+  const patch = { listagem_veiculos: mapa, listagem_status: resumo };
+  if (resumo === 'aceita') {
+    const precisa = precisaListagemComNomesDocumentos(trip);
+    Object.assign(patch, {
+      listagem_parecer_por: currentUser.id, listagem_parecer_em: agora, listagem_parecer_comentario: null,
+      atf_lista_conferida_em: precisa ? agora : trip.atf_lista_conferida_em || null,
+      atf_lista_conferida_por: precisa ? currentUser.id : trip.atf_lista_conferida_por || null,
+    });
+  } else if (resumo === 'enviada') patch.listagem_parecer_comentario = null;
+  if (!await updateExcursion(id, patch)) return;
+  await logDocHistory(id, 'aceito', null, null, `Veículo ${lvPlaca(did)}`, 'listagem');
+  await notifyRequester(trip, 'Listagem aprovada', `A listagem do veículo ${lvPlaca(did)} foi aprovada e será encaminhada à cooperativa do veículo.`);
+  await loadAgenda(); await loadNotifications();
+  renderAgenda();
+  toast(`✅ Listagem do veículo ${lvPlaca(did)} aceita. Confira a prévia antes de enviar à cooperativa.`);
+  closeListagemVeiculoModal();
+  await openCooperativaEmailModal(id, 'atf', did);
+}
+
+function abrirRecusaListagemVeiculo(did) {
+  listagemRejeitarDriverId = did;
+  const box = document.getElementById('listagemRejeitarBox');
+  const label = box?.querySelector('label');
+  if (label) label.textContent = `Motivo da recusa — veículo ${lvPlaca(did)} (obrigatório)`;
+  box?.classList.remove('hidden');
+  box?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function recusarListagemVeiculo() {
+  const id = listagemVeiculoTargetId, did = listagemRejeitarDriverId;
+  const trip = agenda.find((a) => a.id === id);
+  if (!id || !did || !trip) return;
+  const motivo = (document.getElementById('listagemParecerComentario').value || '').trim();
+  if (!motivo) { toast('⚠️ Informe o motivo da recusa, pra escola saber o que corrigir.', true); return; }
+  const agora = new Date().toISOString();
+  const mapa = lvGarantir(trip);
+  mapa[did] = { ...mapa[did], status: 'rejeitada', motivo, parecer_em: agora, parecer_por: currentUser.id, coop_enviado_em: null, atf: null, atf_em: null };
+  const comentario = (trip.driver_ids || []).filter((d) => mapa[d]?.status === 'rejeitada').map((d) => `${lvPlaca(d)}: ${mapa[d].motivo || '-'}`).join(' | ');
+  const ok = await updateExcursion(id, { listagem_veiculos: mapa, listagem_status: 'rejeitada', listagem_parecer_por: currentUser.id, listagem_parecer_em: agora, listagem_parecer_comentario: comentario });
+  if (!ok) return;
+  await logDocHistory(id, 'rejeitado', null, null, `Veículo ${lvPlaca(did)}: ${motivo}`, 'listagem');
+  await notifyRequester({ ...trip, listagem_parecer_comentario: comentario }, 'Listagem devolvida para correção', `A listagem do veículo ${lvPlaca(did)} da viagem para ${trip.destination || '-'} foi devolvida para correção. Motivo: ${motivo}`);
+  if (trip.requester_email) await notifyRequesterEmail({ ...trip, listagem_parecer_comentario: comentario }, 'Bora Lá - correção da listagem de passageiros', buildRequesterRejectedEmail({ ...trip, listagem_parecer_comentario: comentario }));
+  await loadAgenda(); await loadNotifications();
+  renderAgenda();
+  toast(`🚫 Listagem do veículo ${lvPlaca(did)} recusada - a unidade foi notificada para corrigir.`);
+  closeListagemVeiculoModal();
+}
+
+function enviarCoopVeiculo(did) {
+  const id = listagemVeiculoTargetId;
+  closeListagemVeiculoModal();
+  openCooperativaEmailModal(id, 'atf', did);
+}
+
+async function registrarAtfManual(did) {
+  const id = listagemVeiculoTargetId;
+  const trip = agenda.find((a) => a.id === id);
+  if (!id || !trip || !ehAgendaAdmin()) return;
+  const origem = document.querySelector(`input[name="atfOrigem-${did}"]:checked`)?.value || 'telefone';
+  const obs = (document.getElementById(`atfObs-${did}`)?.value || '').trim();
+  const agora = new Date().toISOString();
+  const mapa = lvGarantir(trip);
+  mapa[did] = { ...mapa[did], atf: 'aceita', atf_em: agora, atf_por: currentUser.id, atf_origem: origem, atf_obs: obs || null };
+  const patch = { listagem_veiculos: mapa };
+  if (lvTodasAtf(trip, mapa)) Object.assign(patch, {
+    atf_status: 'emitida', atf_emitida_em: agora, atf_emitida_por: currentUser.id,
+    atf_cooperativa_response: 'aceita', atf_cooperativa_response_at: agora,
+    situacao: ['cancelada', 'reprovada'].includes(trip.situacao) ? trip.situacao : 'aprovada',
+  });
+  if (!await updateExcursion(id, patch)) return;
+  await logDocHistory(id, 'aceito', null, null, `ATF ${lvPlaca(did)} registrada manualmente (${origem})${obs ? ': ' + obs : ''}`, 'listagem');
+  await loadAgenda(); renderAgenda(); renderPendencias();
+  renderListagemVeiculoModal();
+  toast(`✅ ATF do veículo ${lvPlaca(did)} registrada.`);
+}
+
+// Envio da escola: marca como "enviada" apenas os veículos submetidos.
+async function lvSubmeterEscola(id, driverIds) {
+  if (!driverIds.length) return true;
+  if (sb) {
+    const { error } = await sb.rpc('school_submit_listagem_veiculos', { p_excursion_id: id, p_driver_ids: driverIds });
+    if (error) { toast('❌ Listagem enviada, mas não foi possível registrar os veículos: ' + error.message, true); return false; }
+    return true;
+  }
+  const trip = agenda.find((a) => a.id === id); if (!trip) return true;
+  const mapa = { ...lvMapa(trip) }, agora = new Date().toISOString();
+  driverIds.forEach((did) => { mapa[did] = { ...(mapa[did] || {}), status: 'enviada', enviada_em: agora, motivo: null, coop_enviado_em: null, atf: null, atf_em: null }; });
+  trip.listagem_veiculos = mapa; saveDemoData();
+  return true;
 }
 
 function renderListagemVeiculoModal() {
@@ -5025,22 +5234,21 @@ function renderListagemVeiculoModal() {
   document.getElementById('listagemStatusBox').innerHTML = statusHtml;
 
   const driverIds = trip.driver_ids || [];
-  document.getElementById('listagemVeiculoBlocos').innerHTML = driverIds.map((did) => renderListagemVeiculoBloco(did, editable)).join('')
+  document.getElementById('listagemVeiculoBlocos').innerHTML = driverIds.map((did) => renderListagemVeiculoBloco(did, editable && lvEditavelEscola(trip, did))).join('')
     || '<p class="text-sm text-slate-500">Esta viagem ainda não tem motorista/veículo atribuído.</p>';
   const preview = document.getElementById('listagemArquivoPreview');
   if (preview) { preview.classList.add('hidden'); preview.innerHTML = ''; }
 
   document.getElementById('listagemRejeitarBox').classList.add('hidden');
   document.getElementById('listagemParecerComentario').value = '';
+  listagemRejeitarDriverId = null;
 
   const footer = document.getElementById('listagemVeiculoFooter');
   let btns = `<button onclick="closeListagemVeiculoModal()" class="px-4 py-2 bg-slate-100 rounded-lg text-sm">Fechar</button>`;
   if (editable) {
     btns += `<button onclick="confirmEnviarListagem()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">📤 Enviar listagem</button>`;
-  } else if (role === 'admin' && status === 'enviada') {
-    btns += `<button onclick="document.getElementById('listagemRejeitarBox').classList.remove('hidden')" class="px-4 py-2 border border-red-300 text-red-700 rounded-lg text-sm">🚫 Rejeitar</button>`;
-    btns += `<button onclick="confirmAceitarListagem()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">✅ Aceitar</button>`;
   }
+  // Admin: aceitar/recusar passa a ser por veículo, dentro de cada bloco.
   footer.innerHTML = btns;
 
   // Para o Admin, abre automaticamente a primeira planilha enviada na própria tela.
@@ -5089,7 +5297,7 @@ function renderListagemVeiculoBloco(did, editable) {
   return `
     <div class="border rounded-xl p-4 shadow-sm">
       <div class="flex items-center justify-between mb-3">
-        <div class="font-semibold text-sm">🚌 ${v ? `${v.plate} · ${v.capacity} lugares` : 'Veículo não vinculado'}${d ? ` <span class="text-slate-500 font-normal">· ${escapeHtml(d.name)}</span>` : ''}</div>
+        <div class="font-semibold text-sm">🚌 ${v ? `${v.plate} · ${v.capacity} lugares` : 'Veículo não vinculado'}${d ? ` <span class="text-slate-500 font-normal">· ${escapeHtml(d.name)} · ${escapeHtml(lvCoopNome(did))}</span>` : ''}</div>
         <div class="text-xs ${corContagem}">${preenchidos}/${capacidade || '?'} preenchidos</div>
       </div>
       ${escolhas}
@@ -5097,6 +5305,7 @@ function renderListagemVeiculoBloco(did, editable) {
       ${addBtn}
       ${arquivoInfo}
       ${preenchidos ? `<button onclick="downloadListagemPdf('${listagemVeiculoTargetId}','${did}')" class="mt-3 rounded-lg border border-violet-300 bg-violet-50 px-3 py-2 text-xs font-bold text-violet-800">⬇ Gerar PDF para conferência</button>` : ''}
+      ${(() => { const t = agenda.find((a) => a.id === listagemVeiculoTargetId); return t && t.listagem_status !== 'nao_enviada' ? painelVeiculoListagemHtml(t, did) : ''; })()}
     </div>`;
 }
 
@@ -5342,9 +5551,12 @@ async function confirmEnviarListagem() {
   if (!driverIds.length) { toast('⚠️ Esta viagem ainda não tem motorista/veículo atribuído.', true); return; }
 
   const foraDeNovaLima = precisaListagemComNomesDocumentos(trip);
+  // Somente os veículos ainda não enviados ou recusados são reenviados; os demais ficam travados.
+  const driversEnviar = driverIds.filter((did) => lvEditavelEscola(trip, did));
+  if (!driversEnviar.length) { toast('⚠️ Não há listagem de veículo para enviar.', true); return; }
 
   // Cada veículo deve ter uma listagem manual preenchida ou um arquivo (Excel/PDF) selecionado.
-  for (const did of driverIds) {
+  for (const did of driversEnviar) {
     if (listagemMetodoByDriver[did] === 'pdf') {
       const exigeNovoArquivo = trip.listagem_status === 'rejeitada';
       if (!listagemUploadsByDriver[did] && (exigeNovoArquivo || !listagemFilesByDriver[did])) { toast(`⚠️ Selecione um novo arquivo Excel ou PDF para o veículo ${driverVehicle(did)?.plate || driverName(did)}.`, true); return; }
@@ -5362,7 +5574,7 @@ async function confirmEnviarListagem() {
   // passageiros com NOME + DOCUMENTO (CI/CNH/CPF). Não permitir envio com
   // documento faltando nem com quantidade de passageiros inferior ao solicitado.
   if (foraDeNovaLima) {
-    for (const did of driverIds) {
+    for (const did of driversEnviar) {
       if (listagemMetodoByDriver[did] === 'pdf') continue;
       const rows = listagemRowsByDriver[did] || [];
       for (const p of rows) {
@@ -5395,13 +5607,13 @@ async function confirmEnviarListagem() {
   const driveUrl = getDriveUploadUrl();
   if (!driveUrl) {
     toast('⚠️ Google Drive ainda não configurado (peça pro Admin configurar em Cooperativas) - listagem registrada só no sistema.', true);
-  } else if (!window.jspdf && driverIds.some((did) => listagemMetodoByDriver[did] !== 'pdf')) {
+  } else if (!window.jspdf && driversEnviar.some((did) => listagemMetodoByDriver[did] !== 'pdf')) {
     toast('⚠️ Não foi possível gerar o PDF da listagem (verifique sua internet) - listagem registrada só no sistema.', true);
   } else {
     const { data: { session } } = await sb.auth.getSession();
     if (!session?.access_token) { toast('⚠️ Sua sessão expirou. Entre novamente antes de enviar a listagem.', true); return; }
     let arquivosSalvos = true;
-    for (const did of driverIds) {
+    for (const did of driversEnviar) {
       try {
         const v = driverVehicle(did);
         const unidadeSlug = slugify(schoolName(trip.school_id) || trip.requester_name);
@@ -5432,6 +5644,7 @@ async function confirmEnviarListagem() {
     listagem_parecer_comentario: null,
   });
   if (!patchOk) return;
+  await lvSubmeterEscola(id, driversEnviar);
   await logDocHistory(id, wasReenvio ? 'reenviado' : 'enviado', null, null, null, 'listagem');
   await notifyAdmins('Listagem de passageiros para conferência', `${originName(trip) || requesterName(trip)} enviou a listagem da viagem para ${trip.destination || '-'} em ${trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'}.`);
   await loadAgenda(); await loadNotifications();
@@ -5557,6 +5770,7 @@ async function savePcdCorrection() {
 }
 
 async function confirmRejeitarListagem() {
+  if (listagemRejeitarDriverId) { await recusarListagemVeiculo(); return; }
   const id = listagemVeiculoTargetId;
   const trip = agenda.find((a) => a.id === id);
   if (!id || !trip) return;
@@ -5723,18 +5937,21 @@ async function reenviarListagemParaCooperativas(id) {
   await openCooperativaEmailModal(id, 'atf');
 }
 
-async function openCooperativaEmailModal(id, preferredType = '') {
+async function openCooperativaEmailModal(id, preferredType = '', driverId = null) {
   emailTargetId = id;
   const trip = agenda.find((a) => a.id === id);
   if (!trip) return;
 
   const driverIds = trip.driver_ids || [];
-  const primeiroMotorista = driverIds.length ? drivers.find((d) => d.id === driverIds[0]) : null;
-  const defaultCoopId = (primeiroMotorista && primeiroMotorista.cooperativa_id) || '';
+  // Aprovação por veículo: cooperativa travada e somente a listagem daquele veículo.
+  emailDriverFiltro = driverId && driverIds.includes(driverId) ? driverId : null;
+  const defaultCoopId = (emailDriverFiltro ? driverCooperativaId(emailDriverFiltro) : (driverIds.length ? driverCooperativaId(driverIds[0]) : '')) || '';
   const copia = document.getElementById('emailCopiaSetor');
   if (copia) copia.value = appSettings.email_copia_setor || appSettings.remetente_email || '';
 
   populateCooperativaSelect('emailCooperativaId', defaultCoopId);
+  const selCoop = document.getElementById('emailCooperativaId');
+  if (selCoop) selCoop.disabled = !!emailDriverFiltro;
 
   const precisaPcd = (trip.pca_count || 0) > 0;
   const precisaAtf = precisaListagemComNomesDocumentos(trip);
@@ -5748,11 +5965,18 @@ async function openCooperativaEmailModal(id, preferredType = '') {
   onEmailCooperativaChange();
   document.getElementById('cooperativaEmailModal').classList.remove('hidden');
 }
-function closeCooperativaEmailModal() { document.getElementById('cooperativaEmailModal').classList.add('hidden'); emailTargetId = null; emailHtmlBody = ''; }
+function closeCooperativaEmailModal() { document.getElementById('cooperativaEmailModal').classList.add('hidden'); emailTargetId = null; emailHtmlBody = ''; emailDriverFiltro = null; const sel = document.getElementById('emailCooperativaId'); if (sel) sel.disabled = false; }
+// Motoristas/veículos incluídos no e-mail de ATF (um veículo ou todos da cooperativa escolhida).
+function idsEmailCoop(trip) {
+  if (emailDriverFiltro) return [emailDriverFiltro];
+  const coopId = document.getElementById('emailCooperativaId')?.value || '';
+  return (trip.driver_ids || []).filter((did) => !coopId || driverCooperativaId(did) === coopId);
+}
 // Abre o mesmo modal de sempre, mas já com assunto/corpo prontos (usado como fallback
 // manual quando o e-mail automático da listagem por veículo não está configurado/falha).
 function openCooperativaEmailModalPreenchido(id, coopId, subject, body, html = '') {
   emailTargetId = id;
+  emailDriverFiltro = null;
   emailHtmlBody = html;
   populateCooperativaSelect('emailCooperativaId', coopId || '');
   document.getElementById('emailAssunto').value = subject;
@@ -5784,8 +6008,7 @@ async function onEmailTipoChange() {
     renderCooperativaEmailPreview();
     return;
   }
-  const coopId = document.getElementById('emailCooperativaId')?.value || '';
-  const ids = (trip.driver_ids || []).filter((did) => !coopId || drivers.find((d) => d.id === did)?.cooperativa_id === coopId);
+  const ids = idsEmailCoop(trip);
   const grouped = await getExcursionPassengersGrouped(trip.id);
   const files = await listagemFilesForTrip(trip.id);
   document.getElementById('emailCorpo').value = buildListagemEmailBody(trip, ids, grouped, files);
@@ -5920,7 +6143,19 @@ async function sendCooperativaEmail(somenteAbrirEmail = false) {
 
   const trip = agenda.find((a) => a.id === emailTargetId);
   const isPcd = document.getElementById('emailTipo').value === 'pcd';
+  // ATF: registra o envio em cada veículo incluído no e-mail.
+  let lvPatch = {};
+  if (!isPcd && trip) {
+    const agoraEnvio = new Date().toISOString();
+    const mapa = lvGarantir(trip);
+    idsEmailCoop(trip).forEach((did) => {
+      const jaAceita = mapa[did]?.atf === 'aceita';
+      mapa[did] = { ...mapa[did], coop_enviado_em: agoraEnvio, coop_id: coop.id, ...(jaAceita ? {} : { atf: null, atf_em: null }) };
+    });
+    lvPatch = { listagem_veiculos: mapa };
+  }
   const ok = await updateExcursion(emailTargetId, {
+    ...lvPatch,
     envio_coop_data: fmtDate(new Date()),
     ...(isPcd ? { pcd_cooperativa_enviado_em: new Date().toISOString() } : { atf_cooperativa_enviado_em: new Date().toISOString(), atf_status: trip && precisaListagemComNomesDocumentos(trip) ? 'aguardando' : trip?.atf_status }),
     situacao: 'envio_coop'
@@ -7817,10 +8052,14 @@ async function exportCoopList(id, tipo, formato) {
   let nomes = [];
   if (sb) {
     const fonte = tipo === 'pcd' ? 'excursion_pcd_students' : 'excursion_passengers';
-    const campos = tipo === 'pcd' ? 'nome_aluno,documento_aluno,nome_apoio,documento_apoio,cadeirante' : 'nome,tipo_documento,documento';
+    const campos = tipo === 'pcd' ? 'nome_aluno,documento_aluno,nome_apoio,documento_apoio,cadeirante' : 'nome,tipo_documento,documento,driver_id';
     const { data, error } = await sb.from(fonte).select(campos).eq('excursion_id', id).order('created_at');
     if (error) { toast('❌ Não foi possível carregar a listagem: ' + error.message, true); return; }
     nomes = data || [];
+    if (tipo !== 'pcd' && currentUser?.role === 'agente_externo') {
+      const meus = cooperativeDriversForTrip(trip).map((d) => d.id);
+      nomes = nomes.filter((p) => !p.driver_id || meus.includes(p.driver_id));
+    }
   } else nomes = tipo === 'pcd' ? (trip.pcd_students || []) : (trip.passengers || []);
   const dados = nomes.length ? nomes.map((p) => tipo === 'pcd'
     ? ({ ...cabecalho, 'Aluno PCD': p.nome_aluno || '-', 'Documento aluno': p.documento_aluno || '-', Apoio: p.nome_apoio || '-', 'Documento apoio': p.documento_apoio || '-', Cadeirante: p.cadeirante ? 'Sim' : 'Não' })
