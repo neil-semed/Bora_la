@@ -29,7 +29,7 @@ jobs:
         run: |
           rm android/app/src/main/res/drawable/app_icon.xml
           mkdir -p android/app/src/main/res/drawable-nodpi
-          cp assets/favicon-512.png android/app/src/main/res/drawable-nodpi/app_icon.png
+          cp assets/icon-apk-motorista.png android/app/src/main/res/drawable-nodpi/app_icon.png
 
       - name: Baixar Gradle
         run: |

@@ -24,6 +24,8 @@
   <style>
     .hidden { display: none !important; }
     .toast { position: fixed; top: 20px; right: 20px; z-index: 9999; max-width: 90vw; }
+    /* Login do app do Motorista: card 15% menor, contorno verde e sombra 15% maior. */
+    .login-card { zoom: .85; border: 1px solid #059669; box-shadow: 0 29px 58px -14px rgb(0 0 0 / .29) !important; }
   </style>
 </head>
 <body class="bg-slate-50 min-h-screen" data-page="login" data-pwa="motorista">
@@ -32,29 +34,31 @@
        é diferente. Depois de entrar, cai no app.html normal (que já mostra só as
        telas do perfil Motorista). -->
   <div id="loginScreen" class="min-h-screen flex items-center justify-center p-4 bg-[#F6FFFC]">
-    <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+    <div class="login-card bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
       <div class="text-center mb-6">
-        <img src="assets/logo_bora-la.png" alt="Bora Lá" class="w-full max-w-xs mx-auto" onerror="this.style.display='none'" />
+        <img src="assets/logo_bora-la.png" alt="Bora Lá" class="w-full mx-auto" style="max-width:288px" onerror="this.style.display='none'" />
         <p class="text-slate-500 -mt-2">App do Motorista • Semed Nova Lima</p>
       </div>
 
       <form id="loginForm" class="space-y-4">
         <div>
           <label class="block text-sm font-medium text-slate-700 mb-1">E-mail</label>
-          <input type="email" id="loginEmail" required placeholder="seu@email.com" class="w-full px-4 py-2.5 border border-slate-300 rounded-lg" />
+          <input type="email" id="loginEmail" required autocomplete="username" placeholder="seu@email.com" class="w-full px-4 py-2.5 border border-slate-300 rounded-lg" />
         </div>
         <div>
           <label class="block text-sm font-medium text-slate-700 mb-1">Senha</label>
           <div class="relative">
-            <input type="password" id="loginPassword" required placeholder="••••••••" class="w-full px-4 py-2.5 pr-11 border border-slate-300 rounded-lg" />
+            <input type="password" id="loginPassword" required autocomplete="current-password" placeholder="••••••••" class="w-full px-4 py-2.5 pr-11 border border-slate-300 rounded-lg" />
             <button type="button" id="togglePasswordBtn" onclick="togglePasswordVisibility()" aria-label="Mostrar senha" class="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 hover:text-slate-600">
               <span id="togglePasswordIcon">👁️</span>
             </button>
           </div>
         </div>
+        <label class="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" id="manterConectado" checked class="h-4 w-4 accent-emerald-600" /> Manter conectado neste celular</label>
         <button type="submit" id="loginSubmitBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-lg disabled:opacity-60 disabled:cursor-not-allowed">
           Entrar
         </button>
+        <button type="button" id="forgotPasswordBtn" class="w-full text-sm text-emerald-700 hover:underline">Esqueci minha senha</button>
       </form>
 
       <div id="demoNotice" class="mt-5 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-3 hidden">

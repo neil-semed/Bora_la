@@ -568,6 +568,19 @@ async function initLoginPage() {
     history.replaceState(null, '', 'index.html');
   }
 
+  // App do Motorista (motorista.html): "Manter conectado neste celular".
+  const ehAppMotorista = document.body.dataset.pwa === 'motorista';
+  let manterMotorista = true;
+  if (ehAppMotorista) {
+    try {
+      manterMotorista = localStorage.getItem('bora_motorista_manter') !== '0';
+      const chk = document.getElementById('manterConectado');
+      if (chk) chk.checked = manterMotorista;
+      const salvo = localStorage.getItem('bora_motorista_email');
+      if (salvo && manterMotorista) document.getElementById('loginEmail').value = salvo;
+    } catch (err) { /* armazenamento indisponível: segue o login normal */ }
+  }
+
   if (!sb) {
     document.getElementById('demoNotice').classList.remove('hidden');
     // Se já existia uma sessão demo ativa (ex: usuário voltou pro index.html sem sair),
@@ -581,11 +594,28 @@ async function initLoginPage() {
   // Supabase configurado: se já existe uma sessão válida (usuário não saiu),
   // vai direto pra página do sistema em vez de mostrar o login de novo.
   try {
+    // Motorista que desmarcou "Manter conectado": a sessão termina quando o app é fechado.
+    let sessaoDoApp = true;
+    try { sessaoDoApp = sessionStorage.getItem('bora_motorista_sessao') === '1'; } catch (err) { sessaoDoApp = false; }
+    if (ehAppMotorista && !manterMotorista && !sessaoDoApp) {
+      await sb.auth.signOut({ scope: 'local' });
+      return;
+    }
     const { data: { session } } = await sb.auth.getSession();
     if (session) window.location.href = 'app.html';
   } catch (err) {
     console.warn('Erro ao checar sessão existente:', err);
   }
+}
+
+function salvarPreferenciaLoginMotorista(email) {
+  const chk = document.getElementById('manterConectado');
+  if (!chk) return;
+  try {
+    if (chk.checked) { localStorage.setItem('bora_motorista_email', String(email || '').trim()); localStorage.setItem('bora_motorista_manter', '1'); }
+    else { localStorage.removeItem('bora_motorista_email'); localStorage.setItem('bora_motorista_manter', '0'); }
+    sessionStorage.setItem('bora_motorista_sessao', '1');
+  } catch (err) { /* armazenamento indisponível */ }
 }
 
 async function initAppPage() {
@@ -692,6 +722,7 @@ async function handleLogin(e) {
   e.preventDefault();
   const email = document.getElementById('loginEmail').value;
   const password = document.getElementById('loginPassword').value;
+  salvarPreferenciaLoginMotorista(email);
 
   const btn = document.getElementById('loginSubmitBtn');
   const btnTextoOriginal = btn ? btn.textContent : '';
