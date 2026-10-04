@@ -381,6 +381,7 @@
           </button>
           <img src="assets/logo_bora-la.png" alt="Bora Lá" class="hidden sm:block h-9 w-auto shrink-0" />
           <img id="driverTopIcon" src="assets/favicon-512.png" alt="" class="hidden" />
+          <img id="escolaPageFavicon" src="assets/favicon-512.png" alt="Bora Lá" class="hidden w-8 h-8 shrink-0" />
           <div class="min-w-0 flex-1"><p id="pageGreeting" class="hidden"></p><h1 class="text-xl font-bold text-slate-800 truncate" id="pageTitle">Dashboard</h1><p class="text-sm text-slate-500 truncate" id="pageSubtitle">Visão geral do sistema</p><p id="pageRoleName" class="hidden text-xs font-semibold text-emerald-700 mt-0.5"></p></div><div class="relative shrink-0">
             <button id="notificationBell" onclick="toggleNotificationPanel()" class="relative p-2 rounded-lg hover:bg-slate-100" aria-label="Notificações">
               🔔<span id="notificationCount" class="hidden absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] leading-[18px] text-center">0</span>
@@ -645,7 +646,7 @@
           <!-- SOLICITAÇÕES CARRO (MarkCarro) - igual a "Minhas Solicitações" do MarkCarro; só as do e-mail logado -->
           <section id="screen-carrosolicitacoes" class="hidden-screen">
             <div class="bg-white rounded-xl border shadow-sm p-4 sm:p-6">
-              <h2 class="text-base font-semibold text-slate-900 flex items-center gap-2 mb-4"><span class="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0" aria-hidden="true">📅</span> Minhas Solicitações</h2>
+              <h2 class="text-base font-semibold text-slate-900 flex items-center gap-2 mb-4"><img src="assets/markcarro-favicon.png" alt="MarkCarro" class="w-8 h-8 rounded-lg shrink-0" /> Minhas Solicitações</h2>
               <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
                 <div><label class="block text-xs font-medium text-slate-500 mb-1">Data Solic.</label><input type="date" id="carroFiltroSolicitacao" autocomplete="off" onchange="renderCarroSolicitacoes()" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
                 <div><label class="block text-xs font-medium text-slate-500 mb-1">Data Viagem</label><input type="date" id="carroFiltroData" autocomplete="off" onchange="renderCarroSolicitacoes()" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
@@ -665,7 +666,7 @@
             <div class="bg-white rounded-xl border shadow-sm p-5 max-w-4xl">
               <div id="carroNovaAviso" class="hidden"></div>
               <form id="carroNovaForm" class="hidden space-y-4" onsubmit="event.preventDefault(); enviarCarroSolicitacao();">
-                <p class="text-xs text-slate-500">Solicitante: <strong id="carroSolicitanteInfo" class="text-slate-700"></strong></p>
+                <p class="text-xs text-slate-500 flex items-center gap-2"><img src="assets/markcarro-favicon.png" alt="MarkCarro" class="w-8 h-8 rounded-lg shrink-0" /><span>Solicitante: <strong id="carroSolicitanteInfo" class="text-slate-700"></strong></span></p>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div><label class="block text-sm font-medium mb-1">Unidade *</label><select id="carroUnidade" onchange="carroAlternarOutro('carroUnidade','carroUnidadeOutroBox'); carroCarregarSetores()" class="w-full px-3 py-2 border rounded-lg text-sm"></select><div id="carroUnidadeOutroBox" class="hidden mt-2"><input id="carroUnidadeOutro" placeholder="Informe o nome da unidade" class="w-full px-3 py-2 border rounded-lg text-sm" /></div></div>
                   <div><label class="block text-sm font-medium mb-1">Setor *</label><select id="carroSetor" onchange="carroAlternarOutro('carroSetor','carroSetorOutroBox')" class="w-full px-3 py-2 border rounded-lg text-sm"></select><div id="carroSetorOutroBox" class="hidden mt-2"><input id="carroSetorOutro" placeholder="Informe o nome do setor" class="w-full px-3 py-2 border rounded-lg text-sm" /></div></div>
