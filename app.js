@@ -1720,8 +1720,8 @@ function showScreen(name, el) {
     solicitacoescoop: ['Solicitações da cooperativa', 'Viagens confirmadas atribuídas à cooperativa'],
     financeiro: ['Pendências financeiras', 'Solicitações de aporte vinculadas às excursões'],
     agendacombinada: ['Agenda Combinada', 'Bora Lá + MarkCarro - vans já ocupadas nos dois sistemas'],
-    carrosolicitacoes: ['Solicitações Carro', 'Suas solicitações de transporte no MarkCarro'],
-    carronova: ['Nova Solicitação Carro', 'Solicitação de transporte enviada ao MarkCarro'],
+    carrosolicitacoes: ['Solicitações - carros/ Semed', ''],
+    carronova: ['Nova Solicitação - carros/ Semed', ''],
   };
   const titulo = name === 'km' && (currentUser?.role === 'admin' || (currentUser?.role === 'operacional' && canViewScreen('km')))
     ? ['KM dos Motoristas', 'Registros, filtros e relatórios por motorista e cooperativa']
@@ -1729,8 +1729,11 @@ function showScreen(name, el) {
   document.getElementById('pageTitle').textContent = titulo?.[0] || '';
   document.getElementById('pageSubtitle').textContent = titulo?.[1] || '';
   document.body.classList.toggle('titulo-inline', ['admin', 'escola', 'pedagogia', 'operacional', 'agente_externo'].includes(currentUser?.role));
-  // Escola: favicon do Bora Lá no topo das telas do Bora Lá (as abas do MarkCarro têm o próprio ícone).
-  document.getElementById('escolaPageFavicon')?.classList.toggle('hidden', !(currentUser?.role === 'escola' && !['carrosolicitacoes', 'carronova'].includes(name)));
+  // Favicon no topo, junto ao título (exceto Motorista): do MarkCarro nas abas do MarkCarro, do Bora Lá nas demais.
+  const telaMarkCarro = ['carrosolicitacoes', 'carronova'].includes(name);
+  const comFavicon = !!currentUser && currentUser.role !== 'motorista';
+  document.getElementById('escolaPageFavicon')?.classList.toggle('hidden', !(comFavicon && !telaMarkCarro));
+  document.getElementById('markcarroPageFavicon')?.classList.toggle('hidden', !(comFavicon && telaMarkCarro));
 
   // Ao trocar de tela, sempre atualiza os dados vindos do Supabase antes de redesenhar.
   // O desenho imediato evita tela vazia; o redesenho após o carregamento garante dados atuais.
