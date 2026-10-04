@@ -68,7 +68,21 @@ const ACCESS_SCREEN_CATALOG = [
   { key: 'veiculos', label: 'Veículos', editable: true },
   { key: 'motoristas', label: 'Motoristas', editable: true },
   { key: 'cooperativas', label: 'Cooperativas', editable: true },
+  { key: 'unidades', label: 'Unidades', editable: true, coAdminOnly: true },
+  { key: 'validadores', label: 'Validadores', editable: true, coAdminOnly: true },
 ];
+const CO_ADMIN_NAME = 'Co_Admin';
+// Agenda Mestra com "editar" (Admin ou perfil administrativo): mesmas edições do Admin.
+function ehAgendaAdmin() {
+  return currentUser?.role === 'admin' || (currentUser?.role === 'operacional' && canEditScreen('agenda'));
+}
+// Telas abertas ao perfil administrativo só para consulta: esconde botões de ação.
+function aplicarSomenteConsulta(sectionId, screenKey) {
+  if (currentUser?.role !== 'operacional' || canEditScreen(screenKey)) return;
+  document.querySelectorAll(`#${sectionId} button, #${sectionId} input, #${sectionId} select, #${sectionId} textarea`).forEach((el) => {
+    if (el.tagName === 'BUTTON') el.classList.add('hidden'); else el.disabled = true;
+  });
+}
 
 // Relatórios por perfil: lista fixa do que faz sentido para cada perfil; o Admin
 // escolhe, entre esses, quais ficam liberados (role_screen_permissions, chave "rel:<tipo>").
@@ -1172,10 +1186,12 @@ function fillAccessProfileSelect(id, selected = '') {
 function renderAccessProfiles() {
   const wrap = document.getElementById('accessProfilesList');
   if (!wrap) return;
-  wrap.innerHTML = accessProfiles.length ? accessProfiles.map((profile) => {
+  const ordenados = accessProfiles.slice().sort((a, b) => (b.name === CO_ADMIN_NAME) - (a.name === CO_ADMIN_NAME));
+  wrap.innerHTML = ordenados.length ? ordenados.map((profile) => {
+    const ehCo = profile.name === CO_ADMIN_NAME;
     const perms = accessProfilePermissions.filter((p) => p.access_profile_id === profile.id && p.can_view);
     const labels = perms.map((p) => `${ACCESS_SCREEN_CATALOG.find((s) => s.key === p.screen_key)?.label || p.screen_key}${p.can_edit ? ' · editar' : ' · consultar'}`);
-    return `<div class="border rounded-xl p-4 flex items-start justify-between gap-3"><div><strong>${escapeHtml(profile.name)}</strong><p class="text-xs text-slate-500 mt-1">${labels.length ? labels.map(escapeHtml).join(' &nbsp;•&nbsp; ') : 'Sem telas liberadas'}</p></div><button onclick="openAccessProfileModal('${profile.id}')" class="text-sm text-emerald-700 font-medium">Editar</button></div>`;
+    return `<div class="border rounded-xl p-4 flex items-start justify-between gap-3 ${ehCo ? 'border-emerald-200 bg-emerald-50' : ''}"><div><strong>${escapeHtml(profile.name)}</strong>${ehCo ? '<span class="ml-2 rounded-full bg-emerald-700 px-2 py-0.5 text-[10px] font-bold text-white">FIXO</span>' : ''}<p class="text-xs text-slate-500 mt-1">${labels.length ? labels.map(escapeHtml).join(' &nbsp;•&nbsp; ') : 'Sem telas liberadas'}</p></div><button onclick="openAccessProfileModal('${profile.id}')" class="text-sm text-emerald-700 font-medium">${ehCo ? 'Escolher menus' : 'Editar'}</button></div>`;
   }).join('') : '<p class="text-sm text-slate-500 py-5 text-center">Nenhum perfil administrativo criado.</p>';
   renderNativeRoleProfiles();
 }
@@ -1226,8 +1242,10 @@ function openAccessProfileModal(id = null) {
   const profile = accessProfiles.find((p) => p.id === id);
   document.getElementById('accessProfileModalTitle').textContent = profile ? 'Editar perfil administrativo' : 'Novo perfil administrativo';
   document.getElementById('accessProfileName').value = profile?.name || '';
+  const ehCoModal = profile?.name === CO_ADMIN_NAME;
+  document.getElementById('accessProfileName').readOnly = ehCoModal;
   const existing = accessProfilePermissions.filter((p) => p.access_profile_id === id);
-  document.getElementById('accessPermissionsEditor').innerHTML = ACCESS_SCREEN_CATALOG.map((screen) => {
+  document.getElementById('accessPermissionsEditor').innerHTML = ACCESS_SCREEN_CATALOG.filter((screen) => !screen.coAdminOnly || ehCoModal).map((screen) => {
     const permission = existing.find((p) => p.screen_key === screen.key);
     return `<div class="border rounded-lg p-3 flex items-center gap-3"><label class="flex items-center gap-2 flex-1 text-sm font-medium"><input type="checkbox" data-access-view="${screen.key}" ${permission?.can_view ? 'checked' : ''}> ${screen.label}</label>${screen.editable ? `<label class="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" data-access-edit="${screen.key}" ${permission?.can_edit ? 'checked' : ''}> Pode editar</label>` : '<span class="text-xs text-slate-400">Consulta</span>'}</div>`;
   }).join('');
@@ -1238,7 +1256,9 @@ function closeAccessProfileModal() { document.getElementById('accessProfileModal
 async function saveAccessProfile() {
   const name = document.getElementById('accessProfileName').value.trim();
   if (!name) { toast('⚠️ Informe o nome do perfil.', true); return; }
-  const permissions = ACCESS_SCREEN_CATALOG.map((screen) => {
+  const ehCoSave = accessProfiles.find((p) => p.id === editAccessProfileId)?.name === CO_ADMIN_NAME;
+  if (!ehCoSave && name === CO_ADMIN_NAME) { toast('⚠️ O nome Co_Admin é reservado ao perfil fixo.', true); return; }
+  const permissions = ACCESS_SCREEN_CATALOG.filter((screen) => !screen.coAdminOnly || ehCoSave).map((screen) => {
     const can_view = !!document.querySelector(`[data-access-view="${screen.key}"]`)?.checked;
     return { screen_key: screen.key, can_view, can_edit: can_view && !!document.querySelector(`[data-access-edit="${screen.key}"]`)?.checked };
   });
@@ -1325,7 +1345,7 @@ async function loadValidationConfig() {
 }
 
 async function openValidadoresScreen() {
-  if (currentUser?.role !== 'admin') return;
+  if (!(currentUser?.role === 'admin' || (currentUser?.role === 'operacional' && canViewScreen('validadores')))) return;
   await Promise.all([loadValidationConfig(), loadAllProfiles()]);
   renderValidadores();
 }
@@ -1650,13 +1670,13 @@ function showScreen(name, el) {
   if (name === 'solicitacao') openSolicitacaoScreen();
   if (name === 'validacoes') openValidacoesScreen();
   if (name === 'km') openKmScreen();
-  if (name === 'unidades') renderUnidades();
+  if (name === 'unidades') { renderUnidades(); aplicarSomenteConsulta('screen-unidades', 'unidades'); }
   if (name === 'veiculos') renderVeiculos();
   if (name === 'motoristas') renderMotoristas();
   if (name === 'cooperativas') { renderCooperativas(); fillSettingsForm(); }
   if (name === 'usuarios') openUsuariosScreen();
   if (name === 'perfisacesso') { Promise.all([loadAccessProfiles(), loadRoleScreenPermissions()]).then(renderAccessProfiles); }
-  if (name === 'validadores') openValidadoresScreen();
+  if (name === 'validadores') openValidadoresScreen().then(() => aplicarSomenteConsulta('screen-validadores', 'validadores'));
   if (name === 'relatorios') populateRelatorioFilters();
   if (name === 'relatorios') { document.getElementById('btnNotificarViagens')?.classList.toggle('hidden', currentUser?.role === 'agente_externo'); renderRelatorioPreview(); }
   if (name === 'pendenciascoop') renderPendenciasCoop();
@@ -1690,12 +1710,12 @@ async function refreshDadosDaTela(name) {
     if (name === 'agendageral') renderAgendaGeralMotorista();
     if (name === 'solicitacao') openSolicitacaoScreen();
     if (name === 'km') openKmScreen();
-    if (name === 'unidades') renderUnidades();
+    if (name === 'unidades') { renderUnidades(); aplicarSomenteConsulta('screen-unidades', 'unidades'); }
     if (name === 'veiculos') renderVeiculos();
     if (name === 'motoristas') renderMotoristas();
     if (name === 'cooperativas') { renderCooperativas(); fillSettingsForm(); }
     if (name === 'usuarios') openUsuariosScreen();
-    if (name === 'validadores') openValidadoresScreen();
+    if (name === 'validadores') openValidadoresScreen().then(() => aplicarSomenteConsulta('screen-validadores', 'validadores'));
     if (name === 'relatorios') populateRelatorioFilters();
     if (name === 'relatorios') { document.getElementById('btnNotificarViagens')?.classList.toggle('hidden', currentUser?.role === 'agente_externo'); renderRelatorioPreview(); }
     if (name === 'pendenciascoop') renderPendenciasCoop();
@@ -3125,7 +3145,7 @@ function renderAgenda() {
           acoes = acoes.includes('text-slate-300') ? listaInfo : acoes + listaInfo;
         }
       }
-      if (role === 'admin') {
+      if (isAgendaEditor) {
         const propostaBtn = `<button onclick="openValidacaoModal('${a.id}', true)" class="text-violet-600 hover:text-violet-800 text-xs font-medium ml-2" title="Visualizar a proposta pedagógica">📄 Proposta</button>`;
         const pcdView = (a.pca_count || 0) > 0
           ? `<button onclick="conferirListaPcd('${a.id}')" class="text-emerald-600 hover:text-emerald-800 text-xs font-medium ml-2">♿ Ver PCD</button>`
@@ -3136,7 +3156,7 @@ function renderAgenda() {
         acoes = acoes.includes('text-slate-300') ? propostaBtn + pcdView + atfView : acoes + propostaBtn + pcdView + atfView;
       }
 
-      if (role === 'admin' && a.doc_status === 'nao_enviado' && a.situacao !== 'cancelada' && a.status !== 'rejected') {
+      if (isAgendaEditor && a.doc_status === 'nao_enviado' && a.situacao !== 'cancelada' && a.status !== 'rejected') {
         const propostaBtn = `<button onclick="solicitarPropostaPedagogica('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-medium ml-2" title="Tornar o envio da proposta uma pendência da unidade">📄 Solicitar proposta</button>`;
         acoes = acoes.includes('text-slate-300') ? propostaBtn : acoes + propostaBtn;
       }
@@ -3146,7 +3166,7 @@ function renderAgenda() {
         const delBtn = `<button onclick="openDeleteExcursionModal('${a.id}')" class="text-red-600 hover:text-red-800 text-xs font-medium ml-2" title="Excluir permanentemente (diferente de Cancelar)">🗑️ Excluir</button>`;
         acoes = acoes.includes('text-slate-300') ? editBtn + delBtn : acoes + editBtn + delBtn;
         // Admin: "Ver listagem" depois de Editar/Excluir quando a unidade já enviou a listagem.
-        if (role === 'admin' && ['enviada', 'aceita'].includes(a.listagem_status)) {
+        if (['enviada', 'aceita'].includes(a.listagem_status)) {
           acoes += `<button onclick="openListagemVeiculoModal('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-bold ml-2" title="Abrir a listagem enviada para verificação">👁️ Ver listagem</button>`;
         }
         // "✉️ Cooperativa" depois de "Ver listagem": viagem com motorista(s) que exige ATF/PCD.
@@ -3475,7 +3495,7 @@ function renderAgendaPorDataItem(a, agendaGeral = false) {
 
 let editExcursionId = null;
 function openExcursionEditor(id) {
-  if (currentUser?.role !== 'admin') return;
+  if (!ehAgendaAdmin()) return;
   const trip = agenda.find((a) => a.id === id); if (!trip) return;
   editExcursionId = id;
   const set = (field, value) => { const el = document.getElementById(field); if (el) el.value = value ?? ''; };
@@ -3784,7 +3804,7 @@ async function renderAgendaCombinadaAdmin() {
 }
 function closeExcursionEditor() { document.getElementById('excursionEditorModal').classList.add('hidden'); editExcursionId = null; }
 async function saveExcursionEditor() {
-  if (!editExcursionId || currentUser?.role !== 'admin') return;
+  if (!editExcursionId || !ehAgendaAdmin()) return;
   const v = (id) => document.getElementById(id).value;
   const patch = { trip_date:v('editTripDate'), departure_time:v('editDepartureTime')||null, return_time:v('editReturnTime')||null, origin_name:v('editOriginName').trim()||null, origin_address:v('editOriginAddress').trim()||null, origin_city:v('editOriginCity').trim()||null, destination:v('editDestination').trim(), destination_address:v('editDestinationAddress').trim()||null, city:v('editCity').trim()||null, students_count:parseInt(v('editStudentsCount'),10)||0, companions_count:parseInt(v('editCompanionsCount'),10)||0, situacao:v('editSituacao'), atf_status:v('editAtfStatus'), requester_contact:v('editRequesterContact').trim()||null, notes:v('editNotes').trim()||null };
   if (!patch.trip_date || !patch.destination) { toast('⚠️ Informe data e destino.', true); return; }
@@ -4746,7 +4766,7 @@ function gerarTokenAcessoPassageiros() {
   throw new Error('Este navegador não oferece geração segura de link. Use um navegador atualizado.');
 }
 async function prepararLinkPassageiros(id) {
-  if (currentUser?.role !== 'admin') return;
+  if (!ehAgendaAdmin()) return;
   const trip = agenda.find((a) => a.id === id);
   if (!trip) return;
   if (!viagemValidadaCompletamente(trip)) { toast('⚠️ O link só pode ser liberado depois da aprovação e atribuição do motorista.', true); return; }
@@ -4778,7 +4798,7 @@ async function prepararLinkPassageiros(id) {
   }
 }
 async function reabrirCadastroPassageiros(id) {
-  if (currentUser?.role !== 'admin') return;
+  if (!ehAgendaAdmin()) return;
   const trip = agenda.find((a) => a.id === id);
   if (!trip?.passenger_access_token) return;
   const patch = { passenger_access_status: 'aberto', passenger_access_submitted_at: null };
@@ -5427,7 +5447,7 @@ async function confirmAceitarListagem() {
 
 let pcdListTargetId = null;
 async function conferirListaPcd(id) {
-  if (currentUser?.role !== 'admin') return;
+  if (!ehAgendaAdmin()) return;
   const trip = agenda.find((a) => a.id === id); if (!trip) return;
   const rows = await getExcursionPcdStudents(id);
   pcdListTargetId = id;
@@ -5681,7 +5701,7 @@ async function enviarListagemParaCooperativas(id) {
 // dados da viagem + a listagem, prontinho pra abrir no e-mail de quem estiver logado
 // (imita exatamente o que já é feito manualmente hoje pelo setor de excursão).
 async function reenviarListagemParaCooperativas(id) {
-  if (currentUser?.role !== 'admin') return;
+  if (!ehAgendaAdmin()) return;
   await openCooperativaEmailModal(id, 'atf');
 }
 
