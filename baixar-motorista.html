@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#059669" />
+  <title>Bora Lá - Baixar app do Motorista</title>
+  <link rel="icon" type="image/png" href="assets/favicon-512.png" />
+  <style>
+    body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; background:#F6FFFC; font-family:Arial, sans-serif; color:#0f172a; }
+    .card { max-width:340px; margin:16px; padding:24px; background:#fff; border:1px solid #059669; border-radius:16px; text-align:center; box-shadow:0 20px 40px -14px rgb(0 0 0 / .25); }
+    a.btn { display:inline-block; margin-top:14px; padding:12px 18px; border-radius:10px; background:#059669; color:#fff; font-weight:bold; text-decoration:none; }
+    p { font-size:14px; line-height:1.45; }
+  </style>
+</head>
+<body>
+  <!-- Link curto para os motoristas: no Android já inicia o download nativo do APK
+       (última versão publicada pelo workflow "Gerar APK do Motorista"). -->
+  <div class="card">
+    <img src="assets/favicon-512.png" alt="Bora Lá" width="72" height="72" />
+    <h2 style="margin:10px 0 4px;font-size:18px">Bora Lá - Motorista</h2>
+    <p id="msg">Iniciando o download do aplicativo…</p>
+    <a id="btn" class="btn" href="https://github.com/neil-semed/Bora_la/releases/latest/download/Bora-La-Motorista.apk">Baixar app Android</a>
+  </div>
+  <script>
+    (function () {
+      var apk = document.getElementById('btn').href;
+      var ua = navigator.userAgent || '';
+      if (/iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+        document.getElementById('msg').innerHTML = 'No iPhone não há instalador .apk.<br>Abra o app pelo Safari e toque em <b>Compartilhar → Adicionar à Tela de Início</b>.';
+        var b = document.getElementById('btn'); b.textContent = 'Abrir app do Motorista'; b.href = 'motorista.html';
+        return;
+      }
+      if (/Android/i.test(ua)) window.location.href = apk;
+      else document.getElementById('msg').textContent = 'Abra este link no celular Android para instalar o aplicativo.';
+    })();
+  </script>
+</body>
+</html>
