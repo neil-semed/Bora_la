@@ -1245,6 +1245,11 @@ async function saveAccessProfile() {
   if (!permissions.some((p) => p.can_view)) { toast('⚠️ Libere ao menos uma tela.', true); return; }
   if (!sb) { toast('⚠️ Esta configuração precisa do Supabase.', true); return; }
   let profileId = editAccessProfileId;
+  // Um perfil com o mesmo nome já existe (ex.: salvamento anterior interrompido): atualiza esse perfil.
+  if (!profileId) {
+    const { data: existente } = await sb.from('access_profiles').select('id').eq('name', name).maybeSingle();
+    if (existente?.id) profileId = existente.id;
+  }
   const profileResult = profileId
     ? await sb.from('access_profiles').update({ name }).eq('id', profileId).select().single()
     : await sb.from('access_profiles').insert({ name }).select().single();
