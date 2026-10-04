@@ -15,6 +15,10 @@ const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3Mi
 // só-leitura de lá (agenda_publica_veiculos - não expõe nada além de data/hora/placa/
 // destino/status, mesmo espírito da nossa própria agenda-veiculos que o MarkCarro chama).
 const MARKCARRO_SUPABASE_URL = 'https://gvtgtdhfciqegnjqcqlf.supabase.co';
+// Solicitações de carro (MarkCarro): o Bora Lá não grava nada na própria base - lê e cria
+// as solicitações direto no MarkCarro pela Edge Function "bora-la-solicitacoes" (projeto
+// MarkCarro), que confere o login e a permissão do usuário aqui no Bora Lá.
+const MARKCARRO_SOLICITACOES_URL = 'https://gvtgtdhfciqegnjqcqlf.supabase.co/functions/v1/bora-la-solicitacoes';
 const MARKCARRO_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd2dGd0ZGhmY2lxZWduanFjcWxmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1NTMyNDcsImV4cCI6MjEwNDEyOTI0N30.9E3-rFSagbTmz5cUcCBER0RMvlwi0oLSy6LwxWazWcs';
 
 let sb = null;
@@ -68,6 +72,8 @@ const ACCESS_SCREEN_CATALOG = [
   { key: 'veiculos', label: 'Veículos', editable: true },
   { key: 'motoristas', label: 'Motoristas', editable: true },
   { key: 'cooperativas', label: 'Cooperativas', editable: true },
+  { key: 'carrosolicitacoes', label: 'Solicitações Carro (MarkCarro)', editable: true },
+  { key: 'carronova', label: 'Nova Solicitação Carro (MarkCarro)', editable: false },
   { key: 'unidades', label: 'Unidades', editable: true, coAdminOnly: true },
   { key: 'validadores', label: 'Validadores', editable: true, coAdminOnly: true },
 ];
@@ -135,6 +141,9 @@ const SCREEN_ROLES = {
   // Agenda Combinada (Bora Lá + MarkCarro) - só Admin, mesmo escopo da tela
   // equivalente já entregue no MarkCarro (ver renderAgendaCombinadaAdmin()).
   agendacombinada: ['admin'],
+  // Solicitações de carro (MarkCarro): Admin sempre; demais perfis só se liberado em Perfis de acesso.
+  carrosolicitacoes: ['admin'],
+  carronova: ['admin'],
 };
 
 const ROLE_DEFAULT_SCREEN = {
@@ -148,10 +157,10 @@ const ROLE_DEFAULT_SCREEN = {
 
 const ROLE_LABELS = { admin: 'Admin', escola: 'Escola', pedagogia: 'Pedagogia', motorista: 'Motorista', operacional: 'Administrativo', agente_externo: 'Agente Externo', financeiro: 'Financeiro' };
 const NATIVE_ROLE_MENU_DEFAULTS = {
-  escola: ['dashboard', 'pendencias', 'agenda', 'solicitacao', 'validacoes', 'relatorios'],
-  pedagogia: ['dashboard', 'pendencias', 'agenda', 'validacoes', 'relatorios'],
+  escola: ['dashboard', 'pendencias', 'agenda', 'solicitacao', 'validacoes', 'relatorios', 'carrosolicitacoes', 'carronova'],
+  pedagogia: ['dashboard', 'pendencias', 'agenda', 'validacoes', 'relatorios', 'carrosolicitacoes', 'carronova'],
   motorista: ['dashboard', 'agenda', 'agendadata', 'agendageral', 'km', 'relatorios'],
-  agente_externo: ['pendenciascoop', 'solicitacoescoop', 'km', 'relatorios'],
+  agente_externo: ['pendenciascoop', 'solicitacoescoop', 'km', 'relatorios', 'carrosolicitacoes', 'carronova'],
   financeiro: ['financeiro'],
 };
 
@@ -568,15 +577,16 @@ async function initLoginPage() {
     history.replaceState(null, '', 'index.html');
   }
 
-  // App do Motorista (motorista.html): "Manter conectado neste celular".
-  const ehAppMotorista = document.body.dataset.pwa === 'motorista';
+  // "Manter conectado" (app do Motorista e login do navegador): mesma regra nas duas telas.
+  const ehAppMotorista = !!document.getElementById('manterConectado');
+  const prefixoLogin = loginStoragePrefix();
   let manterMotorista = true;
   if (ehAppMotorista) {
     try {
-      manterMotorista = localStorage.getItem('bora_motorista_manter') !== '0';
+      manterMotorista = localStorage.getItem(prefixoLogin + 'manter') !== '0';
       const chk = document.getElementById('manterConectado');
       if (chk) chk.checked = manterMotorista;
-      const salvo = localStorage.getItem('bora_motorista_email');
+      const salvo = localStorage.getItem(prefixoLogin + 'email');
       if (salvo && manterMotorista) document.getElementById('loginEmail').value = salvo;
     } catch (err) { /* armazenamento indisponível: segue o login normal */ }
   }
@@ -596,7 +606,7 @@ async function initLoginPage() {
   try {
     // Motorista que desmarcou "Manter conectado": a sessão termina quando o app é fechado.
     let sessaoDoApp = true;
-    try { sessaoDoApp = sessionStorage.getItem('bora_motorista_sessao') === '1'; } catch (err) { sessaoDoApp = false; }
+    try { sessaoDoApp = sessionStorage.getItem('bora_login_sessao') === '1'; } catch (err) { sessaoDoApp = false; }
     if (ehAppMotorista && !manterMotorista && !sessaoDoApp) {
       await sb.auth.signOut({ scope: 'local' });
       return;
@@ -608,13 +618,17 @@ async function initLoginPage() {
   }
 }
 
+function loginStoragePrefix() { return document.body.dataset.pwa === 'motorista' ? 'bora_motorista_' : 'bora_web_'; }
 function salvarPreferenciaLoginMotorista(email) {
   const chk = document.getElementById('manterConectado');
   if (!chk) return;
+  const prefixo = loginStoragePrefix();
   try {
-    if (chk.checked) { localStorage.setItem('bora_motorista_email', String(email || '').trim()); localStorage.setItem('bora_motorista_manter', '1'); }
-    else { localStorage.removeItem('bora_motorista_email'); localStorage.setItem('bora_motorista_manter', '0'); }
-    sessionStorage.setItem('bora_motorista_sessao', '1');
+    if (chk.checked) { localStorage.setItem(prefixo + 'email', String(email || '').trim()); localStorage.setItem(prefixo + 'manter', '1'); }
+    else { localStorage.removeItem(prefixo + 'email'); localStorage.setItem(prefixo + 'manter', '0'); }
+    // Vale também para a página do sistema (app.html), aberta direto por favorito.
+    localStorage.setItem('bora_login_manter', chk.checked ? '1' : '0');
+    sessionStorage.setItem('bora_login_sessao', '1');
   } catch (err) { /* armazenamento indisponível */ }
 }
 
@@ -640,6 +654,10 @@ async function initAppPage() {
   }
 
   try {
+    // "Manter conectado" desmarcado: a sessão termina quando o navegador/app é fechado.
+    let encerrarSessao = false;
+    try { encerrarSessao = localStorage.getItem('bora_login_manter') === '0' && sessionStorage.getItem('bora_login_sessao') !== '1'; } catch (err) { encerrarSessao = false; }
+    if (encerrarSessao) { await sb.auth.signOut({ scope: 'local' }); window.location.href = 'index.html'; return; }
     const { data: { session } } = await sb.auth.getSession();
     if (!session) {
       window.location.href = 'index.html';
@@ -1252,7 +1270,8 @@ function nativeRoleMenus(role) {
 function nativeRoleMenuEnabled(role, key) {
   const row = roleScreenPermissions.find((p) => p.role === role && p.screen_key === key);
   if (row) return !!row.can_view;
-  // Relatórios só aparece para Escola/Motorista quando o Admin liberar.
+  // Relatórios só aparece para Escola/Motorista quando o Admin liberar; as abas do MarkCarro também.
+  if (['carrosolicitacoes', 'carronova'].includes(key)) return false;
   return !(key === 'relatorios' && ['escola', 'motorista'].includes(role));
 }
 function renderNativeRoleProfiles() {
@@ -1701,12 +1720,15 @@ function showScreen(name, el) {
     solicitacoescoop: ['Solicitações da cooperativa', 'Viagens confirmadas atribuídas à cooperativa'],
     financeiro: ['Pendências financeiras', 'Solicitações de aporte vinculadas às excursões'],
     agendacombinada: ['Agenda Combinada', 'Bora Lá + MarkCarro - vans já ocupadas nos dois sistemas'],
+    carrosolicitacoes: ['Solicitações Carro', 'Suas solicitações de transporte no MarkCarro'],
+    carronova: ['Nova Solicitação Carro', 'Solicitação de transporte enviada ao MarkCarro'],
   };
   const titulo = name === 'km' && (currentUser?.role === 'admin' || (currentUser?.role === 'operacional' && canViewScreen('km')))
     ? ['KM dos Motoristas', 'Registros, filtros e relatórios por motorista e cooperativa']
     : titles[name];
   document.getElementById('pageTitle').textContent = titulo?.[0] || '';
   document.getElementById('pageSubtitle').textContent = titulo?.[1] || '';
+  document.body.classList.toggle('titulo-inline', ['admin', 'escola', 'pedagogia', 'operacional', 'agente_externo'].includes(currentUser?.role));
 
   // Ao trocar de tela, sempre atualiza os dados vindos do Supabase antes de redesenhar.
   // O desenho imediato evita tela vazia; o redesenho após o carregamento garante dados atuais.
@@ -1733,6 +1755,8 @@ function showScreen(name, el) {
   if (name === 'solicitacoescoop') renderSolicitacoesCoop();
   if (name === 'financeiro') renderFinanceRequests();
   if (name === 'agendacombinada') renderAgendaCombinadaAdmin();
+  if (name === 'carrosolicitacoes') openCarroSolicitacoes();
+  if (name === 'carronova') openCarroNova();
   safeIcons();
 }
 async function notifyPedagogia(title, message, excursionId = null) {
@@ -3826,6 +3850,208 @@ async function mesclarAgendaMarkCarroPorDia(raiz, desde, ate) {
 
 // AGENDA COMBINADA (Admin): Bora Lá + MarkCarro, só leitura - ver comentário na seção
 // "screen-agendacombinada" do app.html. Não confirma/cancela/atribui nada.
+
+// ============ SOLICITAÇÕES CARRO (MarkCarro) ============
+// Tudo é lido/gravado no MarkCarro (Edge Function bora-la-solicitacoes). O login é o mesmo
+// e-mail nas duas aplicações; o Bora Lá não gerencia corridas nem guarda as solicitações.
+let carroContexto = null;
+let carroSolicitacoes = [];
+let carroCondutores = {};
+async function carroApi(action, payload = {}) {
+  if (!sb) throw new Error('Esta tela precisa da conexão com o Supabase.');
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session?.access_token) throw new Error('Sua sessão expirou. Entre novamente.');
+  const resp = await fetch(MARKCARRO_SOLICITACOES_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: MARKCARRO_ANON_KEY, Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify({ action, ...payload }),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok || json.error) throw new Error(json.error || `Falha na comunicação com o MarkCarro (${resp.status}).`);
+  return json;
+}
+async function carroCarregarContexto(forcar = false) {
+  if (!carroContexto || forcar) carroContexto = await carroApi('contexto');
+  return carroContexto;
+}
+function carroDataBR(d) { return d ? new Date(String(d).slice(0, 10) + 'T00:00').toLocaleDateString('pt-BR') : '-'; }
+function carroStatusBadge(st) {
+  const cores = { Pendente: 'bg-amber-100 text-amber-800', 'Em Análise': 'bg-sky-100 text-sky-800', Confirmada: 'bg-emerald-100 text-emerald-800', Ocupado: 'bg-orange-100 text-orange-800', Cancelada: 'bg-red-100 text-red-700', Desprezado: 'bg-slate-200 text-slate-600' };
+  const label = st === 'Desprezado' ? 'Cancelada pelo solicitante' : (st || 'Pendente');
+  return `<span class="rounded-full px-2 py-0.5 text-xs font-bold ${cores[st] || cores.Pendente}">${escapeHtml(label)}</span>`;
+}
+function carroDescreverCondutor(email) {
+  const c = carroCondutores[String(email || '').toLowerCase()];
+  if (!c) return escapeHtml(email || '');
+  return escapeHtml(`${c.nome}${c.capacidade ? ` (${c.capacidade})` : ''}${c.telefone ? ` · ${c.telefone}` : ''}`);
+}
+function carroCondutorTexto(s) {
+  if (s.status === 'Ocupado') return 'Sem veículo disponível';
+  if (s.status !== 'Confirmada') return 'Aguardando confirmação do gestor';
+  const ida = s.condutor_ida || '', volta = s.condutor_volta || '';
+  if (!ida && !volta) return 'Condutor ainda não atribuído';
+  if (ida && volta && ida === volta) return `Ida e volta: ${carroDescreverCondutor(ida)}`;
+  return [ida ? `Ida: ${carroDescreverCondutor(ida)}` : '', volta ? `Volta: ${carroDescreverCondutor(volta)}` : ''].filter(Boolean).join('<br>');
+}
+// Mesma regra do MarkCarro: cancela até 30 minutos antes da saída.
+function carroPodeCancelar(s) {
+  if (['Cancelada', 'Desprezado'].includes(s.status)) return false;
+  if (!s.data_viagem || !s.hora_saida) return true;
+  const saida = new Date(`${s.data_viagem}T${String(s.hora_saida).slice(0, 5)}:00`);
+  return isNaN(saida.getTime()) || (saida.getTime() - Date.now()) > 30 * 60 * 1000;
+}
+async function openCarroSolicitacoes() {
+  const box = document.getElementById('carroSolicitacoesLista');
+  if (!box) return;
+  box.innerHTML = '<p class="p-6 text-center text-sm text-slate-500">Carregando solicitações do MarkCarro…</p>';
+  try {
+    const r = await carroApi('listar');
+    carroSolicitacoes = r.solicitacoes || [];
+    carroCondutores = {};
+    (r.condutores || []).forEach((c) => { carroCondutores[String(c.email || '').toLowerCase()] = c; });
+    renderCarroSolicitacoes();
+  } catch (err) {
+    box.innerHTML = `<p class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">⚠️ ${escapeHtml(err.message)}</p>`;
+  }
+}
+function filtrarCarroHoje() { const el = document.getElementById('carroFiltroData'); if (el) el.value = fmtDate(new Date()); renderCarroSolicitacoes(); }
+function limparFiltrosCarro() { ['carroFiltroData', 'carroFiltroSolicitacao'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; }); renderCarroSolicitacoes(); }
+function renderCarroSolicitacoes() {
+  const box = document.getElementById('carroSolicitacoesLista');
+  if (!box) return;
+  const dataViagem = document.getElementById('carroFiltroData')?.value || '';
+  const dataSolic = document.getElementById('carroFiltroSolicitacao')?.value || '';
+  const rows = carroSolicitacoes.filter((s) => (!dataViagem || s.data_viagem === dataViagem) && (!dataSolic || String(s.data_solicitacao || '').slice(0, 10) === dataSolic))
+    .sort((a, b) => `${b.data_viagem}${b.hora_saida}`.localeCompare(`${a.data_viagem}${a.hora_saida}`));
+  if (!rows.length) { box.innerHTML = '<p class="p-6 text-center text-sm text-slate-500">Nenhuma solicitação encontrada.</p>'; return; }
+  box.innerHTML = `<div class="overflow-x-auto"><table class="w-full min-w-[900px] text-left text-sm"><thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="px-3 py-2">Solicitado em</th><th class="px-3 py-2">Data viagem</th><th class="px-3 py-2">Horário</th><th class="px-3 py-2">Trajeto</th><th class="px-3 py-2">Justificativa</th><th class="px-3 py-2">Status</th><th class="px-3 py-2">Condutor</th><th class="px-3 py-2">Ações</th></tr></thead><tbody class="divide-y">${rows.map((s) => `<tr class="align-top">
+    <td class="px-3 py-2 text-xs text-slate-500">${s.data_solicitacao ? new Date(s.data_solicitacao).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</td>
+    <td class="px-3 py-2 font-semibold">${carroDataBR(s.data_viagem)}</td>
+    <td class="px-3 py-2 whitespace-nowrap">${horaComH(s.hora_saida)} → ${horaComH(s.hora_retorno)}</td>
+    <td class="px-3 py-2">${escapeHtml(s.origem || '-')} <span class="text-slate-400">→</span> ${escapeHtml(s.destino || '-')}<div class="text-xs text-slate-500">${escapeHtml(s.tipo_viagem || '')}${s.qtd_pessoas ? ` · ${s.qtd_pessoas}` : ''}</div></td>
+    <td class="px-3 py-2 text-xs">${escapeHtml(s.justificativa || '')}</td>
+    <td class="px-3 py-2">${carroStatusBadge(s.status)}</td>
+    <td class="px-3 py-2 text-xs">${carroCondutorTexto(s)}</td>
+    <td class="px-3 py-2">${carroPodeCancelar(s) ? `<button onclick="cancelarCarroSolicitacao('${s.id}')" class="text-xs font-bold text-red-600 hover:text-red-800">🚫 Cancelar</button>` : ''}</td>
+  </tr>`).join('')}</tbody></table></div>`;
+}
+async function cancelarCarroSolicitacao(id) {
+  const s = carroSolicitacoes.find((x) => String(x.id) === String(id));
+  if (!s) return;
+  if (!carroPodeCancelar(s)) { toast('⚠️ Não é mais possível cancelar: faltam menos de 30 minutos para a saída.', true); return; }
+  if (!window.confirm(`Cancelar a solicitação de ${carroDataBR(s.data_viagem)} (${s.origem || '-'} → ${s.destino || '-'})?`)) return;
+  try {
+    await carroApi('cancelar', { id });
+    toast('✅ Solicitação cancelada no MarkCarro.');
+    openCarroSolicitacoes();
+  } catch (err) { toast('❌ ' + err.message, true); }
+}
+
+function carroPreencherSelect(id, valores, placeholder, comOutro = true) {
+  const sel = document.getElementById(id); if (!sel) return;
+  sel.innerHTML = `<option value="">${placeholder}</option>${valores.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}${comOutro ? '<option value="Outro">Outro</option>' : ''}`;
+}
+function carroAlternarOutro(idSelect, idBox) {
+  document.getElementById(idBox)?.classList.toggle('hidden', document.getElementById(idSelect)?.value !== 'Outro');
+}
+function carroValorLocal(idSelect, idOutro) {
+  const v = document.getElementById(idSelect)?.value || '';
+  return v === 'Outro' ? (document.getElementById(idOutro)?.value || '').trim() : v;
+}
+async function carroCarregarSetores(setorAtual = '') {
+  const unidade = document.getElementById('carroUnidade')?.value || '';
+  if (!unidade || unidade === 'Outro') { carroPreencherSelect('carroSetor', [], unidade === 'Outro' ? 'Selecione…' : 'Selecione a unidade primeiro'); carroAlternarOutro('carroSetor', 'carroSetorOutroBox'); return; }
+  try {
+    const r = await carroApi('setores', { unidade });
+    carroPreencherSelect('carroSetor', r.setores || [], 'Selecione…');
+    if (setorAtual) document.getElementById('carroSetor').value = setorAtual;
+  } catch (err) { toast('❌ ' + err.message, true); }
+  carroAlternarOutro('carroSetor', 'carroSetorOutroBox');
+}
+async function openCarroNova() {
+  const form = document.getElementById('carroNovaForm');
+  const aviso = document.getElementById('carroNovaAviso');
+  if (!form) return;
+  form.classList.add('hidden');
+  form.reset();
+  if (aviso) { aviso.classList.remove('hidden'); aviso.textContent = 'Carregando dados do MarkCarro…'; aviso.className = 'rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600'; }
+  try {
+    const ctx = await carroCarregarContexto(true);
+    const u = ctx.usuario || {};
+    document.getElementById('carroSolicitanteInfo').textContent = `${u.nome || '-'} · ${u.email || ''}${u.telefone ? ' · ' + u.telefone : ''}`;
+    carroPreencherSelect('carroOrigem', ctx.locais || [], 'Selecione…');
+    carroPreencherSelect('carroDestino', ctx.locais || [], 'Selecione…');
+    ['carroOrigemOutroBox', 'carroDestinoOutroBox'].forEach((id) => document.getElementById(id)?.classList.add('hidden'));
+    const selU = document.getElementById('carroUnidade'), selS = document.getElementById('carroSetor');
+    if (u.escola) {
+      // Escola: unidade travada na unidade logada e setor travado em "ADM Escolar".
+      selU.innerHTML = `<option value="${escapeHtml(u.escola)}">${escapeHtml(u.escola)}</option>`;
+      selS.innerHTML = '<option value="ADM Escolar">ADM Escolar</option>';
+      selU.disabled = true; selS.disabled = true;
+      ['carroUnidadeOutroBox', 'carroSetorOutroBox'].forEach((id) => document.getElementById(id)?.classList.add('hidden'));
+    } else {
+      selU.disabled = false; selS.disabled = false;
+      carroPreencherSelect('carroUnidade', ctx.unidades || [], 'Selecione a unidade…');
+      const perfil = ctx.perfil_mc || {};
+      if (perfil.unidade && (ctx.unidades || []).includes(perfil.unidade)) { selU.value = perfil.unidade; await carroCarregarSetores(perfil.setor || ''); }
+      else carroPreencherSelect('carroSetor', [], 'Selecione a unidade primeiro');
+      carroAlternarOutro('carroUnidade', 'carroUnidadeOutroBox');
+    }
+    document.getElementById('carroRecorrenciaWrap')?.classList.toggle('hidden', !ctx.pode_recorrencia);
+    document.getElementById('carroRecorrente').checked = false;
+    document.getElementById('carroRecorrenciaBox')?.classList.add('hidden');
+    form.classList.remove('hidden');
+    aviso?.classList.add('hidden');
+    carroAlternarTipo();
+  } catch (err) {
+    if (aviso) { aviso.className = 'rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800'; aviso.textContent = '⚠️ ' + err.message; }
+  }
+}
+function carroAlternarTipo() {
+  const motoboy = document.getElementById('carroTipo')?.value === 'Motoboy';
+  const lbl = document.getElementById('carroQtdLabel'); if (lbl) lbl.textContent = motoboy ? 'Nº de volumes/entregas *' : 'Nº passageiros *';
+}
+function carroDatasRecorrencia(inicio, fim, dias) {
+  const out = []; const d = new Date(inicio + 'T00:00'); const f = new Date(fim + 'T00:00');
+  while (d <= f) { if (dias.includes(d.getDay())) out.push(fmtDate(d)); d.setDate(d.getDate() + 1); }
+  return out;
+}
+async function enviarCarroSolicitacao() {
+  const ctx = carroContexto || {};
+  const escola = !!ctx.usuario?.escola;
+  const unidade = escola ? ctx.usuario.escola : carroValorLocal('carroUnidade', 'carroUnidadeOutro');
+  const setor = escola ? 'ADM Escolar' : carroValorLocal('carroSetor', 'carroSetorOutro');
+  const dados = {
+    unidade, setor,
+    data_viagem: document.getElementById('carroData').value,
+    hora_saida: document.getElementById('carroSaida').value,
+    hora_retorno: document.getElementById('carroRetorno').value,
+    tipo_viagem: document.getElementById('carroTipo').value,
+    qtd_pessoas: parseInt(document.getElementById('carroQtd').value, 10) || 1,
+    origem: carroValorLocal('carroOrigem', 'carroOrigemOutro'),
+    destino: carroValorLocal('carroDestino', 'carroDestinoOutro'),
+    justificativa: (document.getElementById('carroJustificativa').value || '').trim(),
+  };
+  if (!dados.unidade || !dados.setor || !dados.data_viagem || !dados.hora_saida || !dados.hora_retorno || !dados.origem || !dados.destino || !dados.justificativa) { toast('⚠️ Preencha todos os campos obrigatórios.', true); return; }
+  let datas = [dados.data_viagem];
+  if (ctx.pode_recorrencia && document.getElementById('carroRecorrente')?.checked) {
+    const dias = [...document.querySelectorAll('.carro-rec-dia:checked')].map((c) => parseInt(c.value, 10));
+    const fim = document.getElementById('carroRecorrenciaAte').value;
+    if (!dias.length) { toast('⚠️ Marque pelo menos um dia da semana para repetir.', true); return; }
+    if (!fim || fim < dados.data_viagem) { toast('⚠️ Informe a data final da repetição (igual ou depois da data da viagem).', true); return; }
+    datas = carroDatasRecorrencia(dados.data_viagem, fim, dias);
+    if (!datas.length) { toast('⚠️ Nenhuma data cai nos dias marcados dentro do período.', true); return; }
+  }
+  const btn = document.getElementById('carroEnviarBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  try {
+    const r = await carroApi('criar', { ...dados, datas });
+    toast(r.criadas > 1 ? `✅ ${r.criadas} solicitações enviadas ao MarkCarro.` : '✅ Solicitação enviada ao MarkCarro.');
+    openCarroNova();
+  } catch (err) { toast('❌ ' + err.message, true); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = 'Enviar Solicitação'; } }
+}
+
 async function renderAgendaCombinadaAdmin() {
   const tbody = document.getElementById('agendaCombinadaTable');
   if (!tbody) return;

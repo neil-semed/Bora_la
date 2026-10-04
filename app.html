@@ -83,6 +83,10 @@
     .card-hover:hover { box-shadow: 0 8px 24px rgba(0,0,0,.08); transform: translateY(-2px); }
     .role-badge { font-size: 10px; letter-spacing: .04em; }
     main > header { position:sticky; top:0; z-index:45; min-height:72px; background:linear-gradient(90deg,#ffffff 0%,#f8fffc 100%); }
+    /* Título e subtítulo na mesma linha (Admin, Escola, Pedagogia, Co_Admin/administrativo, Cooperativa). */
+    body.titulo-inline main > header #pageTitle, body.titulo-inline main > header #pageSubtitle { display:inline; }
+    body.titulo-inline main > header #pageSubtitle:not(:empty)::before { content:' - '; }
+    body.titulo-inline main > header #pageTitle { white-space:nowrap; }
     @media (min-width:768px) {
       main > header { padding-top:.7rem; padding-bottom:.7rem; }
       main > header #pageTitle { font-size:1.18rem; }
@@ -336,6 +340,12 @@
           <a data-screen="agendacombinada" data-roles="admin" onclick="showScreen('agendacombinada', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
             🚐 Agenda Combinada
           </a>
+          <a data-screen="carrosolicitacoes" onclick="showScreen('carrosolicitacoes', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            🚗 Solicitações Carro
+          </a>
+          <a data-screen="carronova" onclick="showScreen('carronova', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            ➕ Nova Solicitação Carro
+          </a>
         </nav>
 
         <div class="p-3 border-t border-emerald-600">
@@ -394,6 +404,8 @@
           <a data-screen="solicitacoescoop" data-roles="agente_externo" onclick="showScreen('solicitacoescoop',this)" class="top-nav-link"><i data-lucide="bus-front" class="w-4 h-4 mr-1.5 text-emerald-600"></i>Solicitações</a>
           <a data-screen="relatorios" data-roles="admin,escola,pedagogia,agente_externo,financeiro" onclick="showScreen('relatorios',this)" class="top-nav-link"><i data-lucide="clipboard-list" class="w-4 h-4 mr-1.5 text-blue-700"></i>Relatórios</a>
           <a data-screen="agendacombinada" data-roles="admin" onclick="showScreen('agendacombinada',this)" class="top-nav-link"><i data-lucide="bus-front" class="w-4 h-4 mr-1.5 text-purple-700"></i>Agenda Combinada</a>
+          <a data-screen="carrosolicitacoes" onclick="showScreen('carrosolicitacoes',this)" class="top-nav-link"><i data-lucide="car" class="w-4 h-4 mr-1.5 text-sky-700"></i>Solicitações Carro</a>
+          <a data-screen="carronova" onclick="showScreen('carronova',this)" class="top-nav-link"><i data-lucide="circle-plus" class="w-4 h-4 mr-1.5 text-sky-700"></i>Nova Solicitação Carro</a>
         </nav>
 
         <div class="p-4 md:p-6">
@@ -618,6 +630,55 @@
                2 sistemas no mesmo dia, antes de aprovar/atribuir uma nova
                excursão. Não confirma, cancela nem atribui nada em nenhum
                dos dois - é só consulta. -->
+          <!-- SOLICITAÇÕES CARRO (MarkCarro) - lidas direto do MarkCarro, só as do e-mail logado -->
+          <section id="screen-carrosolicitacoes" class="hidden-screen">
+            <div class="bg-white rounded-xl border shadow-sm p-5">
+              <div class="flex flex-wrap items-end gap-3 mb-4">
+                <div><label class="block text-xs font-medium text-slate-500 mb-1">Data da solicitação</label><input type="date" id="carroFiltroSolicitacao" onchange="renderCarroSolicitacoes()" class="px-3 py-2 border rounded-lg text-sm" /></div>
+                <div><label class="block text-xs font-medium text-slate-500 mb-1">Data da viagem</label><div class="flex gap-1"><input type="date" id="carroFiltroData" onchange="renderCarroSolicitacoes()" class="px-3 py-2 border rounded-lg text-sm" /><button type="button" onclick="filtrarCarroHoje()" class="px-3 py-2 border rounded-lg text-sm">Hoje</button></div></div>
+                <button type="button" onclick="limparFiltrosCarro()" class="px-3 py-2 border rounded-lg text-sm">Limpar filtros</button>
+                <button type="button" onclick="openCarroSolicitacoes()" class="ml-auto px-3 py-2 border rounded-lg text-sm">⟳ Atualizar</button>
+              </div>
+              <div id="carroSolicitacoesLista"></div>
+            </div>
+          </section>
+
+          <!-- NOVA SOLICITAÇÃO CARRO (MarkCarro) - gravada direto no MarkCarro -->
+          <section id="screen-carronova" class="hidden-screen">
+            <div class="bg-white rounded-xl border shadow-sm p-5 max-w-4xl">
+              <div id="carroNovaAviso" class="hidden"></div>
+              <form id="carroNovaForm" class="hidden space-y-4" onsubmit="event.preventDefault(); enviarCarroSolicitacao();">
+                <p class="text-xs text-slate-500">Solicitante: <strong id="carroSolicitanteInfo" class="text-slate-700"></strong></p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><label class="block text-sm font-medium mb-1">Unidade *</label><select id="carroUnidade" onchange="carroAlternarOutro('carroUnidade','carroUnidadeOutroBox'); carroCarregarSetores()" class="w-full px-3 py-2 border rounded-lg text-sm"></select><div id="carroUnidadeOutroBox" class="hidden mt-2"><input id="carroUnidadeOutro" placeholder="Informe o nome da unidade" class="w-full px-3 py-2 border rounded-lg text-sm" /></div></div>
+                  <div><label class="block text-sm font-medium mb-1">Setor *</label><select id="carroSetor" onchange="carroAlternarOutro('carroSetor','carroSetorOutroBox')" class="w-full px-3 py-2 border rounded-lg text-sm"></select><div id="carroSetorOutroBox" class="hidden mt-2"><input id="carroSetorOutro" placeholder="Informe o nome do setor" class="w-full px-3 py-2 border rounded-lg text-sm" /></div></div>
+                </div>
+                <div id="carroRecorrenciaWrap" class="hidden border-t pt-3">
+                  <label class="flex items-center gap-2 text-sm font-medium"><input type="checkbox" id="carroRecorrente" onchange="document.getElementById('carroRecorrenciaBox').classList.toggle('hidden', !this.checked)" class="h-4 w-4 accent-emerald-600" /> 🔁 Repetir esta solicitação (agendamento recorrente)</label>
+                  <div id="carroRecorrenciaBox" class="hidden mt-2 space-y-3 rounded-lg border bg-slate-50 p-3">
+                    <div class="flex flex-wrap gap-3 text-sm"><label class="flex items-center gap-1"><input type="checkbox" class="carro-rec-dia h-4 w-4 accent-emerald-600" value="0" /> Dom</label><label class="flex items-center gap-1"><input type="checkbox" class="carro-rec-dia h-4 w-4 accent-emerald-600" value="1" /> Seg</label><label class="flex items-center gap-1"><input type="checkbox" class="carro-rec-dia h-4 w-4 accent-emerald-600" value="2" /> Ter</label><label class="flex items-center gap-1"><input type="checkbox" class="carro-rec-dia h-4 w-4 accent-emerald-600" value="3" /> Qua</label><label class="flex items-center gap-1"><input type="checkbox" class="carro-rec-dia h-4 w-4 accent-emerald-600" value="4" /> Qui</label><label class="flex items-center gap-1"><input type="checkbox" class="carro-rec-dia h-4 w-4 accent-emerald-600" value="5" /> Sex</label><label class="flex items-center gap-1"><input type="checkbox" class="carro-rec-dia h-4 w-4 accent-emerald-600" value="6" /> Sáb</label></div>
+                    <div><label class="block text-xs font-medium text-slate-600 mb-1">Repetir até (data final)</label><input type="date" id="carroRecorrenciaAte" class="px-3 py-2 border rounded-lg text-sm" /></div>
+                  </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div><label class="block text-sm font-medium mb-1">Data da viagem *</label><input type="date" id="carroData" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label class="block text-sm font-medium mb-1">Hora de saída *</label><input type="time" id="carroSaida" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label class="block text-sm font-medium mb-1">Hora de retorno *</label><input type="time" id="carroRetorno" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                  <div><label class="block text-sm font-medium mb-1">Tipo *</label><select id="carroTipo" onchange="carroAlternarTipo()" class="w-full px-3 py-2 border rounded-lg text-sm"><option value="Motorista">Motorista</option><option value="Motoboy">Motoboy</option></select></div>
+                  <div><label id="carroQtdLabel" class="block text-sm font-medium mb-1">Nº passageiros *</label><input type="number" id="carroQtd" min="1" value="1" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><label class="block text-sm font-medium mb-1">Origem *</label><select id="carroOrigem" onchange="carroAlternarOutro('carroOrigem','carroOrigemOutroBox')" class="w-full px-3 py-2 border rounded-lg text-sm"></select><div id="carroOrigemOutroBox" class="hidden mt-2"><input id="carroOrigemOutro" placeholder="Informe a origem" class="w-full px-3 py-2 border rounded-lg text-sm" /></div></div>
+                  <div><label class="block text-sm font-medium mb-1">Destino *</label><select id="carroDestino" onchange="carroAlternarOutro('carroDestino','carroDestinoOutroBox')" class="w-full px-3 py-2 border rounded-lg text-sm"></select><div id="carroDestinoOutroBox" class="hidden mt-2"><input id="carroDestinoOutro" placeholder="Informe o destino" class="w-full px-3 py-2 border rounded-lg text-sm" /></div></div>
+                </div>
+                <div><label class="block text-sm font-medium mb-1">Justificativa *</label><textarea id="carroJustificativa" rows="3" placeholder="Descreva o motivo da viagem" class="w-full px-3 py-2 border rounded-lg text-sm"></textarea></div>
+                <div class="text-center"><button type="submit" id="carroEnviarBtn" class="rounded-lg bg-emerald-600 px-8 py-2 text-sm font-bold text-white hover:bg-emerald-700">Enviar Solicitação</button></div>
+              </form>
+            </div>
+          </section>
+
           <section id="screen-agendacombinada" class="hidden-screen">
             <div class="bg-white rounded-xl border shadow-sm p-5">
               <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
