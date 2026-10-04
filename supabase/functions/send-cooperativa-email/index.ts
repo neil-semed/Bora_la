@@ -53,7 +53,13 @@ Deno.serve(async (req) => {
     const ehAdmin = callerProfile?.role === 'admin';
     // Cooperativa (agente_externo): só pode avisar o e-mail do setor (aceite de ATF/PCD).
     const ehCooperativa = callerProfile?.role === 'agente_externo';
-    if (!ehAdmin && !ehCooperativa) {
+    // Perfil administrativo (ex.: Co_Admin) com Agenda Mestra · editar envia como o Admin.
+    let ehOperacionalAgenda = false;
+    if (callerProfile?.role === 'operacional') {
+      const { data: pode } = await callerClient.rpc('has_access_permission', { p_screen_key: 'agenda', p_requires_edit: true });
+      ehOperacionalAgenda = pode === true;
+    }
+    if (!ehAdmin && !ehCooperativa && !ehOperacionalAgenda) {
       return json({ error: 'Somente administradores podem enviar e-mails automáticos.' }, 403);
     }
 
