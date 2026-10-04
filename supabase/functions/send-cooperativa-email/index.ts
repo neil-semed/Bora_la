@@ -52,12 +52,14 @@ Deno.serve(async (req) => {
       .from('profiles').select('role').eq('id', user.id).single();
     const ehAdmin = callerProfile?.role === 'admin';
     // Cooperativa (agente_externo): só pode avisar o e-mail do setor (aceite de ATF/PCD).
-    const ehCooperativa = callerProfile?.role === 'agente_externo';
+    // Cooperativa e Escola: só podem avisar o e-mail do setor (aceite ATF/PCD; nova solicitação).
+    const ehCooperativa = callerProfile?.role === 'agente_externo' || callerProfile?.role === 'escola';
     // Perfil administrativo (ex.: Co_Admin) com Agenda Mestra · editar envia como o Admin.
     let ehOperacionalAgenda = false;
     if (callerProfile?.role === 'operacional') {
       const { data: pode } = await callerClient.rpc('has_access_permission', { p_screen_key: 'agenda', p_requires_edit: true });
-      ehOperacionalAgenda = pode === true;
+      const { data: podeRel } = await callerClient.rpc('has_access_permission', { p_screen_key: 'relatorios', p_requires_edit: true });
+      ehOperacionalAgenda = pode === true || podeRel === true;
     }
     if (!ehAdmin && !ehCooperativa && !ehOperacionalAgenda) {
       return json({ error: 'Somente administradores podem enviar e-mails automáticos.' }, 403);
@@ -80,7 +82,7 @@ Deno.serve(async (req) => {
       const { data: settings } = await callerClient.from('app_settings').select('key,value').in('key', ['email_copia_setor', 'remetente_email']);
       const setor = new Set((settings || []).flatMap((r: { value: string }) => emails(r.value)).map((e) => e.toLowerCase()));
       if (cc.length || !to.every((e) => setor.has(e.toLowerCase()))) {
-        return json({ error: 'A cooperativa só pode enviar avisos para o e-mail do setor.' }, 403);
+        return json({ error: 'Este perfil só pode enviar avisos para o e-mail do setor.' }, 403);
       }
     }
 
