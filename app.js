@@ -59,15 +59,31 @@ let financeRequests = [];
 // aos fluxos pedagógicos específicos.
 const ACCESS_SCREEN_CATALOG = [
   { key: 'dashboard', label: 'Dashboard', editable: false },
-  { key: 'pendencias', label: 'Pendências', editable: false },
+  { key: 'pendencias', label: 'Pendências', editable: true },
   { key: 'agenda', label: 'Agenda Mestra', editable: true },
   { key: 'solicitacao', label: 'Nova Solicitação', editable: true },
-  { key: 'relatorios', label: 'Escala', editable: false },
+  { key: 'relatorios', label: 'Relatórios', editable: false },
   { key: 'validacoes', label: 'Validações pedagógicas', editable: true },
   { key: 'km', label: 'KM dos motoristas', editable: true },
   { key: 'veiculos', label: 'Veículos', editable: true },
   { key: 'motoristas', label: 'Motoristas', editable: true },
+  { key: 'cooperativas', label: 'Cooperativas', editable: true },
 ];
+
+// Relatórios por perfil: lista fixa do que faz sentido para cada perfil; o Admin
+// escolhe, entre esses, quais ficam liberados (role_screen_permissions, chave "rel:<tipo>").
+const RELATORIOS_POR_PERFIL = {
+  escola: ['solicitacoes', 'validacoes', 'atf', 'cancelamentos'],
+  pedagogia: ['escala', 'solicitacoes', 'validacoes', 'cancelamentos'],
+  motorista: ['escala', 'km'],
+  agente_externo: ['escala', 'atf', 'km', 'veiculos'],
+};
+const RELATORIO_LABELS = { escala: 'Escala de transporte', solicitacoes: 'Solicitações de viagem', validacoes: 'Validações pedagógicas', atf: 'ATF e listagens', financeiro: 'Aportes financeiros', cancelamentos: 'Cancelamentos', km: 'Quilometragem registrada', veiculos: 'Veículos' };
+function relatoriosPermitidos(role = currentUser?.role) {
+  if (role === 'admin' || role === 'operacional') return Object.keys(RELATORIO_LABELS);
+  const lista = RELATORIOS_POR_PERFIL[role] || [];
+  return lista.filter((tipo) => { const row = roleScreenPermissions.find((p) => p.role === role && p.screen_key === `rel:${tipo}`); return row ? !!row.can_view : true; });
+}
 
 let assignTargetId = null;
 let assignTargetTotalPax = 0; // total de passageiros da viagem sendo atribuída (pra checar lugares suficientes)
@@ -117,9 +133,9 @@ const ROLE_DEFAULT_SCREEN = {
 
 const ROLE_LABELS = { admin: 'Admin', escola: 'Escola', pedagogia: 'Pedagogia', motorista: 'Motorista', operacional: 'Administrativo', agente_externo: 'Agente Externo', financeiro: 'Financeiro' };
 const NATIVE_ROLE_MENU_DEFAULTS = {
-  escola: ['dashboard', 'pendencias', 'agenda', 'solicitacao', 'validacoes'],
+  escola: ['dashboard', 'pendencias', 'agenda', 'solicitacao', 'validacoes', 'relatorios'],
   pedagogia: ['dashboard', 'pendencias', 'agenda', 'validacoes', 'relatorios'],
-  motorista: ['dashboard', 'agenda', 'agendadata', 'agendageral', 'km'],
+  motorista: ['dashboard', 'agenda', 'agendadata', 'agendageral', 'km', 'relatorios'],
   agente_externo: ['pendenciascoop', 'solicitacoescoop', 'km', 'relatorios'],
   financeiro: ['financeiro'],
 };
@@ -1169,7 +1185,9 @@ function nativeRoleMenus(role) {
 }
 function nativeRoleMenuEnabled(role, key) {
   const row = roleScreenPermissions.find((p) => p.role === role && p.screen_key === key);
-  return row ? !!row.can_view : true;
+  if (row) return !!row.can_view;
+  // Relatórios só aparece para Escola/Motorista quando o Admin liberar.
+  return !(key === 'relatorios' && ['escola', 'motorista'].includes(role));
 }
 function renderNativeRoleProfiles() {
   const box = document.getElementById('nativeRoleProfilesList'); if (!box) return;
@@ -1181,13 +1199,20 @@ function renderNativeRoleProfiles() {
 function openRoleProfileModal(role) {
   editNativeRole = role;
   document.getElementById('roleProfileModalTitle').textContent = `Menus do perfil ${ROLE_LABELS[role]}`;
-  document.getElementById('roleProfilePermissionsEditor').innerHTML = nativeRoleMenus(role).map((item) => `<label class="flex items-center gap-3 rounded-lg border p-3 text-sm"><input type="checkbox" data-native-role-menu="${item.key}" ${nativeRoleMenuEnabled(role, item.key) ? 'checked' : ''}> <span>${item.label}</span></label>`).join('');
+  const relSub = (RELATORIOS_POR_PERFIL[role] || []).map((tipo) => {
+    const row = roleScreenPermissions.find((p) => p.role === role && p.screen_key === `rel:${tipo}`);
+    return `<label class="block text-xs leading-7"><input type="checkbox" data-native-role-rel="${tipo}" ${row ? (row.can_view ? 'checked' : '') : 'checked'}> ${RELATORIO_LABELS[tipo]}</label>`;
+  }).join('');
+  const relBox = relSub ? `<div class="-mt-1 mb-2 ml-7 rounded-r-lg border-l-4 border-emerald-200 bg-emerald-50 px-3 py-2"><p class="text-[11px] text-slate-500">Relatórios liberados (somente dados do próprio perfil):</p>${relSub}</div>` : '';
+  document.getElementById('roleProfilePermissionsEditor').innerHTML = nativeRoleMenus(role).map((item) => `<label class="flex items-center gap-3 rounded-lg border p-3 text-sm"><input type="checkbox" data-native-role-menu="${item.key}" ${nativeRoleMenuEnabled(role, item.key) ? 'checked' : ''}> <span>${item.label}</span></label>${item.key === 'relatorios' ? relBox : ''}`).join('');
   document.getElementById('roleProfileModal').classList.remove('hidden');
 }
 function closeRoleProfileModal() { document.getElementById('roleProfileModal').classList.add('hidden'); editNativeRole = null; }
 async function saveRoleProfilePermissions() {
   if (!editNativeRole || !sb) { toast('⚠️ Esta configuração precisa do Supabase.', true); return; }
   const rows = nativeRoleMenus(editNativeRole).map((item) => ({ role: editNativeRole, screen_key: item.key, can_view: !!document.querySelector(`[data-native-role-menu="${item.key}"]`)?.checked }));
+  if (!rows.some((row) => row.can_view)) { toast('⚠️ Mantenha ao menos uma tela visível para este perfil.', true); return; }
+  (RELATORIOS_POR_PERFIL[editNativeRole] || []).forEach((tipo) => rows.push({ role: editNativeRole, screen_key: `rel:${tipo}`, can_view: !!document.querySelector(`[data-native-role-rel="${tipo}"]`)?.checked }));
   if (!rows.some((row) => row.can_view)) { toast('⚠️ Mantenha ao menos uma tela visível para este perfil.', true); return; }
   const { error: deleteError } = await sb.from('role_screen_permissions').delete().eq('role', editNativeRole);
   if (deleteError) { toast('❌ ' + deleteError.message, true); return; }
@@ -3835,7 +3860,7 @@ function abrirValidacaoDaPendencia(id) {
 function populatePendenciasUnidadeFilter() {
   const wrap = document.getElementById('pendenciasFiltroUnidadeWrap');
   const select = document.getElementById('pendenciasFiltroUnidade');
-  const podeFiltrar = ['admin', 'pedagogia'].includes(currentUser?.role);
+  const podeFiltrar = ['admin', 'pedagogia'].includes(currentUser?.role) || (currentUser?.role === 'operacional' && canViewScreen('pendencias'));
   if (wrap) wrap.classList.toggle('hidden', !podeFiltrar);
   if (!select || !podeFiltrar) return;
   const atual = select.value;
@@ -3907,12 +3932,15 @@ async function solicitarPropostaPedagogica(id) {
 
 function renderPendencias() {
   const container = document.getElementById('pendenciasLista');
-  if (!container || !['admin', 'escola', 'pedagogia'].includes(currentUser?.role)) return;
-  const ehAdmin = currentUser.role === 'admin';
+  const ehOperacionalPend = currentUser?.role === 'operacional' && canViewScreen('pendencias');
+  if (!container || !(['admin', 'escola', 'pedagogia'].includes(currentUser?.role) || ehOperacionalPend)) return;
+  // Perfil administrativo (novo perfil): mesma fila do Admin; botões só com "editar".
+  const ehAdmin = currentUser.role === 'admin' || ehOperacionalPend;
+  const semAcoesPend = ehOperacionalPend && !canEditScreen('pendencias');
   const ehEscola = currentUser.role === 'escola';
   populatePendenciasUnidadeFilter();
   populatePendenciasPublicoFilter();
-  const unidadeFiltro = (!ehEscola && ['admin', 'pedagogia'].includes(currentUser.role))
+  const unidadeFiltro = (!ehEscola && (['admin', 'pedagogia'].includes(currentUser.role) || ehOperacionalPend))
     ? (document.getElementById('pendenciasFiltroUnidade')?.value || '') : '';
   const dataFiltro = document.getElementById('pendenciasFiltroData')?.value || '';
   const tipoFiltro = document.getElementById('pendenciasFiltroTipo')?.value || '';
@@ -3927,7 +3955,7 @@ function renderPendencias() {
   const reenvio = abertas.filter((a) => ['solicitada', 'correcoes'].includes(a.doc_status));
   const botaoAgenda = (a) => (ehAdmin || currentUser.role === 'pedagogia') ? `<button onclick="abrirAgendaDaPendencia('${a.trip_date}')" class="w-full min-w-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-700">Abrir agenda da data</button>` : '';
   const botaoValidacaoAdmin = (a) => ehAdmin ? `<button onclick="abrirValidacaoDaPendencia('${a.id}')" class="w-full min-w-0 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-bold text-violet-700 hover:bg-violet-100">Validação pedagógica</button>` : '';
-  const acoesAdmin = (a, { incluirReprovacao = false } = {}) => `<div class="grid grid-cols-2 gap-2">${botaoAgenda(a)}${botaoValidacaoAdmin(a)}${incluirReprovacao ? `<button onclick="openRejectModal('${a.id}')" class="min-w-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-100">Reprovar solicitação</button>` : ''}${a.doc_status === 'nao_enviado' ? `<button onclick="solicitarPropostaPedagogica('${a.id}')" class="min-w-0 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100">Solicitar proposta</button>` : ''}</div>`;
+  const acoesAdmin = (a, { incluirReprovacao = false } = {}) => semAcoesPend ? '' : `<div class="grid grid-cols-2 gap-2">${botaoAgenda(a)}${botaoValidacaoAdmin(a)}${incluirReprovacao ? `<button onclick="openRejectModal('${a.id}')" class="min-w-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-100">Reprovar solicitação</button>` : ''}${a.doc_status === 'nao_enviado' ? `<button onclick="solicitarPropostaPedagogica('${a.id}')" class="min-w-0 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100">Solicitar proposta</button>` : ''}</div>`;
 
   const introTitulo = document.getElementById('pendenciasIntroTitulo');
   const introTexto = document.getElementById('pendenciasIntroTexto');
@@ -3946,7 +3974,7 @@ function renderPendencias() {
       ['novas', pendenciaBloco('Novas solicitações', 'Aguardando a primeira tratativa do Admin.', novas.map((a) => pendenciaCard(a, { badge: 'Nova solicitação', tone: 'emerald', action: acoesAdmin(a, { incluirReprovacao: true }) })), '🚌', 'emerald')],
       ['validacao', pendenciaBloco('Sem validação pedagógica', 'Solicitações que ainda não receberam parecer pedagógico.', semValidacao.map((a) => pendenciaCard(a, { badge: 'Aguardando validação', tone: 'amber', action: acoesAdmin(a) })), '⏳', 'amber')],
       ['proposta', pendenciaBloco('Proposta pedagógica aguardada', 'Solicitada pelo Admin ou devolvida pela Pedagogia.', reenvio.map((a) => pendenciaCard(a, { badge: a.doc_status === 'solicitada' ? 'Solicitada à unidade' : 'Aguardando reenvio', tone: 'blue', detail: escapeHtml(a.doc_parecer_comentario || 'Aguardando proposta pedagógica da unidade.'), action: acoesAdmin(a) })), '📄', 'blue')],
-      ['listagem', pendenciaBloco('Listagens para conferência', 'Listagens enviadas pelas unidades e aguardando análise do Admin.', listagensConferencia.map((a) => pendenciaCard(a, { badge: 'Aguardando conferência', tone: 'blue', action: `<button onclick="openListagemVeiculoModal('${a.id}')" class="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700">Conferir listagem</button>` })), '👥', 'blue')],
+      ['listagem', pendenciaBloco('Listagens para conferência', 'Listagens enviadas pelas unidades e aguardando análise do Admin.', listagensConferencia.map((a) => pendenciaCard(a, { badge: 'Aguardando conferência', tone: 'blue', action: semAcoesPend ? '' : `<button onclick="openListagemVeiculoModal('${a.id}')" class="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700">Conferir listagem</button>` })), '👥', 'blue')],
       ['canceladas', pendenciaBloco('Canceladas pela unidade', 'Também chegam como notificação para o Admin e o motorista.', canceladasPelaUnidade.map((a) => pendenciaCard(a, { badge: 'Cancelada pela unidade', tone: 'red', detail: escapeHtml(a.cancel_reason || 'Sem motivo informado.') })), '🚫', 'red')],
     ];
     container.innerHTML = blocos.filter(([tipo]) => !tipoFiltro || tipoFiltro === tipo).map(([, html]) => html).join('') || '<p class="rounded-xl bg-slate-50 p-6 text-center text-sm text-slate-500">Nenhuma pendência para este filtro.</p>';
@@ -3962,7 +3990,7 @@ function renderPendencias() {
         }).map((f) => {
           const trip = agenda.find((a) => a.finance_request_id === f.id) || agenda.find((a) => a.id === f.root_excursion_id) || {};
           const itens = (f.items || []).map((i) => `${escapeHtml(i.description || 'Item')} · ${i.quantity || 0} · R$ ${Number(i.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`).join(' | ');
-          return pendenciaCard(trip, { badge: 'Aporte financeiro', tone: 'amber', detail: `R$ ${Number(f.requested_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} · ${itens}`, action: `<button onclick="showScreen('financeiro')" class="shrink-0 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-bold text-orange-700">Abrir aporte</button>` });
+          return pendenciaCard(trip, { badge: 'Aporte financeiro', tone: 'amber', detail: `R$ ${Number(f.requested_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} · ${itens}`, action: semAcoesPend ? '' : `<button onclick="showScreen('financeiro')" class="shrink-0 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-bold text-orange-700">Abrir aporte</button>` });
         });
         const empty = container.querySelector('p.rounded-xl.bg-slate-50'); if (empty && tipoFiltro === 'financeiro') empty.remove();
         container.insertAdjacentHTML('beforeend', pendenciaBloco('Aporte financeiro', 'Solicitações encaminhadas ao setor financeiro.', cards, '💲', 'amber'));
@@ -7089,6 +7117,10 @@ async function confirmSaveUnidade() {
 let editCooperativaId = null;
 
 function renderCooperativas() {
+  // Perfil administrativo: "Envio de e-mail" continua só do Admin; edição conforme o perfil.
+  const podeEditarCoop = currentUser?.role === 'admin' || (currentUser?.role === 'operacional' && canEditScreen('cooperativas'));
+  document.getElementById('cooperativasSettingsBox')?.classList.toggle('hidden', currentUser?.role !== 'admin');
+  document.getElementById('btnNovaCooperativa')?.classList.toggle('hidden', !podeEditarCoop);
   const tbody = document.getElementById('cooperativasTable');
   if (cooperativas.length === 0) {
     tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-slate-500 text-sm">Nenhuma cooperativa cadastrada</td></tr>';
@@ -7107,7 +7139,7 @@ function renderCooperativas() {
       <td class="px-4 py-3 text-sm">${c.email || '<span class="text-amber-600">sem e-mail cadastrado</span>'}</td>
       <td class="px-4 py-3 text-sm">${c.phone || '-'}</td>
       <td class="px-4 py-3 text-xs"><span class="block ${c.opera_atf === false ? 'text-slate-400' : 'text-amber-700'}">${c.opera_atf === false ? '— ATF' : '✓ ATF'}</span><span class="block ${c.opera_pcd ? 'text-violet-700' : 'text-slate-400'}">${c.opera_pcd ? '✓ PCD' : '— PCD'}</span></td>
-      <td class="px-4 py-3 text-sm whitespace-nowrap">${statusBadge}<button onclick="openCooperativaModal('${c.id}')" class="ml-2 text-xs text-emerald-600 hover:text-emerald-800">Editar</button>${toggleBtn}</td>
+      <td class="px-4 py-3 text-sm whitespace-nowrap">${statusBadge}${podeEditarCoop ? `<button onclick="openCooperativaModal('${c.id}')" class="ml-2 text-xs text-emerald-600 hover:text-emerald-800">Editar</button>${toggleBtn}` : ''}</td>
     </tr>`;
   }).join('');
 }
@@ -7217,12 +7249,19 @@ function populateUnidadeFilterSelect(selId) {
 
 function populateRelatorioFilters() {
   const tipo = document.getElementById('relTipo');
+  const role = currentUser?.role;
   if (tipo) {
-    const ocultos = currentUser?.role === 'agente_externo' ? new Set(['financeiro', 'validacoes']) : new Set();
-    Array.from(tipo.options).forEach((option) => { option.hidden = ocultos.has(option.value); option.disabled = ocultos.has(option.value); });
-    if (ocultos.has(tipo.value)) tipo.value = 'escala';
+    // Cada perfil só vê os relatórios liberados para ele (ver RELATORIOS_POR_PERFIL).
+    const permitidos = new Set(relatoriosPermitidos(role));
+    Array.from(tipo.options).forEach((option) => { const ok = permitidos.has(option.value); option.hidden = !ok; option.disabled = !ok; });
+    if (!permitidos.has(tipo.value)) tipo.value = [...permitidos][0] || 'escala';
   }
   populateUnidadeFilterSelect('relFiltroUnidade');
+  // Escola: unidade travada na própria escola. Motorista/Escola: sem filtro de motorista.
+  const relUnidade = document.getElementById('relFiltroUnidade');
+  if (relUnidade) { relUnidade.disabled = role === 'escola'; if (role === 'escola') relUnidade.value = currentUser.schoolId || ''; }
+  document.getElementById('relFiltroMotorista')?.closest('div')?.classList.toggle('hidden', ['escola', 'motorista'].includes(role));
+  if (['escola', 'motorista', 'agente_externo'].includes(role)) document.getElementById('btnNotificarViagens')?.classList.add('hidden');
   const motorista = document.getElementById('relFiltroMotorista');
   if (motorista) {
     const atual = motorista.value;
@@ -7236,7 +7275,6 @@ function populateRelatorioFilters() {
   const ehAdminRel = currentUser?.role === 'admin';
   document.getElementById('relFiltroTipoVeiculoWrap')?.classList.toggle('hidden', !ehAdminRel);
   document.getElementById('relFiltroCooperativaWrap')?.classList.toggle('hidden', !ehAdminRel);
-  if (tipo) { const opt = [...tipo.options].find((o) => o.value === 'veiculos'); if (opt) { opt.hidden = !ehAdminRel; opt.disabled = !ehAdminRel; } if (!ehAdminRel && tipo.value === 'veiculos') tipo.value = 'escala'; }
   const relCoop = document.getElementById('relFiltroCooperativa');
   if (relCoop && ehAdminRel) { const atual = relCoop.value; relCoop.innerHTML = '<option value="">Todas</option>' + cooperativas.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join(''); relCoop.value = atual; }
   const podeEnviar = currentUser?.role === 'admin';
@@ -7549,8 +7587,10 @@ async function relatorioLinhas() {
     const tipoLabel = { van: 'Van', 'micro-onibus': 'Micro-ônibus', onibus: 'Ônibus' };
     const hojeRel = fmtDate(new Date());
     const linhas = [];
+    const coopAtual = currentUser?.role === 'agente_externo' ? currentUser.cooperativaId : '';
     vehicles.filter((v) => v.active !== false && (!tipoVeic || v.type === tipoVeic)).forEach((v) => {
-      const mots = drivers.filter((d) => d.vehicle_id === v.id && d.active !== false);
+      const mots = drivers.filter((d) => d.vehicle_id === v.id && d.active !== false && (!coopAtual || driverBelongsToCooperativa(d, coopAtual)));
+      if (coopAtual && !mots.length) return;
       (mots.length ? mots : [null]).forEach((d) => {
         if (motoristaRel && d?.id !== motoristaRel) return;
         const coopId = d ? driverCooperativaId(d) : (cooperativas.some((c) => c.id === v.cooperative) ? v.cooperative : cooperativas.find((c) => String(c.name).toLowerCase() === String(v.cooperative || '').toLowerCase())?.id);
@@ -7564,7 +7604,8 @@ async function relatorioLinhas() {
   if (tipo === 'km') {
     const inicio = document.getElementById('relFiltroInicio')?.value || '', fim = document.getElementById('relFiltroFim')?.value || '', motorista = document.getElementById('relFiltroMotorista')?.value || '';
     const cooperativaId = currentUser?.role === 'agente_externo' ? currentUser.cooperativaId : '';
-    return (kmLogs || []).filter((k) => (!cooperativaId || driverBelongsToCooperativa(k.driver_id, cooperativaId)) && (!inicio || k.log_date >= inicio) && (!fim || k.log_date <= fim) && (!motorista || k.driver_id === motorista)).map((k) => ({ Data: k.log_date ? new Date(`${k.log_date}T00:00`).toLocaleDateString('pt-BR') : '-', Motorista: drivers.find((d) => d.id === k.driver_id)?.name || '-', Veículo: driverVehicle(k.driver_id)?.plate || '-', 'Odômetro inicial': k.odometer_start ?? '-', 'Odômetro final': k.odometer_end ?? '-', 'KM rodado': k.km_rodado ?? '-', Observações: k.observacoes || '-' }));
+    const proprioMotorista = currentUser?.role === 'motorista' ? currentUser.driverId : '';
+    return (kmLogs || []).filter((k) => (!cooperativaId || driverBelongsToCooperativa(k.driver_id, cooperativaId)) && (!proprioMotorista || k.driver_id === proprioMotorista) && (!inicio || k.log_date >= inicio) && (!fim || k.log_date <= fim) && (!motorista || k.driver_id === motorista)).map((k) => ({ Data: k.log_date ? new Date(`${k.log_date}T00:00`).toLocaleDateString('pt-BR') : '-', Motorista: drivers.find((d) => d.id === k.driver_id)?.name || '-', Veículo: driverVehicle(k.driver_id)?.plate || '-', 'Odômetro inicial': k.odometer_start ?? '-', 'Odômetro final': k.odometer_end ?? '-', 'KM rodado': k.km_rodado ?? '-', Observações: k.observacoes || '-' }));
   }
   return [];
 }
