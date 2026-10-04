@@ -82,6 +82,15 @@
     .card-hover { transition: box-shadow .15s ease, transform .15s ease; }
     .card-hover:hover { box-shadow: 0 8px 24px rgba(0,0,0,.08); transform: translateY(-2px); }
     .role-badge { font-size: 10px; letter-spacing: .04em; }
+    /* Solicitações Carro: mesmos selos e botões do MarkCarro */
+    .mc-badge { display:inline-flex; align-items:center; padding:.125rem .625rem; border-radius:9999px; font-size:.75rem; font-weight:600; border:1px solid; }
+    .mc-pendente { background:#fffbeb; color:#b45309; border-color:#fde68a; } .mc-confirmada { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
+    .mc-cancelada { background:#fff1f2; color:#be123c; border-color:#fecdd3; } .mc-em-analise { background:#f0f9ff; color:#0369a1; border-color:#bae6fd; }
+    .mc-ocupado { background:#f1f5f9; color:#334155; border-color:#e2e8f0; } .mc-desprezado { background:#f8fafc; color:#64748b; border-color:#e2e8f0; }
+    .mc-editado { background:#fff7ed; color:#c2410c; border-color:#fed7aa; } .mc-motoboy { background:#ffedd5; color:#9a3412; border-color:#fdba74; font-weight:700; }
+    .mc-btn-editar { background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; border-radius:.5rem; padding:.375rem .625rem; font-size:.75rem; font-weight:600; white-space:nowrap; }
+    .mc-btn-cancelar { background:#ef4444; color:#fff; border-radius:.5rem; padding:.375rem .625rem; font-size:.75rem; font-weight:600; white-space:nowrap; }
+    .mc-btn-cancelar:hover { background:#dc2626; } .mc-btn-editar:hover { background:#bae6fd; }
     main > header { position:sticky; top:0; z-index:45; min-height:72px; background:linear-gradient(90deg,#ffffff 0%,#f8fffc 100%); }
     /* Título e subtítulo na mesma linha (Admin, Escola, Pedagogia, Co_Admin/administrativo, Cooperativa). */
     body.titulo-inline main > header #pageTitle, body.titulo-inline main > header #pageSubtitle { display:inline; }
@@ -630,14 +639,19 @@
                2 sistemas no mesmo dia, antes de aprovar/atribuir uma nova
                excursão. Não confirma, cancela nem atribui nada em nenhum
                dos dois - é só consulta. -->
-          <!-- SOLICITAÇÕES CARRO (MarkCarro) - lidas direto do MarkCarro, só as do e-mail logado -->
+          <!-- SOLICITAÇÕES CARRO (MarkCarro) - igual a "Minhas Solicitações" do MarkCarro; só as do e-mail logado -->
           <section id="screen-carrosolicitacoes" class="hidden-screen">
-            <div class="bg-white rounded-xl border shadow-sm p-5">
-              <div class="flex flex-wrap items-end gap-3 mb-4">
-                <div><label class="block text-xs font-medium text-slate-500 mb-1">Data da solicitação</label><input type="date" id="carroFiltroSolicitacao" autocomplete="off" onchange="renderCarroSolicitacoes()" class="px-3 py-2 border rounded-lg text-sm" /></div>
-                <div><label class="block text-xs font-medium text-slate-500 mb-1">Data da viagem</label><div class="flex gap-1"><input type="date" id="carroFiltroData" autocomplete="off" onchange="renderCarroSolicitacoes()" class="px-3 py-2 border rounded-lg text-sm" /><button type="button" onclick="filtrarCarroHoje()" class="px-3 py-2 border rounded-lg text-sm">Hoje</button></div></div>
-                <button type="button" onclick="limparFiltrosCarro()" class="px-3 py-2 border rounded-lg text-sm">Limpar filtros</button>
-                <button type="button" onclick="openCarroSolicitacoes()" class="ml-auto px-3 py-2 border rounded-lg text-sm">⟳ Atualizar</button>
+            <div class="bg-white rounded-xl border shadow-sm p-4 sm:p-6">
+              <h2 class="text-base font-semibold text-slate-900 flex items-center gap-2 mb-4"><span class="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0" aria-hidden="true">📅</span> Minhas Solicitações</h2>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+                <div><label class="block text-xs font-medium text-slate-500 mb-1">Data Solic.</label><input type="date" id="carroFiltroSolicitacao" autocomplete="off" onchange="renderCarroSolicitacoes()" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                <div><label class="block text-xs font-medium text-slate-500 mb-1">Data Viagem</label><input type="date" id="carroFiltroData" autocomplete="off" onchange="renderCarroSolicitacoes()" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                <div class="col-span-2 sm:col-span-1"><label class="block text-xs font-medium text-slate-500 mb-1">Origem/Destino</label><input type="text" id="carroFiltroTrajeto" autocomplete="off" placeholder="Buscar..." oninput="renderCarroSolicitacoes()" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+              </div>
+              <div class="flex flex-wrap items-center gap-2 mb-4">
+                <button type="button" onclick="filtrarCarroHoje()" class="px-3 py-2 border rounded-lg text-sm font-semibold">Hoje</button>
+                <button type="button" onclick="limparFiltrosCarro()" class="px-3 py-2 border rounded-lg text-sm font-semibold">Limpar Filtros</button>
+                <div id="carroSetorCards" class="hidden ml-auto flex flex-wrap items-center gap-2"><span class="text-xs font-semibold text-slate-600">Meu setor</span><div class="rounded-lg border bg-white px-2 py-1" style="border-left:4px solid #044AAA;min-width:92px"><p class="text-base font-bold leading-tight" style="color:#044AAA" id="carroSetorTotal">0</p><p class="text-[11px] text-slate-500">Total do setor</p></div><div class="rounded-lg border bg-white px-2 py-1" style="border-left:4px solid #FF914D;min-width:92px"><p class="text-base font-bold leading-tight" style="color:#FF914D" id="carroSetorPendentes">0</p><p class="text-[11px] text-slate-500">Pendentes</p></div><div class="rounded-lg border bg-white px-2 py-1" style="border-left:4px solid #46BE6B;min-width:92px"><p class="text-base font-bold leading-tight" style="color:#46BE6B" id="carroSetorAprovadas">0</p><p class="text-[11px] text-slate-500">Aprovadas</p></div><div class="rounded-lg border bg-white px-2 py-1" style="border-left:4px solid #7c3aed;min-width:92px"><p class="text-base font-bold leading-tight" style="color:#7c3aed" id="carroSetorOcupadas">0</p><p class="text-[11px] text-slate-500">Ocupadas</p></div><div class="rounded-lg border bg-white px-2 py-1" style="border-left:4px solid #D85736;min-width:92px"><p class="text-base font-bold leading-tight" style="color:#D85736" id="carroSetorCanceladas">0</p><p class="text-[11px] text-slate-500">Canceladas</p></div></div>
               </div>
               <div id="carroSolicitacoesLista"></div>
             </div>

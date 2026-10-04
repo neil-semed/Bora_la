@@ -3882,9 +3882,8 @@ async function carroCarregarContexto(forcar = false) {
 }
 function carroDataBR(d) { return d ? new Date(String(d).slice(0, 10) + 'T00:00').toLocaleDateString('pt-BR') : '-'; }
 function carroStatusBadge(st) {
-  const cores = { Pendente: 'bg-amber-100 text-amber-800', 'Em Análise': 'bg-sky-100 text-sky-800', Confirmada: 'bg-emerald-100 text-emerald-800', Ocupado: 'bg-orange-100 text-orange-800', Cancelada: 'bg-red-100 text-red-700', Desprezado: 'bg-slate-200 text-slate-600' };
-  const label = st === 'Desprezado' ? 'Cancelada pelo solicitante' : (st || 'Pendente');
-  return `<span class="rounded-full px-2 py-0.5 text-xs font-bold ${cores[st] || cores.Pendente}">${escapeHtml(label)}</span>`;
+  const cls = { Confirmada: 'mc-confirmada', Cancelada: 'mc-cancelada', 'Em Análise': 'mc-em-analise', Ocupado: 'mc-ocupado', Desprezado: 'mc-desprezado' }[st] || 'mc-pendente';
+  return `<span class="mc-badge ${cls}">${escapeHtml(st || 'Pendente')}</span>`;
 }
 function carroDescreverCondutor(email) {
   const c = carroCondutores[String(email || '').toLowerCase()];
@@ -3896,60 +3895,146 @@ function carroCondutorTexto(s) {
   if (s.status !== 'Confirmada') return 'Aguardando confirmação do gestor';
   const ida = s.condutor_ida || '', volta = s.condutor_volta || '';
   if (!ida && !volta) return 'Condutor ainda não atribuído';
-  if (ida && volta && ida === volta) return `Ida e volta: ${carroDescreverCondutor(ida)}`;
+  if (ida && volta && ida === volta) return `Ida e Volta: ${carroDescreverCondutor(ida)}`;
   return [ida ? `Ida: ${carroDescreverCondutor(ida)}` : '', volta ? `Volta: ${carroDescreverCondutor(volta)}` : ''].filter(Boolean).join('<br>');
 }
-// Mesma regra do MarkCarro: cancela até 30 minutos antes da saída.
+// Mesmas regras do MarkCarro: cancela até 30 min antes da saída; edita sem motorista e até 12h antes.
+function carroSaida(s) { const d = new Date(`${s.data_viagem}T${String(s.hora_saida || '').slice(0, 5)}:00`); return isNaN(d.getTime()) ? null : d; }
 function carroPodeCancelar(s) {
   if (['Cancelada', 'Desprezado'].includes(s.status)) return false;
   if (!s.data_viagem || !s.hora_saida) return true;
-  const saida = new Date(`${s.data_viagem}T${String(s.hora_saida).slice(0, 5)}:00`);
-  return isNaN(saida.getTime()) || (saida.getTime() - Date.now()) > 30 * 60 * 1000;
+  const saida = carroSaida(s);
+  return !saida || (saida.getTime() - Date.now()) > 30 * 60 * 1000;
 }
+function carroMotivoNaoEditavel(s) {
+  if (s.condutor_ida || s.condutor_volta) return 'Já há motorista atribuído a esta viagem - não é possível editar.';
+  const saida = s.data_viagem && s.hora_saida ? carroSaida(s) : null;
+  if (saida && (saida.getTime() - Date.now()) <= 12 * 60 * 60 * 1000) return 'Faltam menos de 12h para o horário de saída - não é mais possível editar.';
+  return null;
+}
+function carroPodeEditar(s) { return !['Cancelada', 'Desprezado'].includes(s.status) && !carroMotivoNaoEditavel(s); }
+function carroHora(t) { return t ? String(t).slice(0, 5) : ''; }
 async function openCarroSolicitacoes() {
   const box = document.getElementById('carroSolicitacoesLista');
   if (!box) return;
-  ['carroFiltroData', 'carroFiltroSolicitacao'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
-  box.innerHTML = '<p class="p-6 text-center text-sm text-slate-500">Carregando solicitações do MarkCarro…</p>';
+  ['carroFiltroData', 'carroFiltroSolicitacao', 'carroFiltroTrajeto'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+  box.innerHTML = '<p class="py-8 text-center text-sm text-slate-500">Carregando...</p>';
   try {
     const r = await carroApi('listar');
     carroSolicitacoes = r.solicitacoes || [];
+    carroLocais = r.locais || [];
     carroCondutores = {};
     (r.condutores || []).forEach((c) => { carroCondutores[String(c.email || '').toLowerCase()] = c; });
+    const st = r.setor;
+    document.getElementById('carroSetorCards')?.classList.toggle('hidden', !st);
+    if (st) [['Total', st.total], ['Pendentes', st.pendentes], ['Aprovadas', st.aprovadas], ['Ocupadas', st.ocupadas], ['Canceladas', st.canceladas]].forEach(([k, v]) => { const el = document.getElementById('carroSetor' + k); if (el) el.textContent = v || 0; });
     renderCarroSolicitacoes();
   } catch (err) {
     box.innerHTML = `<p class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">⚠️ ${escapeHtml(err.message)}</p>`;
   }
 }
 function filtrarCarroHoje() { const el = document.getElementById('carroFiltroData'); if (el) el.value = fmtDate(new Date()); renderCarroSolicitacoes(); }
-function limparFiltrosCarro() { ['carroFiltroData', 'carroFiltroSolicitacao'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; }); renderCarroSolicitacoes(); }
+function limparFiltrosCarro() { ['carroFiltroData', 'carroFiltroSolicitacao', 'carroFiltroTrajeto'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; }); renderCarroSolicitacoes(); }
+function carroLinha(s) {
+  const motivo = !['Cancelada', 'Desprezado'].includes(s.status) ? carroMotivoNaoEditavel(s) : null;
+  const editado = s.editado_pelo_solicitante && ['Pendente', 'Em Análise', '', null, undefined].includes(s.status);
+  const botoes = `${carroPodeEditar(s) ? `<button class="mc-btn-editar" onclick="abrirEdicaoCarro('${s.id}')">Editar</button>` : ''}${carroPodeCancelar(s) ? `<button class="mc-btn-cancelar" onclick="cancelarCarroSolicitacao('${s.id}')">Cancelar</button>` : ''}`;
+  return { motivo, editado, botoes };
+}
 function renderCarroSolicitacoes() {
   const box = document.getElementById('carroSolicitacoesLista');
   if (!box) return;
   const dataViagem = document.getElementById('carroFiltroData')?.value || '';
   const dataSolic = document.getElementById('carroFiltroSolicitacao')?.value || '';
-  const rows = carroSolicitacoes.filter((s) => (!dataViagem || s.data_viagem === dataViagem) && (!dataSolic || String(s.data_solicitacao || '').slice(0, 10) === dataSolic))
-    .sort((a, b) => `${b.data_viagem}${b.hora_saida}`.localeCompare(`${a.data_viagem}${a.hora_saida}`));
-  if (!rows.length) { box.innerHTML = '<p class="p-6 text-center text-sm text-slate-500">Nenhuma solicitação encontrada.</p>'; return; }
-  box.innerHTML = `<div class="overflow-x-auto"><table class="w-full min-w-[900px] text-left text-sm"><thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="px-3 py-2">Solicitado em</th><th class="px-3 py-2">Data viagem</th><th class="px-3 py-2">Horário</th><th class="px-3 py-2">Trajeto</th><th class="px-3 py-2">Justificativa</th><th class="px-3 py-2">Status</th><th class="px-3 py-2">Condutor</th><th class="px-3 py-2">Ações</th></tr></thead><tbody class="divide-y">${rows.map((s) => `<tr class="align-top">
-    <td class="px-3 py-2 text-xs text-slate-500">${s.data_solicitacao ? new Date(s.data_solicitacao).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</td>
-    <td class="px-3 py-2 font-semibold">${carroDataBR(s.data_viagem)}</td>
-    <td class="px-3 py-2 whitespace-nowrap">${horaComH(s.hora_saida)} → ${horaComH(s.hora_retorno)}</td>
-    <td class="px-3 py-2">${escapeHtml(s.origem || '-')} <span class="text-slate-400">→</span> ${escapeHtml(s.destino || '-')}<div class="text-xs text-slate-500">${escapeHtml(s.tipo_viagem || '')}${s.qtd_pessoas ? ` · ${s.qtd_pessoas}` : ''}</div></td>
-    <td class="px-3 py-2 text-xs">${escapeHtml(s.justificativa || '')}</td>
-    <td class="px-3 py-2">${carroStatusBadge(s.status)}</td>
-    <td class="px-3 py-2 text-xs">${carroCondutorTexto(s)}</td>
-    <td class="px-3 py-2">${carroPodeCancelar(s) ? `<button onclick="cancelarCarroSolicitacao('${s.id}')" class="text-xs font-bold text-red-600 hover:text-red-800">🚫 Cancelar</button>` : ''}</td>
-  </tr>`).join('')}</tbody></table></div>`;
+  const trajeto = (document.getElementById('carroFiltroTrajeto')?.value || '').trim().toLowerCase();
+  const rows = carroSolicitacoes.filter((s) => (!dataViagem || s.data_viagem === dataViagem)
+    && (!dataSolic || String(s.data_solicitacao || '').slice(0, 10) === dataSolic)
+    && (!trajeto || `${s.origem || ''} ${s.destino || ''}`.toLowerCase().includes(trajeto)));
+  if (!rows.length) { box.innerHTML = '<p class="py-8 text-center text-sm text-slate-500">Nenhuma solicitação</p>'; return; }
+  // Ordem do MarkCarro: hoje, futuras e, após o separador, as passadas (mais recente primeiro).
+  const ord = [...rows].sort((a, b) => `${a.data_viagem || ''}${a.hora_saida || ''}`.localeCompare(`${b.data_viagem || ''}${b.hora_saida || ''}`));
+  const hoje = fmtDate(new Date());
+  const atuais = ord.filter((s) => (s.data_viagem || '') >= hoje);
+  const passadas = ord.filter((s) => (s.data_viagem || '') < hoje).reverse();
+  const td = 'px-3 py-3 border-b border-slate-100 align-middle';
+  const linha = (s) => { const x = carroLinha(s); return `<tr>
+    <td class="${td}">${s.data_solicitacao ? new Date(s.data_solicitacao).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', '') : '-'}</td>
+    <td class="${td}">${carroDataBR(s.data_viagem)}</td>
+    <td class="${td} whitespace-nowrap">${carroHora(s.hora_saida)} - ${carroHora(s.hora_retorno)}</td>
+    <td class="${td}" style="max-width:200px;overflow-wrap:break-word">${escapeHtml(s.origem || '')} → ${escapeHtml(s.destino || '')}</td>
+    <td class="${td}" style="max-width:200px;overflow-wrap:break-word">${escapeHtml(s.justificativa || '')}</td>
+    <td class="${td}">${carroStatusBadge(s.status)} ${s.tipo_viagem === 'Motoboy' ? '<span class="mc-badge mc-motoboy">🏍️ Motoboy</span>' : ''} ${x.editado ? '<span class="mc-badge mc-editado">Editado</span>' : ''}</td>
+    <td class="${td}" style="max-width:170px;overflow-wrap:break-word">${carroCondutorTexto(s)}</td>
+    <td class="${td}" style="max-width:150px"><div class="flex flex-wrap gap-1">${x.botoes}</div>${x.motivo ? `<div class="text-[11px] text-slate-400 mt-1 italic">${escapeHtml(x.motivo)}</div>` : ''}</td>
+  </tr>`; };
+  const card = (s) => { const x = carroLinha(s); return `<div class="rounded-xl border border-l-4 bg-white p-3 shadow-sm ${s.tipo_viagem === 'Motoboy' ? 'border-l-orange-500' : 'border-l-blue-500'}">
+    <div class="flex items-start justify-between gap-2"><div><p class="text-lg font-bold">${carroHora(s.hora_saida)}${s.hora_retorno ? ` <span class="text-slate-300">–</span> ${carroHora(s.hora_retorno)}` : ''}</p><p class="text-sm text-slate-600">${carroDataBR(s.data_viagem)}</p></div>${carroStatusBadge(s.status)}</div>
+    ${s.tipo_viagem === 'Motoboy' ? '<span class="mt-2 inline-block rounded-md bg-orange-600 px-2.5 py-1 text-[11px] font-bold uppercase text-white">🏍️ Motoboy</span>' : ''}${x.editado ? ' <span class="mc-badge mc-editado mt-1">Editado</span>' : ''}
+    <p class="mt-2 text-sm"><span class="text-xs text-slate-400">Origem</span><br>${escapeHtml(s.origem || '—')}</p>
+    <p class="mt-1 text-sm"><span class="text-xs text-slate-400">Destino</span><br>${escapeHtml(s.destino || '—')}</p>
+    ${s.justificativa ? `<p class="mt-1 text-sm italic text-slate-600">${escapeHtml(s.justificativa)}</p>` : ''}
+    <p class="mt-1 text-xs text-slate-600">🚗 ${carroCondutorTexto(s)}</p>
+    ${x.botoes ? `<div class="mt-3 flex gap-2">${x.botoes}</div>` : ''}${x.motivo ? `<p class="mt-1 text-xs italic text-slate-400">${escapeHtml(x.motivo)}</p>` : ''}
+  </div>`; };
+  const sepTabela = '<tr><td colspan="8" class="py-2 px-3"><hr class="border-slate-200"><p class="text-[11px] text-slate-400 mt-1">Agendas passadas</p></td></tr>';
+  const sepCard = '<div><hr class="border-slate-200"><p class="text-[11px] text-slate-400 mt-1">Agendas passadas</p></div>';
+  const th = 'px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-50 border-b';
+  box.innerHTML = `<div class="hidden md:block overflow-x-auto rounded-xl border"><table class="w-full text-sm" style="border-collapse:collapse"><thead><tr><th class="${th}">Solicitado em</th><th class="${th}">Data Viagem</th><th class="${th}">Horário</th><th class="${th}">Trajeto</th><th class="${th}">Justificativa</th><th class="${th}">Status</th><th class="${th}">Condutor</th><th class="${th}">Ações</th></tr></thead><tbody>${atuais.map(linha).join('')}${passadas.length ? sepTabela + passadas.map(linha).join('') : ''}</tbody></table></div>
+    <div class="md:hidden space-y-3">${atuais.map(card).join('')}${passadas.length ? sepCard + passadas.map(card).join('') : ''}</div>`;
 }
 async function cancelarCarroSolicitacao(id) {
   const s = carroSolicitacoes.find((x) => String(x.id) === String(id));
   if (!s) return;
   if (!carroPodeCancelar(s)) { toast('⚠️ Não é mais possível cancelar: faltam menos de 30 minutos para a saída.', true); return; }
-  if (!window.confirm(`Cancelar a solicitação de ${carroDataBR(s.data_viagem)} (${s.origem || '-'} → ${s.destino || '-'})?`)) return;
+  if (!window.confirm('Cancelar esta solicitação?')) return;
   try {
     await carroApi('cancelar', { id });
-    toast('✅ Solicitação cancelada no MarkCarro.');
+    toast('✅ Solicitação cancelada');
+    openCarroSolicitacoes();
+  } catch (err) { toast('❌ ' + err.message, true); }
+}
+let carroLocais = [];
+function abrirEdicaoCarro(id) {
+  const s = carroSolicitacoes.find((x) => String(x.id) === String(id));
+  if (!s) return;
+  if (!carroPodeEditar(s)) { toast('⚠️ ' + (carroMotivoNaoEditavel(s) || 'Não é mais possível editar: esta solicitação já foi decidida.'), true); return; }
+  const opcoes = (valor) => { const naLista = carroLocais.includes(valor); return `<option value="">Selecione...</option>${carroLocais.map((l) => `<option value="${escapeHtml(l)}" ${l === valor ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('')}<option value="Outro" ${valor && !naLista ? 'selected' : ''}>Outro</option>`; };
+  const outro = (valor) => valor && !carroLocais.includes(valor);
+  const campo = 'w-full px-3 py-2 border rounded-lg text-sm';
+  const wrap = document.createElement('div');
+  wrap.id = 'carroEdicaoModal';
+  wrap.className = 'fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4';
+  wrap.innerHTML = `<div class="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto">
+    <h4 class="text-base font-bold text-slate-900 mb-3">Editar Solicitação</h4>
+    <div class="space-y-3 text-sm">
+      <div class="grid grid-cols-2 gap-3"><label class="block text-xs font-medium text-slate-700">Hora de Saída<input type="time" id="carroEdSaida" value="${carroHora(s.hora_saida)}" class="${campo} mt-1"></label><label class="block text-xs font-medium text-slate-700">Hora de Retorno<input type="time" id="carroEdRetorno" value="${carroHora(s.hora_retorno)}" class="${campo} mt-1"></label></div>
+      <label class="block text-xs font-medium text-slate-700">Origem<select id="carroEdOrigem" onchange="carroAlternarOutro('carroEdOrigem','carroEdOrigemBox')" class="${campo} mt-1">${opcoes(s.origem)}</select></label>
+      <div id="carroEdOrigemBox" class="${outro(s.origem) ? '' : 'hidden'}"><input id="carroEdOrigemOutro" value="${outro(s.origem) ? escapeHtml(s.origem) : ''}" placeholder="Informe a origem" class="${campo}"></div>
+      <label class="block text-xs font-medium text-slate-700">Destino<select id="carroEdDestino" onchange="carroAlternarOutro('carroEdDestino','carroEdDestinoBox')" class="${campo} mt-1">${opcoes(s.destino)}</select></label>
+      <div id="carroEdDestinoBox" class="${outro(s.destino) ? '' : 'hidden'}"><input id="carroEdDestinoOutro" value="${outro(s.destino) ? escapeHtml(s.destino) : ''}" placeholder="Informe o destino" class="${campo}"></div>
+      <label class="block text-xs font-medium text-slate-700">${s.tipo_viagem === 'Motoboy' ? 'Nº de volumes/entregas' : 'Nº Passageiros'}<input type="number" min="1" id="carroEdQtd" value="${s.qtd_pessoas || 1}" class="${campo} mt-1"></label>
+      <label class="block text-xs font-medium text-slate-700">Justificativa<textarea id="carroEdJust" rows="3" class="${campo} mt-1">${escapeHtml(s.justificativa || '')}</textarea></label>
+      <p class="text-xs text-slate-500">Edição disponível só até 12h antes do horário de saída, e somente enquanto nenhum motorista tiver sido atribuído.</p>
+    </div>
+    <div class="mt-4 flex justify-end gap-2"><button type="button" onclick="document.getElementById('carroEdicaoModal').remove()" class="rounded-lg border px-4 py-2 text-sm font-semibold">Cancelar</button><button type="button" onclick="salvarEdicaoCarro('${s.id}')" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white">Salvar</button></div>
+  </div>`;
+  document.body.appendChild(wrap);
+}
+async function salvarEdicaoCarro(id) {
+  const dados = {
+    id,
+    hora_saida: document.getElementById('carroEdSaida').value,
+    hora_retorno: document.getElementById('carroEdRetorno').value,
+    origem: carroValorLocal('carroEdOrigem', 'carroEdOrigemOutro'),
+    destino: carroValorLocal('carroEdDestino', 'carroEdDestinoOutro'),
+    qtd_pessoas: parseInt(document.getElementById('carroEdQtd').value, 10) || 1,
+    justificativa: (document.getElementById('carroEdJust').value || '').trim(),
+  };
+  if (!dados.hora_saida || !dados.origem || !dados.destino || !dados.justificativa) { toast('⚠️ Preencha hora de saída, origem, destino e justificativa.', true); return; }
+  try {
+    await carroApi('editar', dados);
+    document.getElementById('carroEdicaoModal')?.remove();
+    toast('✅ Solicitação atualizada.');
     openCarroSolicitacoes();
   } catch (err) { toast('❌ ' + err.message, true); }
 }
