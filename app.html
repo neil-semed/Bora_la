@@ -145,18 +145,6 @@
     .dashboard-chart { height: 185px; }
     /* Admin › Dashboard: 80% (cards + gráficos) | 20% (ranking); cards menores. */
     @media (min-width: 1024px) { body.dash-admin #dashMainGrid { display:grid; grid-template-columns:4fr 1fr; gap:12px; align-items:start; } }
-    /* Pedagogia › Dashboard: 80% (cards 2 a 2 + gráficos maiores) | 20% (ranking). */
-    @media (min-width: 1024px) {
-      body.dash-ped #dashMainGrid { display:grid; grid-template-columns:4fr 1fr; gap:12px; align-items:start; }
-      body.dash-ped #dashMainLeft { display:grid; grid-template-columns:1fr 3fr; gap:10px; align-items:start; }
-    }
-    body.dash-ped #dashStatsGrid { grid-template-columns:1fr 1fr; gap:.3rem; }
-    body.dash-ped #dashStatsGrid > div { padding:.3rem .45rem; }
-    body.dash-ped #dashStatsGrid .text-xl { font-size:1rem; line-height:1.25rem; }
-    body.dash-ped #dashStatsGrid .text-xs { font-size:.62rem; margin-bottom:.05rem; }
-    body.dash-ped .dashboard-chart { height:210px; }
-    body.dash-ped.pedagogia-compact canvas { max-height:none; }
-    body.dash-ped #dashChartsBox #dashboardPedagogiaCharts { margin-top:.75rem; margin-bottom:0; }
     @media (min-width: 1024px) { body.dash-admin #dashProximasGrid { display:grid; grid-template-columns:4fr 1fr; gap:12px; align-items:start; } }
     body.dash-admin #dashStatsGrid { grid-template-columns:repeat(auto-fit,minmax(92px,1fr)); gap:.35rem; }
     body.dash-admin #dashStatsGrid > div { padding:.35rem .5rem; }

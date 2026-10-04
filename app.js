@@ -2702,27 +2702,10 @@ function renderDashboard() {
 
   // Admin: cards de ATF/PCD e ranking Top 15 de viagens realizadas (mesmos filtros do dashboard).
   const ehAdminDash = currentUser?.role === 'admin';
-  const ehPedDash = currentUser?.role === 'pedagogia';
   document.body.classList.toggle('dash-admin', ehAdminDash);
-  document.body.classList.toggle('dash-ped', ehPedDash);
-  // Pedagogia: os gráficos de público-alvo/top 7 ficam dentro da área central de gráficos.
-  const pedCharts = document.getElementById('dashboardPedagogiaCharts');
-  const chartsBox = document.getElementById('dashChartsBox');
-  if (ehPedDash && pedCharts && chartsBox && pedCharts.parentElement !== chartsBox) chartsBox.appendChild(pedCharts);
   document.querySelectorAll('.dash-admin-card').forEach((el) => el.classList.toggle('hidden', !ehAdminDash));
-  document.getElementById('dashRanking')?.classList.toggle('hidden', !(ehAdminDash || ehPedDash));
+  document.getElementById('dashRanking')?.classList.toggle('hidden', !ehAdminDash);
   if (!ehAdminDash) document.getElementById('dashPublicoAlvoBox')?.classList.add('hidden');
-  if (ehPedDash) {
-    const realizadasPed = visible.filter((a) => !['cancelada', 'reprovada'].includes(a.situacao)
-      && (a.status === 'completed' || (['approved', 'in_transit'].includes(a.status) && (a.trip_date || '') < hoje)));
-    const porUnidadePed = {};
-    realizadasPed.forEach((a) => { const nome = a.school_id ? schoolName(a.school_id) : originName(a); porUnidadePed[nome] = (porUnidadePed[nome] || 0) + 1; });
-    const topPed = Object.entries(porUnidadePed).sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0], 'pt-BR')).slice(0, 15);
-    const listaPed = document.getElementById('dashRankingLista');
-    if (listaPed) listaPed.innerHTML = topPed.length
-      ? topPed.map(([nome, n]) => `<li class="py-0.5"><span class="flex justify-between gap-2"><span class="truncate">${escapeHtml(nome)}</span><b>${n}</b></span></li>`).join('')
-      : '<li class="list-none -ml-5 text-slate-400">Nenhuma viagem realizada no período.</li>';
-  }
   if (ehAdminDash) {
     const setStat = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     setStat('statAtfEmitidas', visible.filter((a) => a.atf_status === 'emitida').length);
