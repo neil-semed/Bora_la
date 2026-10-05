@@ -43,9 +43,11 @@ let notificacaoViagensOrigensSelecionadas = new Set();
 let ultimoErroEnvioAutomatico = '';
 let notifications = [];
 let unreadNotificationsSeen = null;
-// Áudio curto gravado para o Bora Lá. Instanciado uma única vez para evitar
-// sobreposição de alertas quando mais de uma notificação chega junta.
-let notificationAudio = null;
+let notificationRealtimeChannel = null;
+// Evita que o mesmo aviso administrativo volte a abrir a cada atualização da tela.
+// Ele continua no sino até o usuário marcá-lo como lido.
+const administrativeAlertsSeenThisSession = new Set();
+let avisoRecipientIds = new Set();
 let allProfiles = []; // só carregada/usada de fato pelo admin, na tela "Usuários"
 let demoProfiles = []; // equivalente à tabela "profiles" em modo demonstração
 let validationSectors = [];
@@ -132,6 +134,7 @@ const SCREEN_ROLES = {
   motoristas: ['admin'],
   cooperativas: ['admin'],
   usuarios: ['admin'],
+  avisos: ['admin'],
   perfisacesso: ['admin'],
   validadores: ['admin'],
   relatorios: ['admin', 'pedagogia', 'agente_externo'],
@@ -848,6 +851,7 @@ async function enterApp() {
   await loadAgenda();
   await loadKmLogs();
   await loadNotifications();
+  subscribeNotificationsRealtime();
   if (sb) window.setInterval(loadNotifications, 60000);
 
   showScreen(defaultScreenForCurrentUser());
@@ -940,6 +944,7 @@ async function logout() {
   pendingWizardProposalFile = null;
   document.getElementById('wPropostaDocument') && (document.getElementById('wPropostaDocument').value = '');
   document.getElementById('docFileInput') && (document.getElementById('docFileInput').value = '');
+  unsubscribeNotificationsRealtime();
   try {
     if (sb) await sb.auth.signOut();
   } catch (err) {
@@ -995,6 +1000,104 @@ async function loadAllProfiles() {
 
 function openUsuariosScreen() {
   loadAllProfiles().then(renderUsuarios);
+}
+
+// ============ AVISOS ADMINISTRATIVOS ============
+function avisoRecipientGroupMatches(profile, group) {
+  if (group === 'todos' || group === 'usuario') return true;
+  return profile.role === group;
+}
+
+function profileCooperativaId(profile) {
+  return profile.cooperativa_id || drivers.find((d) => d.id === profile.driver_id)?.cooperativa_id || '';
+}
+
+function populateAvisoFilters() {
+  const coop = document.getElementById('avisoCooperativa');
+  const school = document.getElementById('avisoUnidade');
+  if (!coop || !school) return;
+  const coopValue = coop.value;
+  const schoolValue = school.value;
+  coop.innerHTML = '<option value="">Todas as cooperativas</option>' + cooperativas.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  school.innerHTML = '<option value="">Todas as unidades</option>' + schools.filter((s) => s.tipo !== 'entidade').map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+  coop.value = coopValue;
+  school.value = schoolValue;
+}
+
+function filteredAvisoRecipients() {
+  const group = document.getElementById('avisoGrupo')?.value || 'todos';
+  const cooperativaId = document.getElementById('avisoCooperativa')?.value || '';
+  const schoolId = document.getElementById('avisoUnidade')?.value || '';
+  const query = (document.getElementById('avisoPesquisa')?.value || '').trim().toLocaleLowerCase('pt-BR');
+  return allProfiles.filter((p) => p.active !== false && avisoRecipientGroupMatches(p, group))
+    .filter((p) => !cooperativaId || profileCooperativaId(p) === cooperativaId)
+    .filter((p) => !schoolId || p.school_id === schoolId)
+    .filter((p) => !query || `${p.full_name || ''} ${p.email || ''}`.toLocaleLowerCase('pt-BR').includes(query))
+    .sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '', 'pt-BR'));
+}
+
+function perfilAvisoVinculo(p) {
+  if (p.role === 'escola') return schoolName(p.school_id) || 'Unidade não definida';
+  if (p.role === 'motorista') return drivers.find((d) => d.id === p.driver_id)?.name || 'Motorista não vinculado';
+  if (p.role === 'agente_externo') return cooperativaById(profileCooperativaId(p))?.name || 'Cooperativa não definida';
+  return ROLE_LABELS[p.role] || p.role || 'Usuário';
+}
+
+function renderAvisoRecipients() {
+  const box = document.getElementById('avisoRecipients');
+  const count = document.getElementById('avisoRecipientCount');
+  if (!box || !count) return;
+  const rows = filteredAvisoRecipients();
+  const validIds = new Set(rows.map((p) => p.id));
+  avisoRecipientIds = new Set([...avisoRecipientIds].filter((id) => validIds.has(id)));
+  count.textContent = `${avisoRecipientIds.size} selecionado(s)`;
+  box.innerHTML = rows.length ? rows.map((p) => `<label class="flex cursor-pointer items-start gap-3 border-b border-slate-100 px-4 py-3 last:border-0 hover:bg-slate-50"><input type="checkbox" class="mt-1 h-4 w-4 accent-emerald-600" ${avisoRecipientIds.has(p.id) ? 'checked' : ''} onchange="toggleAvisoRecipient('${p.id}', this.checked)"><span class="min-w-0 flex-1"><strong class="block truncate text-sm text-slate-800">${escapeHtml(p.full_name || p.email || 'Usuário')}</strong><span class="block truncate text-xs text-slate-500">${escapeHtml(p.email || '')} · ${escapeHtml(perfilAvisoVinculo(p))}</span></span><span class="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase text-slate-600">${escapeHtml(ROLE_LABELS[p.role] || p.role)}</span></label>`).join('') : '<p class="p-5 text-center text-sm text-slate-500">Nenhum usuário encontrado para estes filtros.</p>';
+}
+
+function toggleAvisoRecipient(id, checked) {
+  if (checked) avisoRecipientIds.add(id); else avisoRecipientIds.delete(id);
+  renderAvisoRecipients();
+}
+
+function selectAllAvisoRecipients() {
+  filteredAvisoRecipients().forEach((p) => avisoRecipientIds.add(p.id));
+  renderAvisoRecipients();
+}
+
+function clearAvisoRecipients() {
+  avisoRecipientIds.clear();
+  renderAvisoRecipients();
+}
+
+async function openAvisosScreen() {
+  if (currentUser?.role !== 'admin') return;
+  await Promise.all([loadAllProfiles(), loadSchools(), loadDrivers(), loadCooperativas()]);
+  populateAvisoFilters();
+  renderAvisoRecipients();
+}
+
+async function sendAdministrativeAlert() {
+  if (currentUser?.role !== 'admin' || !sb) return;
+  const title = document.getElementById('avisoTitulo')?.value.trim();
+  const message = document.getElementById('avisoMensagem')?.value.trim();
+  const priority = document.getElementById('avisoPrioridade')?.value === 'importante' ? 'importante' : 'normal';
+  const showOverlay = !!document.getElementById('avisoSobreTela')?.checked;
+  if (!title || !message) { toast('⚠️ Informe o título e a mensagem.', true); return; }
+  if (!avisoRecipientIds.size) { toast('⚠️ Selecione ao menos um destinatário.', true); return; }
+  const btn = document.getElementById('btnEnviarAviso');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  const rows = [...avisoRecipientIds].map((user_id) => ({ user_id, title, message, notification_type: 'aviso_admin', priority, show_overlay: showOverlay, sent_by: currentUser.id }));
+  const { error } = await sb.from('notifications').insert(rows);
+  if (btn) { btn.disabled = false; btn.textContent = 'Enviar aviso'; }
+  if (error) {
+    const hint = /column|notification_type|priority|show_overlay|sent_by/i.test(error.message || '') ? ' Execute a migration 041 antes de enviar.' : '';
+    toast(`❌ Não foi possível enviar: ${error.message}.${hint}`, true); return;
+  }
+  document.getElementById('avisoTitulo').value = '';
+  document.getElementById('avisoMensagem').value = '';
+  avisoRecipientIds.clear();
+  renderAvisoRecipients();
+  toast(`✅ Aviso enviado para ${rows.length} usuário(s).`);
 }
 
 function renderUsuarios() {
@@ -1396,9 +1499,41 @@ async function loadNotifications() {
     .order('created_at', { ascending: false }).limit(30);
   notifications = error ? [] : (data || []);
   const unread = notifications.filter((n) => !n.read_at).length;
-  if (unreadNotificationsSeen !== null && unread > unreadNotificationsSeen) playNotificationSound();
+  const abriuAvisoAdministrativo = maybeShowAdministrativeAlert();
+  if (!abriuAvisoAdministrativo && unreadNotificationsSeen !== null && unread > unreadNotificationsSeen) playNotificationSound();
   unreadNotificationsSeen = unread;
   renderNotificationBell();
+}
+
+function subscribeNotificationsRealtime() {
+  if (!sb || !currentUser?.id || notificationRealtimeChannel) return;
+  notificationRealtimeChannel = sb.channel(`bora-la-notifications-${currentUser.id}`)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${currentUser.id}` }, () => loadNotifications())
+    .subscribe();
+}
+
+function unsubscribeNotificationsRealtime() {
+  if (sb && notificationRealtimeChannel) sb.removeChannel(notificationRealtimeChannel);
+  notificationRealtimeChannel = null;
+}
+
+function maybeShowAdministrativeAlert() {
+  const notice = notifications.find((n) => n.notification_type === 'aviso_admin' && n.show_overlay && !n.read_at && !administrativeAlertsSeenThisSession.has(n.id));
+  if (!notice) return false;
+  administrativeAlertsSeenThisSession.add(notice.id);
+  const overlay = document.getElementById('adminAlertOverlay');
+  if (!overlay) return false;
+  document.getElementById('adminAlertOverlayPriority').textContent = notice.priority === 'importante' ? 'AVISO IMPORTANTE' : 'AVISO ADMINISTRATIVO';
+  document.getElementById('adminAlertOverlayPriority').className = `inline-flex rounded-full px-3 py-1 text-[11px] font-extrabold tracking-wide ${notice.priority === 'importante' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`;
+  document.getElementById('adminAlertOverlayTitle').textContent = notice.title || 'Aviso administrativo';
+  document.getElementById('adminAlertOverlayMessage').textContent = notice.message || '';
+  overlay.classList.remove('hidden');
+  playNotificationSound();
+  return true;
+}
+
+function closeAdministrativeAlert() {
+  document.getElementById('adminAlertOverlay')?.classList.add('hidden');
 }
 
 async function loadValidationConfig() {
@@ -1480,27 +1615,22 @@ async function alterarSetoresValidador(profileId) {
 }
 function playNotificationSound() {
   try {
-    if (!notificationAudio) {
-      notificationAudio = new Audio('assets/notificacao-bora-la.wav');
-      notificationAudio.preload = 'auto';
-      notificationAudio.volume = 0.78;
-    }
-    notificationAudio.pause();
-    notificationAudio.currentTime = 0;
-    notificationAudio.play().catch(() => {
-      // Alguns navegadores bloqueiam áudio até a primeira interação do usuário.
-      // Mantém um aviso breve como alternativa, sem interromper as notificações.
-      toast('🔔 Nova notificação recebida.');
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    const context = new AudioContextClass();
+    const now = context.currentTime;
+    [[784, 0], [1046, .2]].forEach(([frequency, offset]) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(frequency, now + offset);
+      gain.gain.setValueAtTime(.001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(.13, now + offset + .018);
+      gain.gain.exponentialRampToValueAtTime(.001, now + offset + .17);
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start(now + offset); oscillator.stop(now + offset + .19);
     });
-  } catch (_) {
-    try {
-      const c = new (window.AudioContext || window.webkitAudioContext)();
-      const o = c.createOscillator(); const g = c.createGain();
-      o.frequency.value = 880; g.gain.setValueAtTime(.06, c.currentTime);
-      g.gain.exponentialRampToValueAtTime(.001, c.currentTime + .22);
-      o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + .22);
-    } catch (_) { /* navegador sem áudio disponível */ }
-  }
+    window.setTimeout(() => context.close().catch(() => {}), 700);
+  } catch (_) { /* áudio pode ser bloqueado até a primeira interação do usuário */ }
 }
 function renderNotificationBell() {
   const btn = document.getElementById('notificationBell');
@@ -1713,6 +1843,7 @@ function showScreen(name, el) {
     motoristas: ['Motoristas', 'Cadastro de motoristas e cooperativas'],
     cooperativas: ['Cooperativas', 'E-mail de cada cooperativa e assinatura do setor'],
     usuarios: ['Usuários', 'Perfil, unidade e motorista vinculado de cada login'],
+    avisos: ['Avisos administrativos', 'Envie comunicados para usuários e perfis do sistema'],
     perfisacesso: ['Perfis de acesso', 'Telas e permissões dos perfis administrativos'],
     validadores: ['Validadores', 'Público-alvo, setor responsável e prerrogativas pedagógicas'],
     relatorios: ['Escala', 'Viagens confirmadas e com motorista atribuído'],
@@ -1752,6 +1883,7 @@ function showScreen(name, el) {
   if (name === 'motoristas') renderMotoristas();
   if (name === 'cooperativas') { renderCooperativas(); fillSettingsForm(); }
   if (name === 'usuarios') openUsuariosScreen();
+  if (name === 'avisos') openAvisosScreen();
   if (name === 'perfisacesso') { Promise.all([loadAccessProfiles(), loadRoleScreenPermissions()]).then(renderAccessProfiles); }
   if (name === 'validadores') openValidadoresScreen().then(() => aplicarSomenteConsulta('screen-validadores', 'validadores'));
   if (name === 'relatorios') populateRelatorioFilters();
@@ -1776,7 +1908,7 @@ async function refreshDadosDaTela(name) {
     await Promise.all([
       loadSchools(), loadAgenda(), loadProfiles(), loadVehicles(), loadDrivers(), loadKmLogs(), loadCooperativas(), loadNotifications()
     ]);
-    if (name === 'usuarios') await loadAllProfiles();
+    if (name === 'usuarios' || name === 'avisos') await loadAllProfiles();
     if (name === 'perfisacesso') await loadRoleScreenPermissions();
     if (name === 'validacoes') {
       if (currentUser.role === 'escola') { await loadValidationConfig(); populateValidacaoDestinoEscolaFilter(); populatePublicoAlvoFilter('validacaoFiltroPublicoEscola', 'Todos os públicos'); renderValidacoesEscola(); }
@@ -1794,6 +1926,7 @@ async function refreshDadosDaTela(name) {
     if (name === 'motoristas') renderMotoristas();
     if (name === 'cooperativas') { renderCooperativas(); fillSettingsForm(); }
     if (name === 'usuarios') openUsuariosScreen();
+    if (name === 'avisos') openAvisosScreen();
     if (name === 'validadores') openValidadoresScreen().then(() => aplicarSomenteConsulta('screen-validadores', 'validadores'));
     if (name === 'relatorios') populateRelatorioFilters();
     if (name === 'relatorios') { document.getElementById('btnNotificarViagens')?.classList.toggle('hidden', ['agente_externo', 'escola', 'motorista'].includes(currentUser?.role)); renderRelatorioPreview(); }

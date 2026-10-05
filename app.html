@@ -339,6 +339,9 @@
           <a data-screen="usuarios" data-roles="admin" onclick="showScreen('usuarios', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
             🔑 Usuários
           </a>
+          <a data-screen="avisos" data-roles="admin" onclick="showScreen('avisos', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            📣 Avisos administrativos
+          </a>
           <a data-screen="perfisacesso" data-roles="admin" onclick="showScreen('perfisacesso', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
             🛡️ Perfis de acesso
           </a>
@@ -411,6 +414,7 @@
           <a data-screen="veiculos" data-roles="admin" onclick="showScreen('veiculos',this)" class="top-nav-link"><i data-lucide="bus-front" class="w-4 h-4 mr-1.5 text-teal-600"></i>Veículos</a>
           <a data-screen="motoristas" data-roles="admin" onclick="showScreen('motoristas',this)" class="top-nav-link"><i data-lucide="contact-round" class="w-4 h-4 mr-1.5 text-rose-600"></i>Motoristas</a>
           <a data-screen="usuarios" data-roles="admin" onclick="showScreen('usuarios',this)" class="top-nav-link"><i data-lucide="users-round" class="w-4 h-4 mr-1.5 text-indigo-600"></i>Usuários</a>
+          <a data-screen="avisos" data-roles="admin" onclick="showScreen('avisos',this)" class="top-nav-link"><i data-lucide="megaphone" class="w-4 h-4 mr-1.5 text-orange-600"></i>Avisos</a>
           <a data-screen="perfisacesso" data-roles="admin" onclick="showScreen('perfisacesso',this)" class="top-nav-link"><i data-lucide="shield-check" class="w-4 h-4 mr-1.5 text-fuchsia-600"></i>Perfis de acesso</a>
           <a data-screen="validadores" data-roles="admin" onclick="showScreen('validadores',this)" class="top-nav-link"><i data-lucide="badge-check" class="w-4 h-4 mr-1.5 text-pink-600"></i>Validadores</a>
           <a data-screen="cooperativas" data-roles="admin" onclick="showScreen('cooperativas',this)" class="top-nav-link"><i data-lucide="send" class="w-4 h-4 mr-1.5 text-cyan-700"></i>Cooperativas</a>
@@ -1393,6 +1397,35 @@
             </div>
           </section>
 
+          <!-- AVISOS ADMINISTRATIVOS -->
+          <section id="screen-avisos" class="hidden-screen">
+            <div class="mx-auto max-w-6xl space-y-5">
+              <div class="rounded-2xl border border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 p-5">
+                <div class="flex items-start gap-3"><div class="rounded-xl bg-orange-500 p-3 text-xl text-white">📣</div><div><h3 class="font-bold text-slate-900">Central de avisos administrativos</h3><p class="mt-1 text-sm text-slate-600">O aviso é salvo para cada destinatário. Quando a aplicação estiver aberta, ele aparece sobre a tela; se a pessoa estiver fora, será mostrado no próximo acesso.</p></div></div>
+              </div>
+              <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_390px]">
+                <div class="rounded-2xl border bg-white p-5 shadow-sm">
+                  <div class="flex flex-wrap items-end justify-between gap-3"><div><h3 class="font-semibold text-slate-900">Destinatários</h3><p class="mt-1 text-sm text-slate-500">Selecione um perfil, refine a lista e marque quem deve receber.</p></div><div class="flex gap-2"><button type="button" onclick="selectAllAvisoRecipients()" class="rounded-lg border border-emerald-200 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-50">Selecionar exibidos</button><button type="button" onclick="clearAvisoRecipients()" class="rounded-lg border px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">Limpar</button></div></div>
+                  <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <label class="block text-xs font-bold uppercase tracking-wide text-slate-500">Público<select id="avisoGrupo" onchange="renderAvisoRecipients()" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm normal-case font-normal"><option value="todos">Todos os usuários ativos</option><option value="motorista">Motoristas</option><option value="escola">Unidades escolares</option><option value="pedagogia">Pedagogia</option><option value="agente_externo">Cooperativas</option><option value="usuario">Usuário específico</option></select></label>
+                    <label class="block text-xs font-bold uppercase tracking-wide text-slate-500">Cooperativa<select id="avisoCooperativa" onchange="renderAvisoRecipients()" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm normal-case font-normal"></select></label>
+                    <label class="block text-xs font-bold uppercase tracking-wide text-slate-500">Unidade<select id="avisoUnidade" onchange="renderAvisoRecipients()" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm normal-case font-normal"></select></label>
+                    <label class="block text-xs font-bold uppercase tracking-wide text-slate-500">Buscar<input id="avisoPesquisa" oninput="renderAvisoRecipients()" placeholder="Nome ou e-mail" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm normal-case font-normal" /></label>
+                  </div>
+                  <div class="mt-4 overflow-hidden rounded-xl border"><div class="flex items-center justify-between border-b bg-slate-50 px-4 py-2"><strong class="text-sm text-slate-700">Usuários encontrados</strong><span id="avisoRecipientCount" class="rounded-full bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-800">0 selecionado(s)</span></div><div id="avisoRecipients" class="max-h-[470px] overflow-y-auto"></div></div>
+                </div>
+                <div class="h-fit rounded-2xl border bg-white p-5 shadow-sm">
+                  <h3 class="font-semibold text-slate-900">Mensagem</h3><p class="mt-1 text-sm text-slate-500">Use texto breve e direto.</p>
+                  <label class="mt-4 block text-xs font-bold uppercase tracking-wide text-slate-500">Título<input id="avisoTitulo" maxlength="120" placeholder="Ex.: Atenção à escala de sábado" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm normal-case font-normal" /></label>
+                  <label class="mt-3 block text-xs font-bold uppercase tracking-wide text-slate-500">Prioridade<select id="avisoPrioridade" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm normal-case font-normal"><option value="normal">Comunicado</option><option value="importante">Importante</option></select></label>
+                  <label class="mt-3 block text-xs font-bold uppercase tracking-wide text-slate-500">Mensagem<textarea id="avisoMensagem" rows="7" maxlength="1000" placeholder="Escreva o aviso que será enviado aos destinatários." class="mt-1 w-full resize-y rounded-lg border px-3 py-2 text-sm normal-case font-normal"></textarea></label>
+                  <label class="mt-4 flex cursor-pointer items-start gap-2 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900"><input id="avisoSobreTela" type="checkbox" checked class="mt-0.5 h-4 w-4 accent-emerald-600" /><span><strong>Apresentar sobre a tela</strong><small class="mt-1 block text-xs text-emerald-700">No APK, emite um som e mostra o aviso imediatamente enquanto o app estiver aberto.</small></span></label>
+                  <button id="btnEnviarAviso" onclick="sendAdministrativeAlert()" class="mt-5 w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-60">Enviar aviso</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <!-- PERFIS DE ACESSO (somente administradores) -->
           <section id="screen-perfisacesso" class="hidden-screen">
             <div class="bg-white rounded-xl border shadow-sm p-5 max-w-4xl">
@@ -2188,7 +2221,15 @@
     </div>
   </div>
 
-  <script src="app.js?v=pedagogia-publico-cidade-20261002-035"></script>
+  <!-- Aviso persistente: aparece uma vez por sessão quando chega ou já existe um aviso administrativo não lido. -->
+  <div id="adminAlertOverlay" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="adminAlertOverlayTitle">
+    <div class="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5">
+      <div class="border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-sky-50 px-6 py-5"><span id="adminAlertOverlayPriority"></span><h2 id="adminAlertOverlayTitle" class="mt-3 text-xl font-extrabold text-slate-900"></h2></div>
+      <div class="px-6 py-5"><p id="adminAlertOverlayMessage" class="whitespace-pre-wrap text-[15px] leading-6 text-slate-700"></p><p class="mt-4 text-xs text-slate-400">O aviso continuará disponível no sino de notificações até ser marcado como lido.</p><button onclick="closeAdministrativeAlert()" class="mt-5 w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700">Entendi</button></div>
+    </div>
+  </div>
+
+  <script src="app.js?v=avisos-administrativos-20261004-001"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */
