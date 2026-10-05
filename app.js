@@ -1801,6 +1801,11 @@ Corrija a listagem e envie novamente pelo menu Validações.
 
 ${appSettings.remetente_nome || 'Bora Lá - Excursões'}`;
 }
+function buildRequesterRejectedEmailHtml(trip) {
+  const data = trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
+  const motivo = escapeHtml(trip.listagem_parecer_comentario || 'Verifique a listagem e corrija os dados solicitados.');
+  return `<div style="max-width:720px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.5;font-size:14px"><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | Correção de listagem</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:2px;background:#16a34a;margin:3px 0 16px"></div><p>Olá,</p><p>A listagem de passageiros da viagem de <strong>${escapeHtml(data)}</strong> para <strong>${escapeHtml(trip.destination || '-')}</strong> foi devolvida para correção.</p><p style="border-left:4px solid #f59e0b;background:#fffbeb;color:#78350f;margin:16px 0;padding:11px 13px"><strong>Motivo:</strong><br>${motivo}</p><p>Corrija a listagem e envie novamente pelo menu Validações.</p><p style="margin-top:18px">Bora Lá - Excursões / Semed Nova Lima</p></div>`;
+}
 
 function showScreen(name, el) {
   closeSidebar(); // no celular, navegar pra uma tela nova fecha a gaveta (sem efeito no desktop)
@@ -2355,28 +2360,18 @@ function renderKmAdmin() {
   }
 }
 
-function exportKmPDF() {
+async function exportKmPDF() {
   if (!window.jspdf) { toast('⚠️ Não foi possível carregar o gerador de PDF (verifique sua internet) e tente novamente.', true); return; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   const rows = filterKmAdmin().slice().sort((a, b) => (a.log_date || '').localeCompare(b.log_date || ''));
 
-  doc.setFillColor(5, 150, 105);
-  doc.rect(0, 0, 210, 25, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.text('BORA LÁ - EXCURSÕES', 14, 16);
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Relatório de KM dos motoristas', 196, 16, { align: 'right' });
-
-  doc.setTextColor(0, 0, 0);
+  const startY = await addBoraLaPdfHeader(doc, 'Relatório de KM', 'SEMED Nova Lima · KM dos motoristas');
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
-  doc.text('KM Rodado por Motorista', 14, 40);
+  doc.text('KM Rodado por Motorista', 14, startY + 7);
   doc.autoTable({
-    startY: 45,
+    startY: startY + 12,
     head: [['Data', 'Motorista', 'Cooperativa', 'Odômetro início', 'Odômetro fim', 'Km rodado']],
     body: rows.map((k) => {
       const d = drivers.find((x) => x.id === k.driver_id);
@@ -2387,7 +2382,7 @@ function exportKmPDF() {
       ];
     }),
     styles: { fontSize: 9 },
-    headStyles: { fillColor: [5, 150, 105] },
+    headStyles: { fillColor: [229, 231, 235], textColor: [17, 24, 39] },
   });
 
   const total = rows.reduce((s, k) => s + (k.km_rodado || 0), 0);
@@ -5404,7 +5399,7 @@ async function rejeitarPassengerPortal() {
   const ok = await updateExcursion(id, { listagem_status:'rejeitada', passenger_access_status:'aberto', listagem_parecer_por:currentUser.id, listagem_parecer_em:new Date().toISOString(), listagem_parecer_comentario:motivo });
   if (!ok) return;
   await notifyRequester({ ...trip, listagem_parecer_comentario:motivo }, 'Listagem devolvida para correção', 'A listagem de passageiros foi devolvida para correção. Motivo: ' + motivo);
-  if (trip.requester_email) await notifyRequesterEmail({ ...trip, listagem_parecer_comentario:motivo }, 'Bora Lá - correção da listagem de passageiros', buildRequesterRejectedEmail({ ...trip, listagem_parecer_comentario:motivo }));
+  if (trip.requester_email) await notifyRequesterEmail({ ...trip, listagem_parecer_comentario:motivo }, 'Bora Lá - correção da listagem de passageiros', buildRequesterRejectedEmail({ ...trip, listagem_parecer_comentario:motivo }), buildRequesterRejectedEmailHtml({ ...trip, listagem_parecer_comentario:motivo }));
   closePassengerModal(); await loadAgenda(); await loadNotifications(); renderAgenda(); toast('🚫 Listagem devolvida para correção.');
 }
 function renderPassengerRows() {
@@ -5655,7 +5650,7 @@ async function recusarListagemVeiculo() {
   if (!ok) return;
   await logDocHistory(id, 'rejeitado', null, null, `Veículo ${lvPlaca(did)}: ${motivo}`, 'listagem');
   await notifyRequester({ ...trip, listagem_parecer_comentario: comentario }, 'Listagem devolvida para correção', `A listagem do veículo ${lvPlaca(did)} da viagem para ${trip.destination || '-'} foi devolvida para correção. Motivo: ${motivo}`);
-  if (trip.requester_email) await notifyRequesterEmail({ ...trip, listagem_parecer_comentario: comentario }, 'Bora Lá - correção da listagem de passageiros', buildRequesterRejectedEmail({ ...trip, listagem_parecer_comentario: comentario }));
+  if (trip.requester_email) await notifyRequesterEmail({ ...trip, listagem_parecer_comentario: comentario }, 'Bora Lá - correção da listagem de passageiros', buildRequesterRejectedEmail({ ...trip, listagem_parecer_comentario: comentario }), buildRequesterRejectedEmailHtml({ ...trip, listagem_parecer_comentario: comentario }));
   await loadAgenda(); await loadNotifications();
   renderAgenda();
   toast(`🚫 Listagem do veículo ${lvPlaca(did)} recusada - a unidade foi notificada para corrigir.`);
@@ -6280,7 +6275,7 @@ async function confirmRejeitarListagem() {
   if (!ok) return;
   await logDocHistory(id, 'rejeitado', null, null, comentario, 'listagem');
   await notifyRequester({ ...trip, listagem_parecer_comentario: comentario }, 'Listagem devolvida para correção', `A listagem da viagem para ${trip.destination || '-'} foi devolvida para correção. Motivo: ${comentario}`);
-  if (trip.requester_email) await notifyRequesterEmail({ ...trip, listagem_parecer_comentario: comentario }, 'Bora Lá - correção da listagem de passageiros', buildRequesterRejectedEmail({ ...trip, listagem_parecer_comentario: comentario }));
+  if (trip.requester_email) await notifyRequesterEmail({ ...trip, listagem_parecer_comentario: comentario }, 'Bora Lá - correção da listagem de passageiros', buildRequesterRejectedEmail({ ...trip, listagem_parecer_comentario: comentario }), buildRequesterRejectedEmailHtml({ ...trip, listagem_parecer_comentario: comentario }));
   await loadAgenda(); await loadNotifications();
   renderAgenda();
   toast('🚫 Listagem rejeitada - o solicitante foi notificado para corrigir e reenviar.');
@@ -8206,7 +8201,7 @@ function buildEscalaEmailHtml(rows, somenteQuadro = false) {
     ? `<table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><thead><tr style="background:#5b21b6;color:#fff"><th style="padding:9px;border:1px solid #ddd">Data</th><th style="padding:9px;border:1px solid #ddd">Horário</th><th style="padding:9px;border:1px solid #ddd">Origem</th><th style="padding:9px;border:1px solid #ddd">Destino</th><th style="padding:9px;border:1px solid #ddd">Pass.</th><th style="padding:9px;border:1px solid #ddd">Motorista / veículo</th></tr></thead><tbody>${rows.map((a) => `<tr><td style="padding:8px;border:1px solid #ddd">${new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR')}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml(horaComH(a.departure_time))} → ${escapeHtml(horaComH(a.return_time))}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml(originName(a))}${a.origin_acronym ? ` (${escapeHtml(a.origin_acronym)})` : ''}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml(a.destination || '-')}</td><td style="padding:8px;border:1px solid #ddd;text-align:center">${totalPassengers(a)}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml((a.driver_ids || []).map(driverLabel).join(' / ') || '-')}</td></tr>`).join('')}</tbody></table>`
     : '<p style="padding:16px">Nenhuma viagem confirmada e escalada no período.</p>';
   if (somenteQuadro) return table;
-  return `<div style="font-family:Arial,sans-serif;color:#1f2937"><h2 style="color:#5b21b6">Escala de transporte</h2><p><strong>Período:</strong> ${escapeHtml(escalaPeriodoLabel())}</p>${table}<p style="margin-top:18px">Atenciosamente,<br><strong>Bora Lá - Excursões / Semed Nova Lima</strong></p></div>`;
+  return `<div style="max-width:820px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.45"><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | Escala de transporte</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:2px;background:#16a34a;margin:3px 0 14px"></div><p><strong>Período:</strong> ${escapeHtml(escalaPeriodoLabel())}</p>${table}<p style="margin-top:18px">Atenciosamente,<br><strong>Bora Lá - Excursões / Semed Nova Lima</strong></p></div>`;
 }
 async function sendEscalaEmail() {
   if (currentUser?.role !== 'admin') return;
@@ -8268,6 +8263,29 @@ function textoEmailSemHiperlink(valor) {
 
 function notificacaoViagensFaviconUrl() {
   return 'https://neil-semed.github.io/Bora_la/assets/favicon-512.png';
+}
+
+let boraLaPdfFaviconPromise = null;
+async function boraLaPdfFaviconData() {
+  if (!boraLaPdfFaviconPromise) boraLaPdfFaviconPromise = fetch('assets/favicon-512.png')
+    .then((r) => r.ok ? r.blob() : Promise.reject(new Error('favicon indisponível')))
+    .then((blob) => new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); }))
+    .catch(() => null);
+  return boraLaPdfFaviconPromise;
+}
+
+async function addBoraLaPdfHeader(doc, title, subtitle = '') {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const favicon = await boraLaPdfFaviconData();
+  if (favicon) doc.addImage(favicon, 'PNG', 10, 8, 11, 11);
+  doc.setTextColor(15, 23, 42);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
+  doc.text(`Bora Lá | ${title}`, favicon ? 24 : 10, 13);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(71, 85, 105);
+  doc.text(subtitle || 'SEMED Nova Lima', favicon ? 24 : 10, 18);
+  doc.setDrawColor(5, 150, 105); doc.setLineWidth(.55); doc.line(10, 22, pageWidth - 10, 22);
+  doc.setTextColor(0, 0, 0);
+  return 27;
 }
 
 function buildNotificacaoViagensHtml(rows, somenteQuadro = false) {
@@ -8365,7 +8383,8 @@ async function sendNotificarViagensEmails() {
   for (const grupo of grupos.values()) {
     if (await tentarEnviarEmailAutomatico(grupo.email, assunto, buildNotificacaoViagensText(grupo.rows), '', buildNotificacaoViagensHtml(grupo.rows))) enviados++;
   }
-  if (enviados === grupos.size) { closeNotificarViagensModal(); toast(`✉️ Notificação enviada para ${enviados} unidade(s).`); return; }
+  // Mantém a prévia aberta: permite conferir os destinatários e reenviar sem refazer os filtros.
+  if (enviados === grupos.size) { toast(`✉️ Notificação enviada para ${enviados} unidade(s). A página continua aberta para conferência.`); return; }
   toast(`❌ ${enviados} de ${grupos.size} envio(s) concluído(s). ${ultimoErroEnvioAutomatico || 'Verifique a função de envio e tente novamente.'}`, true);
 }
 
@@ -8532,12 +8551,12 @@ async function exportRelatorioExcel() {
 
 async function exportRelatorioPDF() {
   const tipo = document.getElementById('relTipo')?.value || 'escala';
-  if (tipo === 'escala') { exportEscalaPDF(); return; }
+  if (tipo === 'escala') { await exportEscalaPDF(); return; }
   if (!window.jspdf) { toast('⚠️ Gerador de PDF indisponível.', true); return; }
   const rows = await relatorioLinhas(); if (!rows.length) { toast('⚠️ Não há registros para exportar.', true); return; }
   const { jsPDF } = window.jspdf; const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' }); const headers = Object.keys(rows[0]);
-  doc.setFontSize(15); doc.text(`BORA LÁ - ${tituloRelatorio().toUpperCase()}`, 12, 14); doc.setFontSize(8); doc.text(`Período: ${escalaPeriodoLabel()} · Gerado em ${new Date().toLocaleString('pt-BR')}`, 12, 20);
-  doc.autoTable({ startY:25, head:[headers], body:rows.map((r) => headers.map((h) => String(r[h] ?? '-'))), theme:'grid', styles:{fontSize:6.5,cellPadding:1.3}, headStyles:{fillColor:[5,150,105]} }); doc.save(`bora-la-${tipo}-${Date.now()}.pdf`);
+  const startY = await addBoraLaPdfHeader(doc, tituloRelatorio(), `Período: ${escalaPeriodoLabel()} · Gerado em ${new Date().toLocaleString('pt-BR')}`);
+  doc.autoTable({ startY, head:[headers], body:rows.map((r) => headers.map((h) => String(r[h] ?? '-'))), theme:'grid', styles:{fontSize:6.5,cellPadding:1.3}, headStyles:{fillColor:[229,231,235],textColor:[17,24,39]} }); doc.save(`bora-la-${tipo}-${Date.now()}.pdf`);
 }
 
 async function exportCoopList(id, tipo, formato) {
@@ -8564,10 +8583,10 @@ async function exportCoopList(id, tipo, formato) {
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dados), tipo === 'pcd' ? 'PCD' : 'ATF'); XLSX.writeFile(wb, `bora-la-${tipo}-${trip.trip_date}.xlsx`); return;
   }
   if (!window.jspdf) { toast('⚠️ Gerador de PDF indisponível.', true); return; }
-  const { jsPDF } = window.jspdf; const doc = new jsPDF(); doc.setFontSize(16); doc.text(`BORA LÁ – ${titulo}`, 14, 18); doc.autoTable({ startY: 26, head: [Object.keys(dados[0])], body: dados.map(Object.values), styles: { fontSize: 8 }, headStyles: { fillColor: tipo === 'pcd' ? [124, 58, 237] : [217, 119, 6] } }); doc.save(`bora-la-${tipo}-${trip.trip_date}.pdf`);
+  const { jsPDF } = window.jspdf; const doc = new jsPDF(); const startY = await addBoraLaPdfHeader(doc, titulo, `SEMED Nova Lima · ${new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR')}`); doc.autoTable({ startY, head: [Object.keys(dados[0])], body: dados.map(Object.values), styles: { fontSize: 8 }, headStyles: { fillColor: [229,231,235], textColor:[17,24,39] } }); doc.save(`bora-la-${tipo}-${trip.trip_date}.pdf`);
 }
 
-function exportEscalaPDF() {
+async function exportEscalaPDF() {
   if (!window.jspdf) {
     toast('⚠️ Não foi possível carregar o gerador de PDF (verifique sua internet) e tente novamente.', true);
     return;
@@ -8581,19 +8600,9 @@ function exportEscalaPDF() {
     ? `${inicio ? new Date(inicio + 'T00:00').toLocaleDateString('pt-BR') : '…'} a ${fim ? new Date(fim + 'T00:00').toLocaleDateString('pt-BR') : '…'}`
     : 'Todas as datas';
 
-  doc.setFillColor(5, 150, 105);
-  doc.rect(0, 0, 297, 18, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(15);
-  doc.setFont('helvetica', 'bold');
-  doc.text('BORA LÁ - EXCURSÕES | ESCALA DE TRANSPORTE', 10, 11);
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Semed - Nova Lima/MG', 287, 11, { align: 'right' });
-
-  doc.setTextColor(0, 0, 0);
+  const startY = await addBoraLaPdfHeader(doc, 'Escala de transporte', 'SEMED Nova Lima/MG');
   doc.autoTable({
-    startY: 23,
+    startY,
     body: [['PERÍODO', periodo, 'VIAGENS', String(rows.length)]],
     theme: 'grid',
     styles: { fontSize: 8, cellPadding: 2, textColor: [0, 0, 0] },
