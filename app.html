@@ -2224,12 +2224,12 @@
   <!-- Aviso persistente: aparece uma vez por sessão quando chega ou já existe um aviso administrativo não lido. -->
   <div id="adminAlertOverlay" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="adminAlertOverlayTitle">
     <div class="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5">
-      <div class="border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-sky-50 px-6 py-5"><span id="adminAlertOverlayPriority"></span><h2 id="adminAlertOverlayTitle" class="mt-3 text-xl font-extrabold text-slate-900"></h2></div>
+      <div class="border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-sky-50 px-6 py-5"><div class="flex items-center gap-3"><img src="assets/favicon-512.png" alt="Bora Lá" class="h-12 w-12 shrink-0 rounded-xl bg-emerald-600 p-1 shadow-sm" /><div class="min-w-0"><span id="adminAlertOverlayPriority"></span><h2 id="adminAlertOverlayTitle" class="mt-2 text-xl font-extrabold text-slate-900"></h2></div></div></div>
       <div class="px-6 py-5"><p id="adminAlertOverlayMessage" class="whitespace-pre-wrap text-[15px] leading-6 text-slate-700"></p><p class="mt-4 text-xs text-slate-400">O aviso continuará disponível no sino de notificações até ser marcado como lido.</p><button onclick="closeAdministrativeAlert()" class="mt-5 w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700">Entendi</button></div>
     </div>
   </div>
 
-  <script src="app.js?v=avisos-administrativos-20261004-001"></script>
+  <script src="app.js?v=avisos-administrativos-20261004-002"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */
