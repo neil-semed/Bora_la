@@ -3123,8 +3123,11 @@ function filterAgenda() {
   // já deve aparecer para o motorista, exceto se tiver sido cancelada/reprovada.
   if (currentUser?.role === 'motorista') {
     const hoje = fmtDate(new Date());
-    const minhasViagens = agenda.filter((a) => a.admin_decision === 'aprovada' && !['cancelada', 'reprovada'].includes(a.situacao)
-      && (a.driver_ids || []).includes(currentUser.driverId));
+    // Cancelamento no próprio dia ainda é informação operacional para o motorista:
+    // preservamos o cartão em vermelho. Cancelamentos futuros permanecem ocultos.
+    const minhasViagens = agenda.filter((a) => a.admin_decision === 'aprovada'
+      && (a.driver_ids || []).includes(currentUser.driverId)
+      && (!['cancelada', 'reprovada'].includes(a.situacao) || (a.situacao === 'cancelada' && a.trip_date === hoje)));
     const viagensHoje = minhasViagens.filter((a) => a.trip_date === hoje);
 
     motoristaHojeDataExibida = hoje;
@@ -3280,15 +3283,15 @@ function renderAgenda() {
         acoes = `<span class="text-xs text-blue-600" title="O parecer agora é dado na tela Validações">📋 Ver em Validações</span>`;
       } else if (a.status === 'pedagogy_approved' && isAgendaEditor) {
         acoes = `<button onclick="adminApprove('${a.id}')" class="text-emerald-600 hover:text-emerald-800 text-xs font-medium">✓ Aprovar</button> <button onclick="openRejectModal('${a.id}')" class="text-red-600 hover:text-red-800 text-xs font-medium">Reprovar</button>`;
-      } else if (a.status === 'approved' && (isAgendaEditor || (role === 'motorista' && (a.driver_ids || []).includes(currentUser.driverId)))) {
+      } else if (a.status === 'approved' && a.situacao !== 'cancelada' && (isAgendaEditor || (role === 'motorista' && (a.driver_ids || []).includes(currentUser.driverId)))) {
         acoes = `<button onclick="startTransit('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-medium">Iniciar viagem</button>`;
         if (isAgendaEditor) acoes += ` <button onclick="openAssignModal('${a.id}')" class="text-slate-500 hover:text-slate-700 text-xs font-medium ml-2">Editar motorista(s)</button>`;
-      } else if (a.status === 'in_transit' && (isAgendaEditor || (role === 'motorista' && (a.driver_ids || []).includes(currentUser.driverId)))) {
+      } else if (a.status === 'in_transit' && a.situacao !== 'cancelada' && (isAgendaEditor || (role === 'motorista' && (a.driver_ids || []).includes(currentUser.driverId)))) {
         acoes = `<button onclick="completeTrip('${a.id}')" class="text-slate-700 hover:text-slate-900 text-xs font-medium">Concluir viagem</button>`;
       } else if (a.status === 'rejected' && a.rejection_reason) {
         acoes = `<span class="text-xs text-red-500" title="${a.rejection_reason}">Motivo ⓘ</span>`;
       } else if (a.situacao === 'cancelada' && a.cancel_reason) {
-        acoes = `<span class="text-xs text-orange-500" title="${a.cancel_reason}">Cancelada ⓘ</span>`;
+        acoes = role === 'motorista' ? '<span class="text-slate-300 text-xs">—</span>' : `<span class="text-xs text-orange-500" title="${a.cancel_reason}">Cancelada ⓘ</span>`;
       }
       if (isAgendaEditor && (a.situacao === 'cancelada' || a.admin_decision === 'reprovada' || a.status === 'rejected')) {
         const reativar = `<button onclick="reactivateExcursion('${a.id}')" class="ml-2 rounded bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-200">↻ Reativar</button>`;
@@ -3509,6 +3512,7 @@ function renderAgenda() {
       const exibeMotoristas = isAgendaEditor || a.admin_decision === 'aprovada';
       const motoristasCell = exibeMotoristas ? driversLabelHtml(a.driver_ids) : (role === 'escola' && a.situacao === 'reprovada' ? '' : '<span class="text-slate-400">Aguardando aprovação</span>');
       const motoristaVinculado = ehMotorista && (a.driver_ids || []).includes(currentUser.driverId);
+      const canceladaHojeMotorista = motoristaVinculado && a.situacao === 'cancelada' && a.trip_date === fmtDate(new Date());
       const outros = ehMotorista
         ? (a.driver_ids || []).filter((id) => id !== currentUser.driverId).map((id) => drivers.find((d) => d.id === id)).filter(Boolean)
         : [];
@@ -3559,19 +3563,20 @@ function renderAgenda() {
       // Data/Turno, Saída/Retorno, Origem, Destino, Passageiros, ATF e Motorista(s) em
       // destaque; Situação como selo colorido no topo; as mesmas ações de sempre embaixo.
       const card = `
-    <div class="${ehMotorista ? 'driver-trip-card' : 'border'} rounded-lg overflow-hidden bg-white shadow-sm" data-horario="${a.departure_time || ''}">
-      <div class="px-4 py-2.5 flex items-center justify-between gap-2 bg-slate-50 border-b border-slate-100">
+    <div class="${ehMotorista ? 'driver-trip-card' : 'border'} ${canceladaHojeMotorista ? 'border-l-4 border-red-600 bg-red-50/40' : 'bg-white'} rounded-lg overflow-hidden shadow-sm" data-horario="${a.departure_time || ''}">
+      <div class="px-4 py-2.5 flex items-center justify-between gap-2 ${canceladaHojeMotorista ? 'bg-red-50 border-b border-red-100' : 'bg-slate-50 border-b border-slate-100'}">
         <div class="text-sm">
           <span class="font-semibold">${dataFmt}</span>
           <span class="text-slate-500"> • ${turnoLabel}</span>
         </div>
-        ${statusCell}
+        ${canceladaHojeMotorista ? '<span class="rounded-full bg-red-600 px-2 py-1 text-[10px] font-extrabold tracking-wide text-white">VIAGEM CANCELADA</span>' : statusCell}
       </div>
       <div class="p-4 space-y-2.5 text-sm">
         <div class="flex items-center justify-between gap-2">
           <span class="text-slate-500 text-xs">Saída → Retorno</span>
           <span class="font-bold text-base text-slate-800">${horaComH(a.departure_time)} → ${horaComH(a.return_time)}</span>
         </div>
+        ${canceladaHojeMotorista ? `<div class="rounded-md border-l-4 border-red-600 bg-red-50 px-3 py-2 text-xs leading-5 text-red-800"><strong>Cancelada pela unidade.</strong>${a.cancelled_at ? ` ${new Date(a.cancelled_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.` : ''}<br>Motivo: ${escapeHtml(a.cancel_reason || 'Não informado.')}</div>` : ''}
         <div>
           <div class="text-slate-500 text-xs">Origem</div>
           <div class="font-medium">${originName(a)}</div>
@@ -3656,9 +3661,9 @@ function renderAgendaPorData() {
   // "Minhas próximas viagens" é pessoal: apenas viagens confirmadas do motorista
   // logado. A visão de todos os motoristas está em Agenda Geral.
   const fonte = currentUser?.role === 'motorista'
-    ? agenda.filter((a) => viagemConfirmadaParaMotorista(a) && (a.driver_ids || []).includes(currentUser.driverId))
+    ? agenda.filter((a) => (viagemConfirmadaParaMotorista(a) || (a.situacao === 'cancelada' && a.trip_date === hojeStr && (a.driver_ids || []).includes(currentUser.driverId))) && (a.driver_ids || []).includes(currentUser.driverId))
     : getVisibleAgenda();
-  const visiveis = fonte.filter((a) => a.trip_date >= startStr && a.trip_date <= endStr && a.situacao !== 'cancelada' && a.situacao !== 'reprovada');
+  const visiveis = fonte.filter((a) => a.trip_date >= startStr && a.trip_date <= endStr && (a.situacao !== 'cancelada' || a.trip_date === hojeStr) && a.situacao !== 'reprovada');
   const porDia = {};
   visiveis.forEach((a) => { (porDia[a.trip_date] = porDia[a.trip_date] || []).push(a); });
 
@@ -3695,8 +3700,9 @@ function renderAgendaPorData() {
 
 function renderAgendaPorDataItem(a, agendaGeral = false) {
   let acao = '';
-  if (a.status === 'approved') acao = `<button onclick="startTransit('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-medium whitespace-nowrap">Iniciar viagem</button>`;
-  else if (a.status === 'in_transit') acao = `<button onclick="completeTrip('${a.id}')" class="text-slate-700 hover:text-slate-900 text-xs font-medium whitespace-nowrap">Concluir viagem</button>`;
+  const canceladaHoje = a.situacao === 'cancelada' && a.trip_date === fmtDate(new Date());
+  if (a.status === 'approved' && !canceladaHoje) acao = `<button onclick="startTransit('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-medium whitespace-nowrap">Iniciar viagem</button>`;
+  else if (a.status === 'in_transit' && !canceladaHoje) acao = `<button onclick="completeTrip('${a.id}')" class="text-slate-700 hover:text-slate-900 text-xs font-medium whitespace-nowrap">Concluir viagem</button>`;
   const totalPax = totalPassengers(a);
   const minhaViagem = currentUser?.role === 'motorista' && (a.driver_ids || []).includes(currentUser.driverId);
   const outros = !agendaGeral && currentUser?.role === 'motorista'
@@ -3708,10 +3714,11 @@ function renderAgendaPorDataItem(a, agendaGeral = false) {
   }).join('<br>');
   const numeroViagens = minhaViagem ? numeroViagensIndicadas(a) : 1;
   return `
-    <div class="driver-trip-card px-4 py-4 flex items-center justify-between gap-3 bg-white rounded-xl mb-3" data-horario="${a.departure_time || ''}">
+    <div class="driver-trip-card px-4 py-4 flex items-center justify-between gap-3 ${canceladaHoje ? 'border-l-4 border-red-600 bg-red-50/40' : 'bg-white'} rounded-xl mb-3" data-horario="${a.departure_time || ''}">
       <div>
         <div class="font-medium text-sm">${originName(a)} → ${a.destination}</div>
         <div class="font-bold text-sm text-slate-700">${horaComH(a.departure_time)} → ${horaComH(a.return_time)} <span class="font-normal text-xs text-slate-500">• ${totalPax} passageiros SEMED</span></div>
+        ${canceladaHoje ? `<div class="mt-2 rounded-md border-l-4 border-red-600 bg-red-50 px-2 py-1.5 text-xs text-red-800"><strong>VIAGEM CANCELADA</strong>${a.cancelled_at ? ` às ${new Date(a.cancelled_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : ''}<br>Motivo: ${escapeHtml(a.cancel_reason || 'Não informado.')}</div>` : ''}
         <div class="text-xs text-slate-500 mt-1">${originAddress(a) || '-'}</div>
         <div class="text-xs text-slate-500 mt-1">${a.destination_address || a.city || '-'}</div>
         ${agendaGeral ? `<div class="text-xs text-slate-700 mt-2"><span class="text-slate-400">Motorista(s) escalado(s):</span> ${driversLabelHtml(a.driver_ids)}</div>` : ''}
@@ -3720,7 +3727,7 @@ function renderAgendaPorDataItem(a, agendaGeral = false) {
         ${compartilhadaHtml ? `<div class="text-xs text-slate-600 mt-1">Compartilhada com:<br>${compartilhadaHtml}</div>` : ''}
       </div>
       <div class="flex items-center gap-2 shrink-0">
-        <span style="${SITUACAO_COLORS[a.situacao] || ''}" class="px-2 py-1 rounded text-xs font-medium">${SITUACAO_LABELS[a.situacao] || a.situacao}</span>
+        <span style="${SITUACAO_COLORS[a.situacao] || ''}" class="px-2 py-1 rounded text-xs font-medium">${canceladaHoje ? 'Cancelada' : (SITUACAO_LABELS[a.situacao] || a.situacao)}</span>
         ${minhaViagem ? acao : ''}
       </div>
     </div>`;
@@ -3754,7 +3761,7 @@ async function renderAgendaGeralMotorista() {
   const proximosBtn = document.getElementById('btnAgendaGeralProximos');
   if (hojeBtn) hojeBtn.className = 'px-3 py-1.5 rounded-md font-medium ' + (agendaGeralModo === 'hoje' ? 'bg-white shadow text-emerald-700' : 'text-slate-500');
   if (proximosBtn) proximosBtn.className = 'px-3 py-1.5 rounded-md font-medium ' + (agendaGeralModo === 'proximos' ? 'bg-white shadow text-emerald-700' : 'text-slate-500');
-  const viagens = agenda.filter((a) => viagemConfirmadaParaMotorista(a) && a.trip_date >= inicio && a.trip_date <= fim)
+  const viagens = agenda.filter((a) => (viagemConfirmadaParaMotorista(a) || (a.situacao === 'cancelada' && a.trip_date === inicio)) && a.trip_date >= inicio && a.trip_date <= fim)
     .sort((a, b) => (a.trip_date + (a.departure_time || '')).localeCompare(b.trip_date + (b.departure_time || '')));
   const porDia = {};
   viagens.forEach((a) => { (porDia[a.trip_date] ||= []).push(a); });
