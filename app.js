@@ -4058,6 +4058,7 @@ async function openCarroSolicitacoes() {
   const box = document.getElementById('carroSolicitacoesLista');
   if (!box) return;
   ['carroFiltroData', 'carroFiltroSolicitacao', 'carroFiltroTrajeto'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const ocultarPassadas = document.getElementById('carroOcultarPassadas'); if (ocultarPassadas) ocultarPassadas.checked = true;
   box.innerHTML = '<p class="py-8 text-center text-sm text-slate-500">Carregando...</p>';
   try {
     const r = await carroApi('listar');
@@ -4068,6 +4069,7 @@ async function openCarroSolicitacoes() {
     (r.condutores || []).forEach((c) => { carroCondutores[String(c.email || '').toLowerCase()] = c; });
     // O navegador pode restaurar datas antigas nos filtros ao recarregar: a aba sempre abre sem filtro.
     ['carroFiltroData', 'carroFiltroSolicitacao', 'carroFiltroTrajeto'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+    if (ocultarPassadas) ocultarPassadas.checked = true;
     const st = r.setor;
     document.getElementById('carroSetorCards')?.classList.toggle('hidden', !st);
     if (st) [['Total', st.total], ['Pendentes', st.pendentes], ['Aprovadas', st.aprovadas], ['Ocupadas', st.ocupadas], ['Canceladas', st.canceladas]].forEach(([k, v]) => { const el = document.getElementById('carroSetor' + k); if (el) el.textContent = v || 0; });
@@ -4077,7 +4079,7 @@ async function openCarroSolicitacoes() {
   }
 }
 function filtrarCarroHoje() { const el = document.getElementById('carroFiltroData'); if (el) el.value = fmtDate(new Date()); renderCarroSolicitacoes(); }
-function limparFiltrosCarro() { ['carroFiltroData', 'carroFiltroSolicitacao', 'carroFiltroTrajeto'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; }); renderCarroSolicitacoes(); }
+function limparFiltrosCarro() { ['carroFiltroData', 'carroFiltroSolicitacao', 'carroFiltroTrajeto'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; }); const ocultar = document.getElementById('carroOcultarPassadas'); if (ocultar) ocultar.checked = false; renderCarroSolicitacoes(); }
 function carroLinha(s) {
   const motivo = !['Cancelada', 'Desprezado'].includes(s.status) ? carroMotivoNaoEditavel(s) : null;
   const editado = s.editado_pelo_solicitante && ['Pendente', 'Em Análise', '', null, undefined].includes(s.status);
@@ -4090,19 +4092,21 @@ function renderCarroSolicitacoes() {
   const dataViagem = document.getElementById('carroFiltroData')?.value || '';
   const dataSolic = document.getElementById('carroFiltroSolicitacao')?.value || '';
   const trajeto = (document.getElementById('carroFiltroTrajeto')?.value || '').trim().toLowerCase();
+  const ocultarPassadas = !!document.getElementById('carroOcultarPassadas')?.checked;
+  const hoje = fmtDate(new Date());
   const rows = carroSolicitacoes.filter((s) => (!dataViagem || s.data_viagem === dataViagem)
     && (!dataSolic || String(s.data_solicitacao || '').slice(0, 10) === dataSolic)
-    && (!trajeto || `${s.origem || ''} ${s.destino || ''}`.toLowerCase().includes(trajeto)));
+    && (!trajeto || `${s.origem || ''} ${s.destino || ''}`.toLowerCase().includes(trajeto))
+    && (!ocultarPassadas || (s.data_viagem || '') >= hoje));
   if (!rows.length) {
-    const semFiltro = !dataViagem && !dataSolic && !trajeto;
+    const semFiltro = !dataViagem && !dataSolic && !trajeto && !ocultarPassadas;
     box.innerHTML = `<p class="py-8 text-center text-sm text-slate-500">Nenhuma solicitação${semFiltro && carroEmailConsultado ? ` no MarkCarro para o e-mail <strong>${escapeHtml(carroEmailConsultado)}</strong>` : ''}</p>`;
     return;
   }
   // Ordem do MarkCarro: hoje, futuras e, após o separador, as passadas (mais recente primeiro).
   const ord = [...rows].sort((a, b) => `${a.data_viagem || ''}${a.hora_saida || ''}`.localeCompare(`${b.data_viagem || ''}${b.hora_saida || ''}`));
-  const hoje = fmtDate(new Date());
   const atuais = ord.filter((s) => (s.data_viagem || '') >= hoje);
-  const passadas = ord.filter((s) => (s.data_viagem || '') < hoje).reverse();
+  const passadas = ocultarPassadas ? [] : ord.filter((s) => (s.data_viagem || '') < hoje).reverse();
   const td = 'px-3 py-3 border-b border-slate-100 align-middle';
   const linha = (s) => { const x = carroLinha(s); return `<tr>
     <td class="${td}">${s.data_solicitacao ? new Date(s.data_solicitacao).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', '') : '-'}</td>
@@ -6802,10 +6806,21 @@ async function completeTrip(id) {
 function openSolicitacaoScreen() {
   populateEscolaSelect();
   populateAgendamentoDestinoSelect();
+  aplicarRecorrenciaPorPerfil();
   resetWizard();
   // Renderiza imediatamente com a escola do perfil logado. A configuração dinâmica
   // chega depois, sem trocar a tela temporariamente pelo estado do administrador.
   loadValidationConfig().then(() => populatePublicoAlvoWizard()).catch(() => {});
+}
+
+function aplicarRecorrenciaPorPerfil() {
+  const escola = currentUser?.role === 'escola';
+  document.querySelectorAll('[data-recorrencia-continuada]').forEach((el) => el.classList.toggle('hidden', escola));
+  const selecionada = document.querySelector('input[name="wRecorrencia"]:checked');
+  if (escola && selecionada && ['semanal', 'quinzenal', 'mensal'].includes(selecionada.value)) {
+    const unico = document.querySelector('input[name="wRecorrencia"][value="unico"]');
+    if (unico) unico.checked = true;
+  }
 }
 
 function populatePublicoAlvoWizard() {
