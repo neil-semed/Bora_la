@@ -140,7 +140,7 @@ create table if not exists excursions (
   pca_count int default 0,
   apoio_count int default 0,
   companions_count int default 0,
-  recurrence text default 'unico' check (recurrence in ('unico','semanal','quinzenal','mensal')),
+  recurrence text default 'unico' check (recurrence in ('unico','semanal','quinzenal','mensal','datas_adicionais')),
   notes text,
 
   -- fluxo de aprovação em 2 etapas: pedagogia -> admin (define motorista(s))
