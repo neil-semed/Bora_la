@@ -252,6 +252,14 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 
+// Todo e-mail automático usa exclusivamente o horário de Brasília, mesmo quando
+// o computador que disparou a mensagem estiver configurado em outro fuso.
+function saudacaoEmailBrasilia() {
+  const hora = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
+  const texto = hora >= 5 && hora < 12 ? 'Bom dia' : hora >= 12 && hora < 18 ? 'Boa tarde' : 'Boa noite';
+  return `${texto},`;
+}
+
 // Turno é sempre calculado a partir do horário de saída (não é mais escolhido à mão),
 // pra nunca ficar desalinhado do horário de verdade da viagem.
 function turnoFromHora(hhmm) {
@@ -1753,7 +1761,7 @@ function buildRequesterPassengerEmail(trip, link = '') {
   const data = trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
   const origem = `${originName(trip) || '-'}${originAddress(trip) ? ' - ' + originAddress(trip) : ''}${originCity(trip) ? ' - ' + originCity(trip) : ''}`;
   const destino = `${trip.destination || '-'}${trip.destination_address ? ' - ' + trip.destination_address : ''}${trip.city ? ' - ' + trip.city : ''}`;
-  return `Olá,
+  return `${saudacaoEmailBrasilia()}
 
 A viagem abaixo está aprovada e já possui motorista/veículo atribuído.
 
@@ -1780,7 +1788,7 @@ function buildRequesterPassengerEmailHtml(trip, link = '') {
     ? p(`Acesse o cadastro de passageiros pelo link abaixo:<br><a href="${escapeHtml(link)}">${escapeHtml(link)}</a>`)
     : p('Para isso, entre no sistema Bora Lá e acesse o menu Validações ou Agenda.');
   return `<div style="max-width:720px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.5;font-size:14px"><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | Listagem de passageiros</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:3px;background:#16a34a;margin:3px 0 16px"></div>`
-    + p('Olá,')
+    + p(saudacaoEmailBrasilia())
     + p('A viagem abaixo está aprovada e já possui motorista/veículo atribuído.')
     + p(`<strong>Origem:</strong> ${escapeHtml(origem)}<br><strong>Destino:</strong> ${escapeHtml(destino)}<br><strong>Data:</strong> ${escapeHtml(data)}<br><strong>Saída:</strong> ${escapeHtml(hhmm(trip.departure_time))} - <strong>Retorno:</strong> ${escapeHtml(hhmm(trip.return_time))}`)
     + p('Agora é necessário informar os passageiros desta viagem, com nome completo e número do documento.')
@@ -1790,7 +1798,7 @@ function buildRequesterPassengerEmailHtml(trip, link = '') {
 }
 function buildRequesterRejectedEmail(trip) {
   const motivo = trip.listagem_parecer_comentario || 'Verifique a listagem e corrija os dados solicitados.';
-  return `Olá,
+  return `${saudacaoEmailBrasilia()}
 
 A listagem de passageiros da viagem de ${trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'} para ${trip.destination || '-'} foi devolvida para correção.
 
@@ -1804,7 +1812,7 @@ ${appSettings.remetente_nome || 'Bora Lá - Excursões'}`;
 function buildRequesterRejectedEmailHtml(trip) {
   const data = trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
   const motivo = escapeHtml(trip.listagem_parecer_comentario || 'Verifique a listagem e corrija os dados solicitados.');
-  return `<div style="max-width:720px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.5;font-size:14px"><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | Correção de listagem</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:2px;background:#16a34a;margin:3px 0 16px"></div><p>Olá,</p><p>A listagem de passageiros da viagem de <strong>${escapeHtml(data)}</strong> para <strong>${escapeHtml(trip.destination || '-')}</strong> foi devolvida para correção.</p><p style="border-left:4px solid #f59e0b;background:#fffbeb;color:#78350f;margin:16px 0;padding:11px 13px"><strong>Motivo:</strong><br>${motivo}</p><p>Corrija a listagem e envie novamente pelo menu Validações.</p><p style="margin-top:18px">Bora Lá - Excursões / Semed Nova Lima</p></div>`;
+  return `<div style="max-width:720px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.5;font-size:14px"><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | Correção de listagem</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:2px;background:#16a34a;margin:3px 0 16px"></div><p>${saudacaoEmailBrasilia()}</p><p>A listagem de passageiros da viagem de <strong>${escapeHtml(data)}</strong> para <strong>${escapeHtml(trip.destination || '-')}</strong> foi devolvida para correção.</p><p style="border-left:4px solid #f59e0b;background:#fffbeb;color:#78350f;margin:16px 0;padding:11px 13px"><strong>Motivo:</strong><br>${motivo}</p><p>Corrija a listagem e envie novamente pelo menu Validações.</p><p style="margin-top:18px">Bora Lá - Excursões / Semed Nova Lima</p></div>`;
 }
 
 function showScreen(name, el) {
@@ -2739,10 +2747,10 @@ async function avisarSetorRespostaCoop(id, tipo) {
     ? 'Conforme declarado no aceite, a execução do atendimento é de inteira responsabilidade da cooperativa, e a SEMED considera este aceite como confirmação do atendimento.'
     : 'Conforme declarado no aceite, a emissão e a regularidade da ATF são de inteira responsabilidade da cooperativa, e a SEMED considera este aceite como comprovação de emissão do documento.';
   const confirmado = `Confirmado em ${quando}${quem ? `, por ${quem} (${coop})` : ''}.`;
-  const texto = `Olá,\n\n${intro}\n\n${linhas.map(([k, v]) => k === 'Saída' ? `Saída: ${v}` : `${k}: ${v}`).join('\n')}\n\n${confirmado}\n\n${declaracao}\n\nBora Lá - Excursões / Semed Nova Lima`;
+  const texto = `${saudacaoEmailBrasilia()}\n\n${intro}\n\n${linhas.map(([k, v]) => k === 'Saída' ? `Saída: ${v}` : `${k}: ${v}`).join('\n')}\n\n${confirmado}\n\n${declaracao}\n\nBora Lá - Excursões / Semed Nova Lima`;
   const p = (t) => `<p style="margin:0 0 12px">${t}</p>`;
   const html = `<div style="max-width:720px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.5;font-size:14px"><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | ${escapeHtml(titulo)}</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:3px;background:#16a34a;margin:3px 0 16px"></div>`
-    + p('Olá,') + p(escapeHtml(intro))
+    + p(saudacaoEmailBrasilia()) + p(escapeHtml(intro))
     + p(linhas.map(([k, v]) => k === 'Saída' ? `<strong>Saída:</strong> ${escapeHtml(hhmm(a.departure_time))}h - <strong>Retorno:</strong> ${escapeHtml(hhmm(a.return_time))}h` : `<strong>${escapeHtml(k)}:</strong> ${escapeHtml(v)}`).join('<br>'))
     + p(escapeHtml(confirmado))
     + `<p style="margin:0 0 12px;font-size:12px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px">${escapeHtml(declaracao)}</p>`
@@ -6345,7 +6353,7 @@ function buildListagemEmailBody(trip, driverIdsForCoop, grouped, files) {
     return `${cab}\n  (listagem não encontrada)`;
   }).join('\n\n');
 
-  return `Bom dia,
+  return `${saudacaoEmailBrasilia()}
 
 Solicitamos a emissão de ATF para a viagem abaixo.
 
@@ -6386,7 +6394,7 @@ function buildListagemEmailHtml(trip, driverIdsForCoop, grouped, files) {
     return `<section style="margin:16px 0">${cab}<p style="margin:4px 0 0;color:#64748b">Listagem não encontrada.</p></section>`;
   }).join('');
 
-  return `<div style="font-family:Arial,sans-serif;color:#0f172a;line-height:1.5;font-size:14px;max-width:820px"><p style="margin:0 0 10px">Bom dia,<br>Solicitamos a emissão de ATF para a viagem abaixo.</p><p style="margin:0 0 12px"><strong>Unidade solicitante:</strong> ${esc(requesterName(trip))}<br><strong>Data:</strong> ${esc(dataFmt)}<br><strong>Saída:</strong> ${esc(horaComH(trip.departure_time))} &nbsp;|&nbsp; <strong>Retorno:</strong> ${esc(horaComH(trip.return_time))}<br><strong>Origem:</strong> ${esc(originName(trip))}${sm(originAddress(trip))}<br><strong>Destino:</strong> ${esc(trip.destination || '-')}${sm(destinoEnd)}</p>${blocos}<p style="margin:16px 0 0">Pedimos, por gentileza, confirmação da emissão da ATF por esta aplicação ou em resposta a este e-mail.<br><strong>Bora Lá - Excursões / Semed Nova Lima</strong></p></div>`;
+  return `<div style="font-family:Arial,sans-serif;color:#0f172a;line-height:1.5;font-size:14px;max-width:820px"><p style="margin:0 0 10px">${saudacaoEmailBrasilia()}<br>Solicitamos a emissão de ATF para a viagem abaixo.</p><p style="margin:0 0 12px"><strong>Unidade solicitante:</strong> ${esc(requesterName(trip))}<br><strong>Data:</strong> ${esc(dataFmt)}<br><strong>Saída:</strong> ${esc(horaComH(trip.departure_time))} &nbsp;|&nbsp; <strong>Retorno:</strong> ${esc(horaComH(trip.return_time))}<br><strong>Origem:</strong> ${esc(originName(trip))}${sm(originAddress(trip))}<br><strong>Destino:</strong> ${esc(trip.destination || '-')}${sm(destinoEnd)}</p>${blocos}<p style="margin:16px 0 0">Pedimos, por gentileza, confirmação da emissão da ATF por esta aplicação ou em resposta a este e-mail.<br><strong>Bora Lá - Excursões / Semed Nova Lima</strong></p></div>`;
 }
 
 // Depois que o gestor aceita a listagem: tenta mandar automaticamente (Resend) pra cada
@@ -6541,7 +6549,7 @@ function buildPcdEmailHtml(trip, pcdStudents) {
   const linhas = (pcdStudents || []).length
     ? pcdStudents.map((p, i) => `<tr><td style="${td};text-align:center">${i + 1}</td><td style="${td}">${esc(p.nome_aluno)}</td><td style="${td}">${esc(p.documento_aluno || '-')}</td><td style="${td};text-align:center">${p.cadeirante ? 'Sim' : 'Não'}</td><td style="${td}">${esc(p.nome_apoio || '-')}</td><td style="${td}">${esc(p.documento_apoio || '-')}</td></tr>`).join('')
     : `<tr><td colspan="6" style="${td};color:#64748b">Nenhum estudante cadastrado ainda - edite a solicitação antes de enviar.</td></tr>`;
-  return `<p style="margin:0 0 10px">Prezados(as),</p><p style="margin:0 0 10px">Solicitamos o transporte adaptado para o atendimento abaixo:</p><p style="margin:0 0 12px"><strong>Unidade solicitante:</strong> ${esc(requesterName(trip))}<br><strong>Data e horário:</strong> ${esc(dataHora)}<br><strong>Origem:</strong> ${esc(originName(trip))} — ${esc(originAddress(trip) || '-')}<br><strong>Destino:</strong> ${esc(destinoCompleto)}</p><table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><thead><tr><th style="${th};width:6%">Nº</th><th style="${th}">ESTUDANTE PCD</th><th style="${th};width:18%">DOCUMENTO</th><th style="${th};width:10%">CADEIRANTE</th><th style="${th}">APOIO</th><th style="${th};width:18%">DOCUMENTO</th></tr></thead><tbody>${linhas}</tbody></table><p style="margin:12px 0 0">Pedimos a confirmação do atendimento e, se disponível, a indicação do veículo e motorista responsáveis.</p><p style="margin:16px 0 0">Atenciosamente,<br>Bora Lá - Excursões / Semed Nova Lima</p>`;
+  return `<p style="margin:0 0 10px">${saudacaoEmailBrasilia()}</p><p style="margin:0 0 10px">Solicitamos o transporte adaptado para o atendimento abaixo:</p><p style="margin:0 0 12px"><strong>Unidade solicitante:</strong> ${esc(requesterName(trip))}<br><strong>Data e horário:</strong> ${esc(dataHora)}<br><strong>Origem:</strong> ${esc(originName(trip))} — ${esc(originAddress(trip) || '-')}<br><strong>Destino:</strong> ${esc(destinoCompleto)}</p><table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px"><thead><tr><th style="${th};width:6%">Nº</th><th style="${th}">ESTUDANTE PCD</th><th style="${th};width:18%">DOCUMENTO</th><th style="${th};width:10%">CADEIRANTE</th><th style="${th}">APOIO</th><th style="${th};width:18%">DOCUMENTO</th></tr></thead><tbody>${linhas}</tbody></table><p style="margin:12px 0 0">Pedimos a confirmação do atendimento e, se disponível, a indicação do veículo e motorista responsáveis.</p><p style="margin:16px 0 0">Atenciosamente,<br>Bora Lá - Excursões / Semed Nova Lima</p>`;
 }
 
 function renderCooperativaEmailPreview() {
@@ -6576,7 +6584,7 @@ function buildPcdEmailBody(trip, pcdStudents) {
       }).filter(Boolean).join('\n')
     : '(nenhum aluno cadastrado ainda - edite a solicitação antes de enviar)';
   const assinatura = 'Bora Lá - Excursões / Semed Nova Lima';
-  return `Prezados(as),
+  return `${saudacaoEmailBrasilia()}
 
 Solicitamos o transporte adaptado para o atendimento abaixo:
 
@@ -6607,7 +6615,7 @@ function buildAtfEmailBody(trip, passengers, driverNames) {
     ? passengers.map((p, i) => `${i + 1}. ${p.nome}${p.documento ? ' - ' + p.documento : ''}`).join('\n')
     : '(listagem de passageiros ainda não cadastrada - use o botão "📋 Lista" antes de enviar)';
   const assinatura = 'Bora Lá - Excursões / Semed Nova Lima';
-  return `Bom dia,
+  return `${saudacaoEmailBrasilia()}
 
 Solicita-se a emissão de ATF para a excursão abaixo:
 
@@ -7446,10 +7454,10 @@ async function avisarSetorNovaSolicitacao(a, qtdDatas = 1) {
   ];
   const intro = `A unidade ${unidade} registrou uma nova solicitação de viagem no sistema Bora Lá.`;
   const fim = `Registrada em ${quando}. A solicitação segue o fluxo normal (validação pedagógica e análise administrativa).`;
-  const texto = `Olá,\n\n${intro}\n\n${linhas.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n${fim}\n\nBora Lá - Excursões / Semed Nova Lima`;
+  const texto = `${saudacaoEmailBrasilia()}\n\n${intro}\n\n${linhas.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n${fim}\n\nBora Lá - Excursões / Semed Nova Lima`;
   const p = (t) => `<p style="margin:0 0 12px">${t}</p>`;
   const html = `<div style="max-width:720px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.5;font-size:14px"><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | Nova solicitação de viagem</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:3px;background:#16a34a;margin:3px 0 16px"></div>`
-    + p('Olá,') + p(`A unidade <strong>${escapeHtml(unidade)}</strong> registrou uma nova solicitação de viagem no sistema Bora Lá.`)
+    + p(saudacaoEmailBrasilia()) + p(`A unidade <strong>${escapeHtml(unidade)}</strong> registrou uma nova solicitação de viagem no sistema Bora Lá.`)
     + p(linhas.map(([k, v]) => k === 'Saída' ? `<strong>Saída:</strong> ${escapeHtml(hhmm(a.departure_time))}h - <strong>Retorno:</strong> ${escapeHtml(hhmm(a.return_time))}h` : `<strong>${escapeHtml(k)}:</strong> ${escapeHtml(v)}`).join('<br>'))
     + p(escapeHtml(fim)) + '<p style="margin:18px 0 0">Bora Lá - Excursões / Semed Nova Lima</p></div>';
   await tentarEnviarEmailAutomatico(destino, assunto, texto, '', html);
@@ -8281,7 +8289,7 @@ function confirmacaoEscolaLabel(a) { return a?.escola_confirmada_em ? 'Confirmad
 function buildNotificacaoViagensText(rows) {
   const mostrarConfirmacao = rows.some((a) => !a.escola_confirmada_em);
   const linhas = rows.map((a, index) => `${index + 1}. ${TURNO_LABELS[a.turno || turnoFromHora(a.departure_time)] || '-'} | ${horaComH(a.departure_time)} às ${horaComH(a.return_time)} — ${originName(a)} → ${a.destination || '-'}\nPassageiros: ${totalPassengers(a)}${mostrarConfirmacao ? ` | Confirmação: ${confirmacaoEscolaLabel(a)}` : ''}`).join('\n\n');
-  return `Olá, equipe!\n\nEstá tudo pronto para a(s) viagem(ns) abaixo. Para liberarmos o(s) veículo(s), pedimos que a unidade confirme a viagem no Bora Lá. Aproveite para conferir com atenção os horários e a quantidade de passageiros.\n\nCaso haja pendência de confirmação, acesse o Bora Lá, vá ao menu Agenda, localize as viagens abaixo e clique em "Confirmar" na coluna Ações.\n\n${linhas}\n\nLembramos que o cuidado com o(s) veículo(s) durante a viagem é responsabilidade da unidade solicitante. Contamos com a colaboração de todos!\n\nObrigado e boa viagem!\nBora Lá - Excursões / Semed Nova Lima\n\n(Essa mensagem foi gerada automaticamente)`;
+  return `${saudacaoEmailBrasilia()} equipe!\n\nEstá tudo pronto para a(s) viagem(ns) abaixo. Para liberarmos o(s) veículo(s), pedimos que a unidade confirme a viagem no Bora Lá. Aproveite para conferir com atenção os horários e a quantidade de passageiros.\n\nCaso haja pendência de confirmação, acesse o Bora Lá, vá ao menu Agenda, localize as viagens abaixo e clique em "Confirmar" na coluna Ações.\n\n${linhas}\n\nLembramos que o cuidado com o(s) veículo(s) durante a viagem é responsabilidade da unidade solicitante. Contamos com a colaboração de todos!\n\nObrigado e boa viagem!\nBora Lá - Excursões / Semed Nova Lima\n\n(Essa mensagem foi gerada automaticamente)`;
 }
 
 // Impede que os clientes de e-mail transformem automaticamente nomes e endereços em links.
@@ -8328,7 +8336,7 @@ function buildNotificacaoViagensHtml(rows, somenteQuadro = false) {
     ? `<table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;table-layout:fixed;font-family:Arial,sans-serif;font-size:13px"><thead><tr style="background:#e5e7eb;color:#111827"><th style="width:${w[0]};border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">TURNO</th><th style="width:${w[1]};border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">SAÍDA</th><th style="width:${w[2]};border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">RETORNO</th><th style="width:${w[3]};border:1px solid #cbd5e1;padding:9px 6px;font-size:11px;text-align:center">ORIGEM</th><th style="width:${w[4]};border:1px solid #cbd5e1;padding:9px 6px;font-size:11px;text-align:center">DESTINO</th><th style="width:${w[5]};border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">PASS</th>${mostrarConfirmacao ? `<th style="width:${w[6]};border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">CONFIRMAÇÃO</th>` : ''}</tr></thead><tbody>${rows.map((a, index) => { const origem = `${originName(a)}${a.origin_acronym ? ` (${a.origin_acronym})` : ''}`; const destinoDaMesmaUnidade = String(a.destination || '').trim().toLocaleLowerCase('pt-BR') === String(originName(a) || '').trim().toLocaleLowerCase('pt-BR'); const enderecoDestino = destinoDaMesmaUnidade ? '' : [a.destination_address, a.city].filter(Boolean).filter((valor, posicao, lista) => !posicao || String(valor).trim().toLocaleLowerCase('pt-BR') !== String(lista[0]).trim().toLocaleLowerCase('pt-BR')).join(' · '); return `<tr style="background:${index % 2 ? '#f8fafc' : '#ffffff'}"><td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;vertical-align:middle">${escapeHtml(TURNO_LABELS[a.turno || turnoFromHora(a.departure_time)] || '-')}</td><td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;vertical-align:middle">${escapeHtml(horaComH(a.departure_time))}</td><td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;vertical-align:middle">${escapeHtml(horaComH(a.return_time))}</td><td style="border:1px solid #dbe2ea;padding:10px 6px;vertical-align:middle;word-break:break-word"><strong style="font-size:11px">${escapeHtml(textoEmailSemHiperlink(origem))}</strong></td><td style="border:1px solid #dbe2ea;padding:10px 6px;vertical-align:middle;word-break:break-word"><strong style="font-size:11px">${escapeHtml(textoEmailSemHiperlink(a.destination || '-'))}</strong>${enderecoDestino ? `<br><span style="color:#64748b;font-size:10px">${escapeHtml(textoEmailSemHiperlink(enderecoDestino))}</span>` : ''}</td><td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;vertical-align:middle">${totalPassengers(a)}</td>${mostrarConfirmacao ? `<td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;font-size:11px;vertical-align:middle;color:${a.escola_confirmada_em ? '#2563eb' : '#000000'}">${confirmacaoEscolaLabel(a)}</td>` : ''}</tr>`; }).join('')}</tbody></table>`
     : '<p style="padding:16px">Selecione ao menos uma origem com viagem escalada.</p>';
   if (somenteQuadro) return table;
-  return `<div style="max-width:820px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.45"><style>a{color:inherit!important;text-decoration:none!important;pointer-events:none!important}</style><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | Confirmação de viagens</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:3px;background:#16a34a;margin:3px 0 14px"></div><p style="margin:0 0 8px"><strong>Data:</strong> ${escapeHtml(dataLabel || '-')} &nbsp;·&nbsp; <strong>Viagens:</strong> ${rows.length}</p><p style="margin:0 0 14px">Olá, equipe!<br>Está tudo pronto para a(s) viagem(ns) abaixo. Para liberarmos o(s) veículo(s), pedimos que a unidade <strong>confirme a viagem no Bora Lá</strong>. Aproveite para conferir com atenção os horários e a quantidade de passageiros.</p><div style="margin:0 0 14px;padding:11px 13px;border:1px solid #a7f3d0;background:#ecfdf5;border-radius:8px;font-size:13px;color:#065f46">Caso haja pendência de confirmação, acesse o Bora Lá, vá ao menu <strong>Agenda</strong>, localize as viagens abaixo e clique em <strong>✅ Confirmar</strong> na coluna <strong>Ações</strong>.</div>${table}<p style="border-left:4px solid #f59e0b;background:#fffbeb;color:#78350f;margin:18px 0 0;padding:11px 13px;font-size:13px">Lembramos que o cuidado com o(s) veículo(s) durante a viagem é responsabilidade da unidade solicitante. Contamos com a colaboração de todos!</p><p style="margin:18px 0 0">Obrigado e boa viagem!<br><strong>Bora Lá - Excursões / Semed Nova Lima</strong></p><p style="border-top:1px solid #e2e8f0;color:#475569;font-size:11px;margin-top:28px;padding-top:10px">(Essa mensagem foi gerada automaticamente)</p></div>`;
+  return `<div style="max-width:820px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.45"><style>a{color:inherit!important;text-decoration:none!important;pointer-events:none!important}</style><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | Confirmação de viagens</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:3px;background:#16a34a;margin:3px 0 14px"></div><p style="margin:0 0 8px"><strong>Data:</strong> ${escapeHtml(dataLabel || '-')} &nbsp;·&nbsp; <strong>Viagens:</strong> ${rows.length}</p><p style="margin:0 0 14px">${saudacaoEmailBrasilia()} equipe!<br>Está tudo pronto para a(s) viagem(ns) abaixo. Para liberarmos o(s) veículo(s), pedimos que a unidade <strong>confirme a viagem no Bora Lá</strong>. Aproveite para conferir com atenção os horários e a quantidade de passageiros.</p><div style="margin:0 0 14px;padding:11px 13px;border:1px solid #a7f3d0;background:#ecfdf5;border-radius:8px;font-size:13px;color:#065f46">Caso haja pendência de confirmação, acesse o Bora Lá, vá ao menu <strong>Agenda</strong>, localize as viagens abaixo e clique em <strong>✅ Confirmar</strong> na coluna <strong>Ações</strong>.</div>${table}<p style="border-left:4px solid #f59e0b;background:#fffbeb;color:#78350f;margin:18px 0 0;padding:11px 13px;font-size:13px">Lembramos que o cuidado com o(s) veículo(s) durante a viagem é responsabilidade da unidade solicitante. Contamos com a colaboração de todos!</p><p style="margin:18px 0 0">Obrigado e boa viagem!<br><strong>Bora Lá - Excursões / Semed Nova Lima</strong></p><p style="border-top:1px solid #e2e8f0;color:#475569;font-size:11px;margin-top:28px;padding-top:10px">(Essa mensagem foi gerada automaticamente)</p></div>`;
 }
 
 function openNotificarViagensModal() {
