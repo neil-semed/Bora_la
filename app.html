@@ -724,7 +724,11 @@
                   <label class="block text-xs font-medium text-slate-500 mb-1">Filtrar por Placa</label>
                   <input type="text" id="agendaCombinadaFiltroPlaca" oninput="renderAgendaCombinadaAdmin()" placeholder="Ex: ABC1D23" class="px-3 py-2 border rounded-lg text-sm" />
                 </div>
-                <button onclick="document.getElementById('agendaCombinadaInicio').value='';document.getElementById('agendaCombinadaFim').value='';document.getElementById('agendaCombinadaFiltroPlaca').value='';renderAgendaCombinadaAdmin();" class="px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Limpar filtros</button>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Sistema</label>
+                  <select id="agendaCombinadaFiltroSistema" onchange="renderAgendaCombinadaAdmin()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Bora Lá + MarkCarro</option><option value="bora_la">Somente Bora Lá</option><option value="markcarro">Somente MarkCarro</option></select>
+                </div>
+                <button onclick="document.getElementById('agendaCombinadaInicio').value='';document.getElementById('agendaCombinadaFim').value='';document.getElementById('agendaCombinadaFiltroPlaca').value='';document.getElementById('agendaCombinadaFiltroSistema').value='';renderAgendaCombinadaAdmin();" class="px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Limpar filtros</button>
               </div>
 
               <div class="overflow-x-auto">
@@ -2228,7 +2232,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=evento-escola-carro-filtros-20261005-001"></script>
+  <script src="app.js?v=agenda-combinada-sistema-20261005-001"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */

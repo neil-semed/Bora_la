@@ -4304,31 +4304,39 @@ async function renderAgendaCombinadaAdmin() {
   const inicio = document.getElementById('agendaCombinadaInicio')?.value || fmtDate(hoje);
   const fim = document.getElementById('agendaCombinadaFim')?.value || fmtDate(daqui30);
   const filtroPlaca = (document.getElementById('agendaCombinadaFiltroPlaca')?.value || '').trim().toUpperCase();
+  const filtroSistema = document.getElementById('agendaCombinadaFiltroSistema')?.value || '';
 
   const linhas = [];
-  agenda
-    .filter((a) => viagemConfirmadaParaMotorista(a) && a.trip_date >= inicio && a.trip_date <= fim)
-    .forEach((a) => {
-      const placas = placasDaExcursao(a);
-      const motoristas = motoristasDaExcursao(a);
-      (placas.length ? placas : [null]).forEach((placa, idx) => linhas.push({
-        sistema: 'bora_la', placa, motorista: motoristas[idx] || motoristas[0] || null,
-        data_viagem: a.trip_date, hora_saida: a.departure_time,
-        hora_retorno: a.return_time, detalhe: `${originName(a) || ''} → ${a.destination || ''}`, status: a.status,
-      }));
-    });
+  if (filtroSistema !== 'markcarro') {
+    agenda
+      .filter((a) => viagemConfirmadaParaMotorista(a) && a.trip_date >= inicio && a.trip_date <= fim)
+      .forEach((a) => {
+        const placas = placasDaExcursao(a);
+        const motoristas = motoristasDaExcursao(a);
+        (placas.length ? placas : [null]).forEach((placa, idx) => linhas.push({
+          sistema: 'bora_la', placa, motorista: motoristas[idx] || motoristas[0] || null,
+          data_viagem: a.trip_date, hora_saida: a.departure_time,
+          hora_retorno: a.return_time, detalhe: `${originName(a) || ''} → ${a.destination || ''}`, status: a.status,
+        }));
+      });
+  }
 
   const avisoEl = document.getElementById('agendaCombinadaAvisoMarkCarro');
-  try {
-    const doMarkCarro = await buscarAgendaMarkCarro(inicio, fim);
-    linhas.push(...(doMarkCarro || []));
+  if (filtroSistema !== 'bora_la') {
+    try {
+      const doMarkCarro = await buscarAgendaMarkCarro(inicio, fim);
+      linhas.push(...(doMarkCarro || []));
+      avisoEl?.classList.add('hidden');
+    } catch (e) {
+      console.error('Erro ao buscar agenda do MarkCarro (admin):', e);
+      avisoEl?.classList.remove('hidden');
+    }
+  } else {
     avisoEl?.classList.add('hidden');
-  } catch (e) {
-    console.error('Erro ao buscar agenda do MarkCarro (admin):', e);
-    avisoEl?.classList.remove('hidden');
   }
 
   const filtradas = (filtroPlaca ? linhas.filter((l) => (l.placa || '').toUpperCase().includes(filtroPlaca)) : linhas)
+    .filter((l) => !filtroSistema || l.sistema === filtroSistema)
     .sort((a, b) => `${a.data_viagem || ''} ${a.hora_saida || ''}`.localeCompare(`${b.data_viagem || ''} ${b.hora_saida || ''}`));
 
   if (!filtradas.length) {
