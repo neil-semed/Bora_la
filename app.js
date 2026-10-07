@@ -1820,6 +1820,10 @@ function showScreen(name, el) {
   if (currentUser && !canViewScreen(name)) {
     name = defaultScreenForCurrentUser();
   }
+  // O navegador mantém inputs de arquivo em memória. Ao abandonar o wizard,
+  // remove a seleção para que ela nunca seja reaproveitada em outra solicitação.
+  const leavingSolicitacao = document.getElementById('screen-solicitacao')?.classList.contains('active-screen') && name !== 'solicitacao';
+  if (leavingSolicitacao) clearWizardProposalInput();
 
   document.querySelectorAll('[id^="screen-"]').forEach((sec) => {
     sec.classList.add('hidden-screen');
@@ -6961,8 +6965,8 @@ function addFinanceItemRow() {
   const box = document.getElementById('wFinanceItems');
   if (!box) return;
   const row = document.createElement('div');
-  row.className = 'grid grid-cols-[minmax(0,1fr)_44px_68px_24px] gap-2';
-  row.innerHTML = '<input data-finance-description placeholder="Descrição" class="min-w-0 rounded-lg border px-2 py-2" /><input data-finance-quantity type="number" min="0" placeholder="0" class="min-w-0 rounded-lg border px-2 py-2" /><input data-finance-value inputmode="decimal" placeholder="0,00" class="min-w-0 rounded-lg border px-2 py-2" /><button type="button" onclick="this.parentElement.remove()" class="rounded-lg text-red-600" title="Remover item">×</button>';
+  row.className = 'grid grid-cols-[minmax(0,1fr)_104px_116px_24px] gap-2';
+  row.innerHTML = '<input data-finance-description placeholder="Descrição" class="min-w-0 rounded-lg border px-2 py-2" /><input data-finance-quantity type="number" min="0" step="0.01" placeholder="0,00" class="min-w-0 rounded-lg border px-2 py-2 text-right tabular-nums" /><input data-finance-value inputmode="decimal" placeholder="0,00" class="min-w-0 rounded-lg border px-2 py-2 text-right tabular-nums" /><button type="button" onclick="this.parentElement.remove()" class="rounded-lg text-red-600" title="Remover item">×</button>';
   box.appendChild(row);
 }
 
@@ -7045,7 +7049,16 @@ function updatePcdField(i, field, value) {
   if (wizardPcdList[i]) wizardPcdList[i][field] = value;
 }
 
-function resetWizard() {
+function clearWizardProposalInput(clearPending = true) {
+  const proposalInput = document.getElementById('wPropostaDocument');
+  if (proposalInput) proposalInput.value = '';
+  if (clearPending) pendingWizardProposalFile = null;
+}
+
+function resetWizard(options = {}) {
+  // O arquivo não pode reaparecer numa solicitação nova. Ao concluir com proposta,
+  // preservamos apenas a cópia temporária para transferi-la ao modal de upload.
+  clearWizardProposalInput(!options.preservePendingProposal);
   // Escola já tem a própria unidade fixada (não escolhe outra), então a "Passo 1" não
   // pergunta nada de novo pra ela - pula direto pro Passo 2 (Destino).
   wizardMinStep = (currentUser.role === 'escola' && currentUser.schoolId) ? 2 : 1;
@@ -7616,7 +7629,7 @@ async function submitSolicitacao() {
   renderDashboard();
   if (anexarProposta && primeiraViagemCriadaId) {
     pendingWizardProposalFile = propostaFile;
-    resetWizard();
+    resetWizard({ preservePendingProposal: true });
     openDocUploadModal(primeiraViagemCriadaId);
     toast('✅ Solicitação criada. Agora envie a proposta pedagógica.');
     return;
