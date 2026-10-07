@@ -6134,25 +6134,34 @@ async function confirmEnviarListagem() {
     const { data: { session } } = await sb.auth.getSession();
     if (!session?.access_token) { toast('⚠️ Sua sessão expirou. Entre novamente antes de enviar a listagem.', true); return; }
     let arquivosSalvos = true;
-    for (const did of driversEnviar) {
-      try {
+    try {
+      // A conversão e o envio dos arquivos são independentes. Fazer até três em
+      // paralelo reduz bastante o tempo quando a viagem usa mais de um veículo,
+      // sem criar uma rajada excessiva no Apps Script/Google Drive.
+      const prepararArquivo = async (did) => {
         const v = driverVehicle(did);
         const unidadeSlug = slugify(schoolName(trip.school_id) || trip.requester_name);
         const motoristaSlug = slugify(driverName(did) || (v ? v.plate : did));
         const arquivoEnviado = listagemMetodoByDriver[did] === 'pdf' ? listagemUploadsByDriver[did] : null;
         const blob = arquivoEnviado || gerarListagemPdf(trip, did);
-        if (!blob) continue;
+        if (!blob) return null;
         const base64 = await blobToBase64(blob);
         const extEnviado = arquivoEnviado ? ((arquivoEnviado.name.match(/\.(xlsx|pdf)$/i)?.[1] || (arquivoEnviado.type === 'application/pdf' ? 'pdf' : 'xlsx')).toLowerCase()) : '';
         const filename = arquivoEnviado ? `${dataArquivoListagem(trip)}_${unidadeSlug}_${motoristaSlug}.${extEnviado}` : `${trip.trip_date}_${unidadeSlug}_${v ? v.plate : did}.pdf`;
         const mimeType = arquivoEnviado?.type || (filename.toLowerCase().endsWith('.xlsx') ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/pdf');
-        const respJson = await uploadToGoogleDrive(driveUrl, { excursionId: id, filename, mimeType, fileBase64: base64, accessToken: session.access_token });
-        if (!await registrarListagemFile(id, did, filename, respJson.fileId, respJson.url)) { arquivosSalvos = false; break; }
-      } catch (err) {
-        toast('⚠️ Listagem salva, mas houve erro ao enviar um dos arquivos pro Drive: ' + (err && err.message ? err.message : err), true);
-        arquivosSalvos = false;
-        break;
+        return { did, filename, mimeType, base64 };
+      };
+      for (let inicio = 0; inicio < driversEnviar.length; inicio += 3) {
+        const arquivosParaEnviar = (await Promise.all(driversEnviar.slice(inicio, inicio + 3).map(prepararArquivo))).filter(Boolean);
+        await Promise.all(arquivosParaEnviar.map(async (arquivo) => {
+          const respJson = await uploadToGoogleDrive(driveUrl, { excursionId: id, filename: arquivo.filename, mimeType: arquivo.mimeType, fileBase64: arquivo.base64, accessToken: session.access_token });
+          const saved = await registrarListagemFile(id, arquivo.did, arquivo.filename, respJson.fileId, respJson.url);
+          if (!saved) throw new Error('Não foi possível registrar o arquivo da listagem.');
+        }));
       }
+    } catch (err) {
+      toast('⚠️ Listagem salva, mas houve erro ao enviar um dos arquivos pro Drive: ' + (err && err.message ? err.message : err), true);
+      arquivosSalvos = false;
     }
     if (!arquivosSalvos) return;
   }
