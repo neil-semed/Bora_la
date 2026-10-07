@@ -339,9 +339,6 @@
           <a data-screen="usuarios" data-roles="admin" onclick="showScreen('usuarios', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
             🔑 Usuários
           </a>
-          <a data-screen="avisos" data-roles="admin" onclick="showScreen('avisos', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
-            📣 Avisos administrativos
-          </a>
           <a data-screen="perfisacesso" data-roles="admin" onclick="showScreen('perfisacesso', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
             🛡️ Perfis de acesso
           </a>
@@ -414,7 +411,6 @@
           <a data-screen="veiculos" data-roles="admin" onclick="showScreen('veiculos',this)" class="top-nav-link"><i data-lucide="bus-front" class="w-4 h-4 mr-1.5 text-teal-600"></i>Veículos</a>
           <a data-screen="motoristas" data-roles="admin" onclick="showScreen('motoristas',this)" class="top-nav-link"><i data-lucide="contact-round" class="w-4 h-4 mr-1.5 text-rose-600"></i>Motoristas</a>
           <a data-screen="usuarios" data-roles="admin" onclick="showScreen('usuarios',this)" class="top-nav-link"><i data-lucide="users-round" class="w-4 h-4 mr-1.5 text-indigo-600"></i>Usuários</a>
-          <a data-screen="avisos" data-roles="admin" onclick="showScreen('avisos',this)" class="top-nav-link"><i data-lucide="megaphone" class="w-4 h-4 mr-1.5 text-orange-600"></i>Avisos</a>
           <a data-screen="perfisacesso" data-roles="admin" onclick="showScreen('perfisacesso',this)" class="top-nav-link"><i data-lucide="shield-check" class="w-4 h-4 mr-1.5 text-fuchsia-600"></i>Perfis de acesso</a>
           <a data-screen="validadores" data-roles="admin" onclick="showScreen('validadores',this)" class="top-nav-link"><i data-lucide="badge-check" class="w-4 h-4 mr-1.5 text-pink-600"></i>Validadores</a>
           <a data-screen="cooperativas" data-roles="admin" onclick="showScreen('cooperativas',this)" class="top-nav-link"><i data-lucide="send" class="w-4 h-4 mr-1.5 text-cyan-700"></i>Cooperativas</a>
@@ -652,11 +648,12 @@
           <section id="screen-carrosolicitacoes" class="hidden-screen">
             <div class="bg-white rounded-xl border shadow-sm p-4 sm:p-6">
               <h2 class="text-base font-semibold text-slate-900 mb-4">Minhas Solicitações</h2>
-              <div class="flex flex-wrap items-end gap-2 mb-4">
-                <div class="w-32"><label class="block text-xs font-medium text-slate-500 mb-1">Data Solic.</label><input type="date" id="carroFiltroSolicitacao" autocomplete="off" onchange="renderCarroSolicitacoes()" class="w-full px-2 py-2 border rounded-lg text-sm" /></div>
-                <div class="w-32"><label class="block text-xs font-medium text-slate-500 mb-1">Data Viagem</label><input type="date" id="carroFiltroData" autocomplete="off" onchange="renderCarroSolicitacoes()" class="w-full px-2 py-2 border rounded-lg text-sm" /></div>
-                <div class="w-52 max-w-full"><label class="block text-xs font-medium text-slate-500 mb-1">Origem/Destino</label><input type="text" id="carroFiltroTrajeto" autocomplete="off" placeholder="Buscar..." oninput="renderCarroSolicitacoes()" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
-                <label class="flex h-10 items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800"><input id="carroOcultarPassadas" type="checkbox" checked onchange="renderCarroSolicitacoes()" class="h-4 w-4 accent-emerald-600" /> Ocultar passadas</label>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+                <div><label class="block text-xs font-medium text-slate-500 mb-1">Data Solic.</label><input type="date" id="carroFiltroSolicitacao" autocomplete="off" onchange="renderCarroSolicitacoes()" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                <div><label class="block text-xs font-medium text-slate-500 mb-1">Data Viagem</label><input type="date" id="carroFiltroData" autocomplete="off" onchange="renderCarroSolicitacoes()" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                <div class="col-span-2 sm:col-span-1"><label class="block text-xs font-medium text-slate-500 mb-1">Origem/Destino</label><input type="text" id="carroFiltroTrajeto" autocomplete="off" placeholder="Buscar..." oninput="renderCarroSolicitacoes()" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+              </div>
+              <div class="flex flex-wrap items-center gap-2 mb-4">
                 <button type="button" onclick="filtrarCarroHoje()" class="px-3 py-2 border rounded-lg text-sm font-semibold">Hoje</button>
                 <button type="button" onclick="limparFiltrosCarro()" class="px-3 py-2 border rounded-lg text-sm font-semibold">Limpar Filtros</button>
                 <div id="carroSetorCards" class="hidden ml-auto flex flex-wrap items-center gap-2"><span class="text-xs font-semibold text-slate-600">Meu setor</span><div class="rounded-lg border bg-white px-2 py-1" style="border-left:4px solid #044AAA;min-width:92px"><p class="text-base font-bold leading-tight" style="color:#044AAA" id="carroSetorTotal">0</p><p class="text-[11px] text-slate-500">Total do setor</p></div><div class="rounded-lg border bg-white px-2 py-1" style="border-left:4px solid #FF914D;min-width:92px"><p class="text-base font-bold leading-tight" style="color:#FF914D" id="carroSetorPendentes">0</p><p class="text-[11px] text-slate-500">Pendentes</p></div><div class="rounded-lg border bg-white px-2 py-1" style="border-left:4px solid #46BE6B;min-width:92px"><p class="text-base font-bold leading-tight" style="color:#46BE6B" id="carroSetorAprovadas">0</p><p class="text-[11px] text-slate-500">Aprovadas</p></div><div class="rounded-lg border bg-white px-2 py-1" style="border-left:4px solid #7c3aed;min-width:92px"><p class="text-base font-bold leading-tight" style="color:#7c3aed" id="carroSetorOcupadas">0</p><p class="text-[11px] text-slate-500">Ocupadas</p></div><div class="rounded-lg border bg-white px-2 py-1" style="border-left:4px solid #D85736;min-width:92px"><p class="text-base font-bold leading-tight" style="color:#D85736" id="carroSetorCanceladas">0</p><p class="text-[11px] text-slate-500">Canceladas</p></div></div>
@@ -724,11 +721,7 @@
                   <label class="block text-xs font-medium text-slate-500 mb-1">Filtrar por Placa</label>
                   <input type="text" id="agendaCombinadaFiltroPlaca" oninput="renderAgendaCombinadaAdmin()" placeholder="Ex: ABC1D23" class="px-3 py-2 border rounded-lg text-sm" />
                 </div>
-                <div>
-                  <label class="block text-xs font-medium text-slate-500 mb-1">Sistema</label>
-                  <select id="agendaCombinadaFiltroSistema" onchange="renderAgendaCombinadaAdmin()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Bora Lá + MarkCarro</option><option value="bora_la">Somente Bora Lá</option><option value="markcarro">Somente MarkCarro</option></select>
-                </div>
-                <button onclick="document.getElementById('agendaCombinadaInicio').value='';document.getElementById('agendaCombinadaFim').value='';document.getElementById('agendaCombinadaFiltroPlaca').value='';document.getElementById('agendaCombinadaFiltroSistema').value='';renderAgendaCombinadaAdmin();" class="px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Limpar filtros</button>
+                <button onclick="document.getElementById('agendaCombinadaInicio').value='';document.getElementById('agendaCombinadaFim').value='';document.getElementById('agendaCombinadaFiltroPlaca').value='';renderAgendaCombinadaAdmin();" class="px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Limpar filtros</button>
               </div>
 
               <div class="overflow-x-auto">
@@ -902,7 +895,7 @@
 
               <!-- STEP 4: PARTICIPANTES -->
               <div id="step4" class="hidden">
-                <div class="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_420px]">
+                <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
                 <div class="space-y-4">
                 <div class="request-section mb-4">
                 <div class="flex items-start gap-3 mb-4"><div class="h-10 w-10 rounded-xl bg-blue-600 text-white grid place-items-center shrink-0"><i data-lucide="users-round" class="w-5 h-5"></i></div><div><h3 class="font-bold text-blue-950">Participantes e recorrência</h3><p class="text-sm text-slate-500">Informe o público da viagem e defina se haverá outras ocorrências.</p></div></div>
@@ -940,9 +933,9 @@
                 <div class="request-section request-section--recurrence"><label class="block text-sm font-bold text-indigo-950 mb-2">Tipo de evento</label>
                 <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                   <label class="flex items-center gap-2"><input type="radio" name="wRecorrencia" value="unico" checked onchange="onWRecorrenciaChange()" /> Evento único</label>
-                  <label data-recorrencia-continuada class="flex items-center gap-2"><input type="radio" name="wRecorrencia" value="semanal" onchange="onWRecorrenciaChange()" /> Continuado semanal</label>
-                  <label data-recorrencia-continuada class="flex items-center gap-2"><input type="radio" name="wRecorrencia" value="quinzenal" onchange="onWRecorrenciaChange()" /> Continuado quinzenal</label>
-                  <label data-recorrencia-continuada class="flex items-center gap-2"><input type="radio" name="wRecorrencia" value="mensal" onchange="onWRecorrenciaChange()" /> Continuado mensal</label>
+                  <label class="flex items-center gap-2"><input type="radio" name="wRecorrencia" value="semanal" onchange="onWRecorrenciaChange()" /> Continuado semanal</label>
+                  <label class="flex items-center gap-2"><input type="radio" name="wRecorrencia" value="quinzenal" onchange="onWRecorrenciaChange()" /> Continuado quinzenal</label>
+                  <label class="flex items-center gap-2"><input type="radio" name="wRecorrencia" value="mensal" onchange="onWRecorrenciaChange()" /> Continuado mensal</label>
                   <label class="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-emerald-900"><input type="radio" name="wRecorrencia" value="datas_adicionais" onchange="onWRecorrenciaChange()" /> Repetir em outras datas específicas</label>
                 </div>
                 <div id="wRecorrenciaDetalhes" class="hidden mt-3 space-y-3 bg-slate-50 border rounded-lg p-3">
@@ -981,11 +974,11 @@
                   </div>
                   <div id="wFinanceFields" class="hidden mt-4">
                     <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-orange-800">Itens de despesa estimados</p>
-                    <div class="grid grid-cols-[minmax(0,1fr)_104px_116px] gap-2 text-xs font-semibold text-slate-600"><span>Item</span><span>Quantidade</span><span>Valor total</span></div>
+                    <div class="grid grid-cols-[minmax(0,1fr)_48px_72px] gap-2 text-xs font-semibold text-slate-600"><span>Item</span><span>Qtd.</span><span>Valor</span></div>
                     <div id="wFinanceItems" class="mt-2 space-y-2">
-                      <div class="grid grid-cols-[minmax(0,1fr)_104px_116px] gap-2"><input data-finance-description value="Pedágios" class="min-w-0 rounded-lg border px-2 py-2" /><input data-finance-quantity type="number" min="0" step="0.01" placeholder="0,00" class="min-w-0 rounded-lg border px-2 py-2 text-right tabular-nums" /><input data-finance-value inputmode="decimal" placeholder="0,00" class="min-w-0 rounded-lg border px-2 py-2 text-right tabular-nums" /></div>
-                      <div class="grid grid-cols-[minmax(0,1fr)_104px_116px] gap-2"><input data-finance-description value="Ingressos" class="min-w-0 rounded-lg border px-2 py-2" /><input data-finance-quantity type="number" min="0" step="0.01" placeholder="0,00" class="min-w-0 rounded-lg border px-2 py-2 text-right tabular-nums" /><input data-finance-value inputmode="decimal" placeholder="0,00" class="min-w-0 rounded-lg border px-2 py-2 text-right tabular-nums" /></div>
-                      <div class="grid grid-cols-[minmax(0,1fr)_104px_116px] gap-2"><input data-finance-description value="Diárias" class="min-w-0 rounded-lg border px-2 py-2" /><input data-finance-quantity type="number" min="0" step="0.01" placeholder="0,00" class="min-w-0 rounded-lg border px-2 py-2 text-right tabular-nums" /><input data-finance-value inputmode="decimal" placeholder="0,00" class="min-w-0 rounded-lg border px-2 py-2 text-right tabular-nums" /></div>
+                      <div class="grid grid-cols-[minmax(0,1fr)_48px_72px] gap-2"><input data-finance-description value="Pedágios" class="min-w-0 rounded-lg border px-2 py-2" /><input data-finance-quantity type="number" min="0" placeholder="0" class="min-w-0 rounded-lg border px-2 py-2" /><input data-finance-value inputmode="decimal" placeholder="0,00" class="min-w-0 rounded-lg border px-2 py-2" /></div>
+                      <div class="grid grid-cols-[minmax(0,1fr)_48px_72px] gap-2"><input data-finance-description value="Ingressos" class="min-w-0 rounded-lg border px-2 py-2" /><input data-finance-quantity type="number" min="0" placeholder="0" class="min-w-0 rounded-lg border px-2 py-2" /><input data-finance-value inputmode="decimal" placeholder="0,00" class="min-w-0 rounded-lg border px-2 py-2" /></div>
+                      <div class="grid grid-cols-[minmax(0,1fr)_48px_72px] gap-2"><input data-finance-description value="Diárias" class="min-w-0 rounded-lg border px-2 py-2" /><input data-finance-quantity type="number" min="0" placeholder="0" class="min-w-0 rounded-lg border px-2 py-2" /><input data-finance-value inputmode="decimal" placeholder="0,00" class="min-w-0 rounded-lg border px-2 py-2" /></div>
                     </div>
                     <button type="button" onclick="addFinanceItemRow()" class="mt-3 rounded-lg border border-orange-300 bg-white px-3 py-2 text-sm font-semibold text-orange-800">+ Adicionar item</button>
                     <div class="mt-4 rounded-lg border border-dashed border-orange-300 bg-orange-100/60 p-3"><label class="block text-sm font-bold text-orange-950">Documentação financeira</label><p class="mb-2 text-xs text-orange-800">Orçamentos, cotações ou documentos comprobatórios (opcional nesta etapa).</p><input id="wFinanceDocument" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" class="block w-full text-sm" /></div>
@@ -1337,9 +1330,9 @@
                   <input type="email" id="settingsRemetenteEmail" placeholder="Ex: excursao.semed@pnl.mg.gov.br" class="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>
                 <div class="col-span-2">
-                  <label class="block text-xs font-medium text-slate-500 mb-1">URL do Google Apps Script (upload dos projetos pedagógicos pro Drive)</label>
-                  <input type="text" id="settingsDriveUploadUrl" placeholder="Cole aqui a URL do Web App depois de publicar o script (veja google-apps-script/README.md)" class="w-full px-3 py-2 border rounded-lg text-sm" />
-                  <p class="text-xs text-slate-400 mt-1">Enquanto isso ficar em branco, a tela "Validações" da Escola registra o envio só localmente (sem mandar de verdade pro Drive).</p>
+                  <div class="flex items-center justify-between gap-3 mb-1"><label class="block text-xs font-medium text-slate-500">URL do Google Apps Script (upload dos projetos pedagógicos pro Drive)</label><button type="button" id="btnUnlockDriveUrl" onclick="unlockDriveUploadUrl()" class="shrink-0 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800">🔒 Desbloquear URL</button></div>
+                  <input type="text" id="settingsDriveUploadUrl" readonly placeholder="Cole aqui a URL do Web App depois de publicar o script (veja google-apps-script/README.md)" class="w-full px-3 py-2 border rounded-lg text-sm bg-slate-50 text-slate-500 cursor-not-allowed" />
+                  <p class="text-xs text-slate-400 mt-1">Protegida contra alteração acidental. Para mudar, use “Desbloquear URL” e confirme a frase solicitada.</p>
                 </div>
               </div>
               <button onclick="confirmSaveSettings()" class="mt-3 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm">Salvar</button>
@@ -1396,35 +1389,6 @@
                   </thead>
                   <tbody id="usuariosTable" class="divide-y divide-slate-100"></tbody>
                 </table>
-              </div>
-            </div>
-          </section>
-
-          <!-- AVISOS ADMINISTRATIVOS -->
-          <section id="screen-avisos" class="hidden-screen">
-            <div class="mx-auto max-w-6xl space-y-5">
-              <div class="rounded-2xl border border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 p-5">
-                <div class="flex items-start gap-3"><div class="rounded-xl bg-orange-500 p-3 text-xl text-white">📣</div><div><h3 class="font-bold text-slate-900">Central de avisos administrativos</h3><p class="mt-1 text-sm text-slate-600">O aviso é salvo para cada destinatário. Quando a aplicação estiver aberta, ele aparece sobre a tela; se a pessoa estiver fora, será mostrado no próximo acesso.</p></div></div>
-              </div>
-              <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_390px]">
-                <div class="rounded-2xl border bg-white p-5 shadow-sm">
-                  <div class="flex flex-wrap items-end justify-between gap-3"><div><h3 class="font-semibold text-slate-900">Destinatários</h3><p class="mt-1 text-sm text-slate-500">Selecione um perfil, refine a lista e marque quem deve receber.</p></div><div class="flex gap-2"><button type="button" onclick="selectAllAvisoRecipients()" class="rounded-lg border border-emerald-200 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-50">Selecionar exibidos</button><button type="button" onclick="clearAvisoRecipients()" class="rounded-lg border px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">Limpar</button></div></div>
-                  <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <label class="block text-xs font-bold uppercase tracking-wide text-slate-500">Público<select id="avisoGrupo" onchange="renderAvisoRecipients()" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm normal-case font-normal"><option value="todos">Todos os usuários ativos</option><option value="motorista">Motoristas</option><option value="escola">Unidades escolares</option><option value="pedagogia">Pedagogia</option><option value="agente_externo">Cooperativas</option><option value="usuario">Usuário específico</option></select></label>
-                    <label class="block text-xs font-bold uppercase tracking-wide text-slate-500">Cooperativa<select id="avisoCooperativa" onchange="renderAvisoRecipients()" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm normal-case font-normal"></select></label>
-                    <label class="block text-xs font-bold uppercase tracking-wide text-slate-500">Unidade<select id="avisoUnidade" onchange="renderAvisoRecipients()" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm normal-case font-normal"></select></label>
-                    <label class="block text-xs font-bold uppercase tracking-wide text-slate-500">Buscar<input id="avisoPesquisa" oninput="renderAvisoRecipients()" placeholder="Nome ou e-mail" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm normal-case font-normal" /></label>
-                  </div>
-                  <div class="mt-4 overflow-hidden rounded-xl border"><div class="flex items-center justify-between border-b bg-slate-50 px-4 py-2"><strong class="text-sm text-slate-700">Usuários encontrados</strong><span id="avisoRecipientCount" class="rounded-full bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-800">0 selecionado(s)</span></div><div id="avisoRecipients" class="max-h-[470px] overflow-y-auto"></div></div>
-                </div>
-                <div class="h-fit rounded-2xl border bg-white p-5 shadow-sm">
-                  <h3 class="font-semibold text-slate-900">Mensagem</h3><p class="mt-1 text-sm text-slate-500">Use texto breve e direto.</p>
-                  <label class="mt-4 block text-xs font-bold uppercase tracking-wide text-slate-500">Título<input id="avisoTitulo" maxlength="120" placeholder="Ex.: Atenção à escala de sábado" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm normal-case font-normal" /></label>
-                  <label class="mt-3 block text-xs font-bold uppercase tracking-wide text-slate-500">Prioridade<select id="avisoPrioridade" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm normal-case font-normal"><option value="normal">Comunicado</option><option value="importante">Importante</option></select></label>
-                  <label class="mt-3 block text-xs font-bold uppercase tracking-wide text-slate-500">Mensagem<textarea id="avisoMensagem" rows="7" maxlength="1000" placeholder="Escreva o aviso que será enviado aos destinatários." class="mt-1 w-full resize-y rounded-lg border px-3 py-2 text-sm normal-case font-normal"></textarea></label>
-                  <label class="mt-4 flex cursor-pointer items-start gap-2 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900"><input id="avisoSobreTela" type="checkbox" checked class="mt-0.5 h-4 w-4 accent-emerald-600" /><span><strong>Apresentar sobre a tela</strong><small class="mt-1 block text-xs text-emerald-700">No APK, emite um som e mostra o aviso imediatamente enquanto o app estiver aberto.</small></span></label>
-                  <button id="btnEnviarAviso" onclick="sendAdministrativeAlert()" class="mt-5 w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-60">Enviar aviso</button>
-                </div>
               </div>
             </div>
           </section>
@@ -2224,15 +2188,7 @@
     </div>
   </div>
 
-  <!-- Aviso persistente: aparece uma vez por sessão quando chega ou já existe um aviso administrativo não lido. -->
-  <div id="adminAlertOverlay" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="adminAlertOverlayTitle">
-    <div class="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5">
-      <div class="border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-sky-50 px-6 py-5"><div class="flex items-center gap-3"><img src="assets/favicon-512.png" alt="Bora Lá" class="h-12 w-12 shrink-0 rounded-xl bg-emerald-600 p-1 shadow-sm" /><div class="min-w-0"><span id="adminAlertOverlayPriority"></span><h2 id="adminAlertOverlayTitle" class="mt-2 text-xl font-extrabold text-slate-900"></h2></div></div></div>
-      <div class="px-6 py-5"><p id="adminAlertOverlayMessage" class="whitespace-pre-wrap text-[15px] leading-6 text-slate-700"></p><p class="mt-4 text-xs text-slate-400">O aviso continuará disponível no sino de notificações até ser marcado como lido.</p><button onclick="closeAdministrativeAlert()" class="mt-5 w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700">Entendi</button></div>
-    </div>
-  </div>
-
-  <script src="app.js?v=drive-upload-rapido-20261005-001"></script>
+  <script src="app.js?v=drive-url-protegida-20261005-001"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */

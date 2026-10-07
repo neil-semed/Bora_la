@@ -8127,20 +8127,42 @@ function fillSettingsForm() {
   document.getElementById('settingsRemetenteNome').value = 'Bora Lá - Excursões / Semed Nova Lima';
   document.getElementById('settingsRemetenteEmail').value = appSettings.email_copia_setor || appSettings.remetente_email || '';
   document.getElementById('settingsDriveUploadUrl').value = appSettings.drive_upload_url || '';
+  lockDriveUploadUrl();
+}
+let driveUploadUrlUnlocked = false;
+function lockDriveUploadUrl() {
+  driveUploadUrlUnlocked = false;
+  const input = document.getElementById('settingsDriveUploadUrl');
+  const button = document.getElementById('btnUnlockDriveUrl');
+  if (input) { input.readOnly = true; input.classList.add('bg-slate-50', 'text-slate-500', 'cursor-not-allowed'); }
+  if (button) { button.textContent = '🔒 Desbloquear URL'; button.className = 'shrink-0 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800'; }
+}
+function unlockDriveUploadUrl() {
+  const confirmation = window.prompt('Para alterar a URL de upload do Google Drive, digite exatamente: ALTERAR DRIVE');
+  if (confirmation !== 'ALTERAR DRIVE') { toast('⚠️ URL do Drive continua protegida.', true); return; }
+  driveUploadUrlUnlocked = true;
+  const input = document.getElementById('settingsDriveUploadUrl');
+  const button = document.getElementById('btnUnlockDriveUrl');
+  if (input) { input.readOnly = false; input.classList.remove('bg-slate-50', 'text-slate-500', 'cursor-not-allowed'); input.focus(); }
+  if (button) { button.textContent = '🔓 URL liberada'; button.className = 'shrink-0 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-800'; }
+  toast('🔓 URL liberada somente para esta alteração.');
 }
 async function confirmSaveSettings() {
   const nome = 'Bora Lá - Excursões / Semed Nova Lima';
   const email = document.getElementById('settingsRemetenteEmail').value.trim();
   const driveUrl = document.getElementById('settingsDriveUploadUrl').value.trim();
+  const driveUrlChanged = driveUrl !== (appSettings.drive_upload_url || '').trim();
+  if (driveUrlChanged && !driveUploadUrlUnlocked) { toast('⚠️ Desbloqueie a URL do Drive antes de alterá-la.', true); return; }
   if (sb) {
     const { error: e1 } = await sb.from('app_settings').upsert({ key: 'remetente_nome', value: nome });
     const { error: e2 } = await sb.from('app_settings').upsert({ key: 'remetente_email', value: email });
     const { error: e4 } = await sb.from('app_settings').upsert({ key: 'email_copia_setor', value: email });
-    const { error: e3 } = await sb.from('app_settings').upsert({ key: 'drive_upload_url', value: driveUrl });
+    const { error: e3 } = driveUrlChanged ? await sb.rpc('set_drive_upload_url', { p_value: driveUrl, p_confirmation: 'ALTERAR DRIVE' }) : { error: null };
     if (e1 || e2 || e3 || e4) { toast('❌ Erro ao salvar configurações: ' + ((e1 || e2 || e3 || e4).message), true); return; }
   }
   appSettings = { remetente_nome: nome, remetente_email: email, email_copia_setor: email, drive_upload_url: driveUrl, escala_emails: appSettings.escala_emails || '' };
   if (!sb) saveDemoData();
+  lockDriveUploadUrl();
   toast('✅ Configurações salvas!');
 }
 
