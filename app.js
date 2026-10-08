@@ -1693,7 +1693,8 @@ async function createNotification(userId, title, message, excursionId = null) {
 async function notifyAdmins(title, message, excursionId = null) {
   if (!sb) return;
   const { data } = await sb.from('profiles').select('id').eq('role', 'admin').eq('active', true);
-  for (const p of (data || [])) await createNotification(p.id, title, message, excursionId);
+  // Avisos em paralelo (antes era um por vez, o que atrasava o fim do envio).
+  await Promise.all((data || []).map((p) => createNotification(p.id, title, message, excursionId)));
 }
 
 // PEDIDO DO USUÁRIO ("coloque botão de pane mecânica - usar a mesma
@@ -5142,6 +5143,51 @@ async function uploadToGoogleDrive(driveUrl, payload) {
   throw lastError || new Error('Falha no upload para o Google Drive.');
 }
 
+// Envio direto ao Google Drive: o Apps Script só confere o login e abre a sessão de
+// upload; o arquivo vai em binário do navegador para o Drive (sem a conversão em texto
+// e sem passar pelo script), com progresso real. Se o script publicado ainda não tiver
+// esse recurso, cai no envio antigo (Base64 pelo script) automaticamente.
+function putBinarioDrive(uploadUrl, blob, mimeType, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', uploadUrl);
+    xhr.setRequestHeader('Content-Type', mimeType || 'application/octet-stream');
+    xhr.upload.onprogress = (ev) => { if (ev.lengthComputable && onProgress) onProgress(ev.loaded / ev.total); };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) { try { resolve(JSON.parse(xhr.responseText || '{}')); } catch (err) { reject(new Error('Resposta inválida do Google Drive.')); } }
+      else reject(new Error(`Falha no Google Drive (HTTP ${xhr.status}).`));
+    };
+    xhr.onerror = () => reject(new Error('Falha de conexão com o Google Drive.'));
+    xhr.ontimeout = () => reject(new Error('O envio ao Google Drive demorou demais.'));
+    xhr.timeout = 10 * 60 * 1000;
+    xhr.send(blob);
+  });
+}
+async function postAppsScript(driveUrl, payload) {
+  const resp = await fetch(driveUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
+  return resp.json().catch(() => ({}));
+}
+async function enviarArquivoDrive(driveUrl, { excursionId, filename, mimeType, blob, accessToken, replaceFileId = '' }, onProgress) {
+  let inicio = null;
+  try {
+    inicio = await postAppsScript(driveUrl, { action: 'iniciar', excursionId, filename, mimeType, size: blob.size, origin: window.location.origin, accessToken });
+  } catch (err) { inicio = null; }
+  if (inicio?.ok && inicio.uploadUrl) {
+    try {
+      const meta = await putBinarioDrive(inicio.uploadUrl, blob, mimeType, onProgress);
+      if (!meta?.id) throw new Error('O Google Drive não devolveu o arquivo enviado.');
+      // Arquivo anterior para a lixeira, em segundo plano (não atrasa o envio).
+      if (replaceFileId) postAppsScript(driveUrl, { action: 'finalizar', excursionId, fileId: meta.id, replaceFileId, accessToken }).catch(() => {});
+      return { ok: true, fileId: meta.id, url: `https://drive.google.com/file/d/${meta.id}/preview` };
+    } catch (err) {
+      console.warn('Envio direto ao Drive falhou; usando o envio pelo script:', err);
+    }
+  }
+  // Sem sessão de envio (script antigo ou falha ao abrir): segue pelo caminho anterior.
+  const fileBase64 = await blobToBase64(blob);
+  return uploadToGoogleDrive(driveUrl, { excursionId, filename, mimeType, fileBase64, accessToken, replaceFileId });
+}
+
 async function reactivateExcursion(id) {
   if (!(currentUser?.role === 'admin' || (currentUser?.role === 'operacional' && canEditScreen('agenda')))) return;
   const trip = agenda.find((a) => a.id === id); if (!trip) return;
@@ -5156,7 +5202,21 @@ async function reactivateExcursion(id) {
   await loadAgenda(); await loadNotifications(); renderAgenda(); renderPendencias(); renderDashboard(); toast('↻ Solicitação reativada.');
 }
 
-async function confirmUploadDoc() {
+// Botão de envio desabilitado com texto de andamento enquanto o arquivo sobe (evita
+// clique duplo e mostra que o envio está em curso).
+let envioBotaoAtual = null;
+function envioProgresso(texto) { if (envioBotaoAtual) envioBotaoAtual.textContent = texto; }
+async function comBotaoEnviando(seletor, fn) {
+  const btn = document.querySelector(seletor);
+  const original = btn ? btn.textContent : '';
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.classList.add('opacity-60', 'cursor-wait'); btn.textContent = 'Enviando…'; }
+  envioBotaoAtual = btn;
+  try { return await fn(); }
+  finally { envioBotaoAtual = null; if (btn) { btn.disabled = false; btn.classList.remove('opacity-60', 'cursor-wait'); btn.textContent = original; } }
+}
+
+function confirmUploadDoc() { return comBotaoEnviando('button[onclick="confirmUploadDoc()"]', confirmUploadDocInterno); }
+async function confirmUploadDocInterno() {
   if (!docUploadTargetId) return;
   const trip = agenda.find((a) => a.id === docUploadTargetId);
   if (!trip) return;
@@ -5173,16 +5233,16 @@ async function confirmUploadDoc() {
   let docPatch = { doc_filename: filename };
   if (driveUrl) {
     try {
-      const base64 = await fileToBase64(file);
       const { data: { session } } = await sb.auth.getSession();
       if (!session?.access_token) throw new Error('Sua sessão expirou. Entre novamente antes de enviar o documento.');
-      const respJson = await uploadToGoogleDrive(driveUrl, {
+      const respJson = await enviarArquivoDrive(driveUrl, {
           excursionId: trip.id,
           filename,
           mimeType: file.type,
-          fileBase64: base64,
+          blob: file,
           accessToken: session.access_token,
-      });
+          replaceFileId: trip.doc_drive_file_id || '',
+      }, (frac) => envioProgresso(`Enviando… ${Math.round(frac * 100)}%`));
       docPatch.doc_drive_file_id = respJson.fileId || null;
       docPatch.doc_drive_url = respJson.url || null;
     } catch (err) {
@@ -5201,11 +5261,13 @@ async function confirmUploadDoc() {
     doc_parecer_comentario: null,
   });
   if (!ok) return;
-  await logDocHistory(docUploadTargetId, wasReenvio ? 'reenviado' : 'enviado', null, trip.setor_pedagogico_atual, null);
-  await loadAgenda();
-  renderValidacoesEscola();
+  // O envio já está gravado: fecha a janela na hora; histórico e recarga seguem em segundo plano.
+  const idEnviado = docUploadTargetId;
   toast('✅ Documento enviado para análise da Pedagogia.');
   closeDocUploadModal();
+  Promise.resolve(logDocHistory(idEnviado, wasReenvio ? 'reenviado' : 'enviado', null, trip.setor_pedagogico_atual, null))
+    .then(() => loadAgenda()).then(() => renderValidacoesEscola())
+    .catch((err) => console.warn('Atualização após o envio do documento falhou:', err));
 }
 
 // ---- parecer + encaminhamento (Pedagogia) ----
@@ -6064,7 +6126,8 @@ function precisaListagemComNomesDocumentos(trip) {
   return viagemForaDeNovaLima(trip) || origemExternaForaDeNovaLima(trip);
 }
 
-async function confirmEnviarListagem() {
+function confirmEnviarListagem() { return comBotaoEnviando('#listagemVeiculoFooter button[onclick="confirmEnviarListagem()"]', confirmEnviarListagemInterno); }
+async function confirmEnviarListagemInterno() {
   const id = listagemVeiculoTargetId;
   const trip = agenda.find((a) => a.id === id);
   if (!id || !trip) return;
@@ -6145,16 +6208,23 @@ async function confirmEnviarListagem() {
         const arquivoEnviado = listagemMetodoByDriver[did] === 'pdf' ? listagemUploadsByDriver[did] : null;
         const blob = arquivoEnviado || gerarListagemPdf(trip, did);
         if (!blob) return null;
-        const base64 = await blobToBase64(blob);
         const extEnviado = arquivoEnviado ? ((arquivoEnviado.name.match(/\.(xlsx|pdf)$/i)?.[1] || (arquivoEnviado.type === 'application/pdf' ? 'pdf' : 'xlsx')).toLowerCase()) : '';
         const filename = arquivoEnviado ? `${dataArquivoListagem(trip)}_${unidadeSlug}_${motoristaSlug}.${extEnviado}` : `${trip.trip_date}_${unidadeSlug}_${v ? v.plate : did}.pdf`;
         const mimeType = arquivoEnviado?.type || (filename.toLowerCase().endsWith('.xlsx') ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/pdf');
-        return { did, filename, mimeType, base64 };
+        return { did, filename, mimeType, blob };
       };
+      const totalArquivos = driversEnviar.length;
+      const fracoes = {};
+      const mostrarProgresso = () => {
+        const soma = Object.values(fracoes).reduce((a, b) => a + b, 0);
+        envioProgresso(`Enviando ${totalArquivos > 1 ? `${totalArquivos} arquivos` : 'arquivo'}… ${Math.round((soma / totalArquivos) * 100)}%`);
+      };
+      mostrarProgresso();
       for (let inicio = 0; inicio < driversEnviar.length; inicio += 3) {
         const arquivosParaEnviar = (await Promise.all(driversEnviar.slice(inicio, inicio + 3).map(prepararArquivo))).filter(Boolean);
         await Promise.all(arquivosParaEnviar.map(async (arquivo) => {
-          const respJson = await uploadToGoogleDrive(driveUrl, { excursionId: id, filename: arquivo.filename, mimeType: arquivo.mimeType, fileBase64: arquivo.base64, accessToken: session.access_token });
+          const respJson = await enviarArquivoDrive(driveUrl, { excursionId: id, filename: arquivo.filename, mimeType: arquivo.mimeType, blob: arquivo.blob, accessToken: session.access_token, replaceFileId: listagemFilesByDriver[arquivo.did]?.drive_file_id || '' }, (frac) => { fracoes[arquivo.did] = frac; mostrarProgresso(); });
+          fracoes[arquivo.did] = 1; mostrarProgresso();
           const saved = await registrarListagemFile(id, arquivo.did, arquivo.filename, respJson.fileId, respJson.url);
           if (!saved) throw new Error('Não foi possível registrar o arquivo da listagem.');
         }));
@@ -6175,13 +6245,15 @@ async function confirmEnviarListagem() {
   });
   if (!patchOk) return;
   await lvSubmeterEscola(id, driversEnviar);
-  await logDocHistory(id, wasReenvio ? 'reenviado' : 'enviado', null, null, null, 'listagem');
-  await notifyAdmins('Listagem de passageiros para conferência', `${originName(trip) || requesterName(trip)} enviou a listagem da viagem para ${trip.destination || '-'} em ${trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'}.`);
-  await loadAgenda(); await loadNotifications();
-  renderAgenda();
-  renderPendencias();
+  // A listagem já está gravada: fecha a janela na hora; histórico, aviso ao Admin e recarga seguem em segundo plano.
   toast('✅ Listagem enviada! O Admin foi notificado para conferir.');
   closeListagemVeiculoModal();
+  Promise.all([
+    logDocHistory(id, wasReenvio ? 'reenviado' : 'enviado', null, null, null, 'listagem'),
+    notifyAdmins('Listagem de passageiros para conferência', `${originName(trip) || requesterName(trip)} enviou a listagem da viagem para ${trip.destination || '-'} em ${trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'}.`),
+  ]).then(() => Promise.all([loadAgenda(), loadNotifications()]))
+    .then(() => { renderAgenda(); renderPendencias(); })
+    .catch((err) => console.warn('Atualização após o envio da listagem falhou:', err));
 }
 
 async function confirmAceitarListagem() {
