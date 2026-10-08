@@ -950,8 +950,8 @@ function updateAdministrativeActionButtons() {
 async function logout() {
   // Arquivos em inputs não devem sobreviver à troca de usuário nem ao logout.
   pendingWizardProposalFile = null;
-  document.getElementById('wPropostaDocument') && (document.getElementById('wPropostaDocument').value = '');
-  document.getElementById('docFileInput') && (document.getElementById('docFileInput').value = '');
+  zerarCampoArquivo('wPropostaDocument'); zerarCampoArquivo('wFinanceDocument'); zerarCampoArquivo('docFileInput');
+  arquivoEscolhidoWizard.proposta = false; arquivoEscolhidoWizard.financeiro = false;
   unsubscribeNotificationsRealtime();
   try {
     if (sb) await sb.auth.signOut();
@@ -2259,12 +2259,56 @@ function openKmAdminScreen() {
   renderKmAdmin();
 }
 
+// Ano/Mês (listas conforme registros) sobrepõem De/Até.
+function kmAnoMesFiltro() {
+  return { ano: document.getElementById('kmAdminFiltroAno')?.value || '', mes: document.getElementById('kmAdminFiltroMes')?.value || '' };
+}
+function kmPassaAnoMes(dataStr) {
+  const { ano, mes } = kmAnoMesFiltro();
+  const d = dataStr || '';
+  if (ano && d.slice(0, 4) !== ano) return false;
+  if (mes && d.slice(5, 7) !== mes) return false;
+  return true;
+}
+function limparKmAnoMes() {
+  const a = document.getElementById('kmAdminFiltroAno'); if (a) a.value = '';
+  const m = document.getElementById('kmAdminFiltroMes'); if (m) m.value = '';
+}
+function onKmAnoMesChange() {
+  const { ano, mes } = kmAnoMesFiltro();
+  if (ano || mes) {
+    const i = document.getElementById('kmAdminFiltroInicio'); if (i) i.value = '';
+    const f = document.getElementById('kmAdminFiltroFim'); if (f) f.value = '';
+  }
+  renderKmAdmin();
+}
+function populateKmAnoMes() {
+  const selAno = document.getElementById('kmAdminFiltroAno');
+  const selMes = document.getElementById('kmAdminFiltroMes');
+  if (!selAno || !selMes) return;
+  const base = kmLogs.filter((k) => currentUser?.role !== 'agente_externo' || driverBelongsToCooperativa(k.driver_id, currentUser.cooperativaId));
+  const anoAtual = selAno.value;
+  const anos = [...new Set(base.map((k) => (k.log_date || '').slice(0, 4)).filter(Boolean))].sort().reverse();
+  selAno.innerHTML = '<option value="">Todos</option>' + anos.map((a) => `<option value="${a}">${a}</option>`).join('');
+  selAno.value = anos.includes(anoAtual) ? anoAtual : '';
+  const mesAtual = selMes.value;
+  const meses = [...new Set(base.filter((k) => !selAno.value || (k.log_date || '').slice(0, 4) === selAno.value).map((k) => (k.log_date || '').slice(5, 7)).filter(Boolean))].sort();
+  selMes.innerHTML = '<option value="">Todos</option>' + meses.map((m) => `<option value="${m}">${MESES_COMPLETOS[Number(m) - 1] || m}</option>`).join('');
+  selMes.value = meses.includes(mesAtual) ? mesAtual : '';
+  const ativo = !!(selAno.value || selMes.value);
+  ['kmAdminFiltroInicio', 'kmAdminFiltroFim'].forEach((id) => { const el = document.getElementById(id); if (el) el.disabled = ativo; });
+  ['kmAdminFiltroInicioWrap', 'kmAdminFiltroFimWrap'].forEach((id) => document.getElementById(id)?.classList.toggle('opacity-50', ativo));
+}
+
 function filterKmAdmin() {
   const motoristaId = document.getElementById('kmAdminFiltroMotorista').value;
   const coopId = document.getElementById('kmAdminFiltroCooperativa').value;
-  const inicio = document.getElementById('kmAdminFiltroInicio').value;
-  const fim = document.getElementById('kmAdminFiltroFim').value;
+  const { ano, mes } = kmAnoMesFiltro();
+  const usaAnoMes = !!(ano || mes);
+  const inicio = usaAnoMes ? '' : document.getElementById('kmAdminFiltroInicio').value;
+  const fim = usaAnoMes ? '' : document.getElementById('kmAdminFiltroFim').value;
   return kmLogs.filter((k) => {
+    if (usaAnoMes && !kmPassaAnoMes(k.log_date)) return false;
     if (currentUser?.role === 'agente_externo' && !driverBelongsToCooperativa(k.driver_id, currentUser.cooperativaId)) return false;
     if (motoristaId && k.driver_id !== motoristaId) return false;
     const tipoKm = currentUser?.role === 'agente_externo' ? (document.getElementById('kmAdminFiltroTipo')?.value || '') : '';
@@ -2280,6 +2324,7 @@ function setKmAdminHoje() {
   const hoje = fmtDate(new Date());
   const inicio = document.getElementById('kmAdminFiltroInicio');
   const fim = document.getElementById('kmAdminFiltroFim');
+  limparKmAnoMes();
   if (inicio) inicio.value = hoje;
   if (fim) fim.value = hoje;
   renderKmAdmin();
@@ -2289,6 +2334,7 @@ function setKmAdminMesAtual() {
   const agora = new Date();
   const inicio = document.getElementById('kmAdminFiltroInicio');
   const fim = document.getElementById('kmAdminFiltroFim');
+  limparKmAnoMes();
   if (inicio) inicio.value = fmtDate(new Date(agora.getFullYear(), agora.getMonth(), 1));
   if (fim) fim.value = fmtDate(new Date(agora.getFullYear(), agora.getMonth() + 1, 0));
   renderKmAdmin();
@@ -2305,6 +2351,7 @@ function renderKmAdmin() {
     tipoSel.innerHTML = '<option value="">Todos</option>' + tipos.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
     tipoSel.value = tipos.includes(atual) ? atual : '';
   }
+  populateKmAnoMes();
   const rows = filterKmAdmin().slice().sort((a, b) => (b.log_date || '').localeCompare(a.log_date || ''));
   const thead = document.getElementById('kmAdminThead');
   if (thead) thead.innerHTML = ehCoopKm
@@ -2341,9 +2388,11 @@ function renderKmAdmin() {
       // Somatórias de ATF/PCD das viagens da cooperativa, pelos mesmos filtros (motorista, tipo, período).
       const fMot = document.getElementById('kmAdminFiltroMotorista')?.value || '';
       const fTipo = document.getElementById('kmAdminFiltroTipo')?.value || '';
-      const fIni = document.getElementById('kmAdminFiltroInicio')?.value || '';
-      const fFim = document.getElementById('kmAdminFiltroFim')?.value || '';
+      const kmAM = kmAnoMesFiltro(); const usaAM = !!(kmAM.ano || kmAM.mes);
+      const fIni = usaAM ? '' : (document.getElementById('kmAdminFiltroInicio')?.value || '');
+      const fFim = usaAM ? '' : (document.getElementById('kmAdminFiltroFim')?.value || '');
       const viagensCoop = getVisibleAgenda().filter((a) => {
+        if (usaAM && !kmPassaAnoMes(a.trip_date)) return false;
         if (fIni && (a.trip_date || '') < fIni) return false;
         if (fFim && (a.trip_date || '') > fFim) return false;
         const mots = (a.driver_ids || []).filter((id) => driverBelongsToCooperativa(id, currentUser.cooperativaId));
@@ -2857,12 +2906,38 @@ function monthLabelFull(key) {
 // mês/ano do navegador, que só mostra números) - só lista os meses que existem nos
 // dados visíveis pro perfil logado, então nunca fica cheio de opções sem resultado.
 function populateDashMesFilter(visible) {
+  const selAno = document.getElementById('dashFiltroAno');
   const sel = document.getElementById('dashFiltroMes');
-  if (!sel) return;
+  if (!sel || !selAno) return;
+  const anoAtual = selAno.value;
+  const anos = [...new Set((visible || []).map((a) => (a.trip_date || '').slice(0, 4)).filter(Boolean))].sort().reverse();
+  selAno.innerHTML = '<option value="">Todos</option>' + anos.map((a) => `<option value="${a}">${a}</option>`).join('');
+  selAno.value = anos.includes(anoAtual) ? anoAtual : '';
   const atual = sel.value;
-  const keys = [...new Set((visible || []).map((a) => monthKey(a.trip_date)).filter(Boolean))].sort();
-  sel.innerHTML = '<option value="">Todos os meses</option>' + keys.map((k) => `<option value="${k}">${monthLabelFull(k)}</option>`).join('');
-  sel.value = keys.includes(atual) ? atual : '';
+  const meses = [...new Set((visible || []).filter((a) => !selAno.value || (a.trip_date || '').slice(0, 4) === selAno.value).map((a) => (a.trip_date || '').slice(5, 7)).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">Todos os meses</option>' + meses.map((m) => `<option value="${m}">${MESES_COMPLETOS[Number(m) - 1] || m}</option>`).join('');
+  sel.value = meses.includes(atual) ? atual : '';
+  const ativo = !!(selAno.value || sel.value);
+  const data = document.getElementById('dashFiltroData');
+  if (data) data.disabled = ativo;
+  document.getElementById('dashFiltroDataWrap')?.classList.toggle('opacity-50', ativo);
+}
+
+// Ano/Mês sobrepõem Data.
+function dashAnoMesFiltro() {
+  return { ano: document.getElementById('dashFiltroAno')?.value || '', mes: document.getElementById('dashFiltroMes')?.value || '' };
+}
+function dashPassaFiltroData(dataStr) {
+  const { ano, mes } = dashAnoMesFiltro();
+  const d = dataStr || '';
+  if (ano || mes) return (!ano || d.slice(0, 4) === ano) && (!mes || d.slice(5, 7) === mes);
+  const dataFiltro = document.getElementById('dashFiltroData')?.value || '';
+  return !dataFiltro || d === dataFiltro;
+}
+function onDashAnoMesChange() {
+  const { ano, mes } = dashAnoMesFiltro();
+  if (ano || mes) { const d = document.getElementById('dashFiltroData'); if (d) d.value = ''; }
+  renderDashboard();
 }
 
 function populateDashUnidadeFilter() {
@@ -2877,19 +2952,15 @@ function populateDashUnidadeFilter() {
 
 function renderDashboardCharts(visible) {
   if (!window.Chart) return; // biblioteca de gráficos não carregou (ex: sem internet) - segue sem quebrar o resto do dashboard
-  const mesEl = document.getElementById('dashFiltroMes');
   const unidadeEl = document.getElementById('dashFiltroUnidade');
   const unidadeWrap = document.getElementById('dashFiltroUnidadeWrap');
-  const mesFiltro = mesEl ? mesEl.value : '';
-  const dataFiltro = document.getElementById('dashFiltroData')?.value || '';
   // Escondido pro perfil Escola (ela já só vê as próprias solicitações - filtrar por
   // unidade não faz sentido pra quem só tem uma) - ignora o valor enquanto escondido,
   // mesmo modo escondido do filtro de Unidade na Agenda.
   const unidadeFiltro = (unidadeEl && !(unidadeWrap && unidadeWrap.classList.contains('hidden'))) ? unidadeEl.value : '';
 
   const dados = visible.filter((a) => {
-    if (mesFiltro && monthKey(a.trip_date) !== mesFiltro) return false;
-    if (dataFiltro && a.trip_date !== dataFiltro) return false;
+    if (!dashPassaFiltroData(a.trip_date)) return false;
     if (unidadeFiltro && a.school_id !== unidadeFiltro) return false;
     return true;
   });
@@ -2900,7 +2971,8 @@ function renderDashboardCharts(visible) {
 
   // Série anual: o mesmo filtro do dashboard limita os registros, mas o eixo
   // mantém os meses do ano correspondente para permitir acompanhar evolução.
-  const ano = Number((mesFiltro || dataFiltro || dados[0]?.trip_date || fmtDate(new Date())).slice(0, 4));
+  const dashAM = dashAnoMesFiltro();
+  const ano = Number((dashAM.ano || (dashAM.mes ? '' : (document.getElementById('dashFiltroData')?.value || '')) || dados[0]?.trip_date || fmtDate(new Date())).slice(0, 4));
   const mesesAno = Array.from({ length: 12 }, (_, i) => `${ano}-${String(i + 1).padStart(2, '0')}`);
   const statusMes = { solicitacoes:{}, aprovadas:{}, reprovadas:{}, canceladas:{} };
   dados.forEach((a) => { const k = monthKey(a.trip_date); if (!mesesAno.includes(k)) return; statusMes.solicitacoes[k]=(statusMes.solicitacoes[k]||0)+1; if(a.admin_decision==='aprovada')statusMes.aprovadas[k]=(statusMes.aprovadas[k]||0)+1; if(a.admin_decision==='reprovada'||a.situacao==='reprovada')statusMes.reprovadas[k]=(statusMes.reprovadas[k]||0)+1; if(a.situacao==='cancelada')statusMes.canceladas[k]=(statusMes.canceladas[k]||0)+1; });
@@ -2963,10 +3035,8 @@ function renderDashboardPedagogiaCharts(dados) {
 
 function renderDashboard() {
   const visibleBruto = getVisibleAgenda();
-  const mesFiltro = document.getElementById('dashFiltroMes')?.value || '';
-  const dataFiltro = document.getElementById('dashFiltroData')?.value || '';
   const unidadeFiltro = document.getElementById('dashFiltroUnidade')?.value || '';
-  const visible = visibleBruto.filter((a) => (!mesFiltro || monthKey(a.trip_date) === mesFiltro) && (!dataFiltro || a.trip_date === dataFiltro) && (!unidadeFiltro || a.school_id === unidadeFiltro));
+  const visible = visibleBruto.filter((a) => dashPassaFiltroData(a.trip_date) && (!unidadeFiltro || a.school_id === unidadeFiltro));
   const hoje = fmtDate(new Date());
   const viagensHoje = visible.filter((a) => a.trip_date === hoje).length;
   const pendentes = visible.filter((a) => a.situacao === 'sem_validacao').length;
@@ -3195,6 +3265,15 @@ function filtrarAgendaHoje() {
   const data = document.getElementById('filtroData');
   const periodo = document.getElementById('filtroPeriodo');
   if (data) data.value = fmtDate(new Date());
+  if (periodo) periodo.value = 'dia';
+  renderAgenda();
+}
+
+function filtrarAgendaAmanha() {
+  const data = document.getElementById('filtroData');
+  const periodo = document.getElementById('filtroPeriodo');
+  const amanha = new Date(); amanha.setDate(amanha.getDate() + 1);
+  if (data) data.value = fmtDate(amanha);
   if (periodo) periodo.value = 'dia';
   renderAgenda();
 }
@@ -4309,6 +4388,16 @@ async function enviarCarroSolicitacao() {
   finally { if (btn) { btn.disabled = false; btn.textContent = 'Enviar Solicitação'; } }
 }
 
+function setAgendaCombinadaDia(offset) {
+  const d = new Date(); d.setDate(d.getDate() + offset);
+  const v = fmtDate(d);
+  const ini = document.getElementById('agendaCombinadaInicio');
+  const fim = document.getElementById('agendaCombinadaFim');
+  if (ini) ini.value = v;
+  if (fim) fim.value = v;
+  renderAgendaCombinadaAdmin();
+}
+
 async function renderAgendaCombinadaAdmin() {
   const tbody = document.getElementById('agendaCombinadaTable');
   if (!tbody) return;
@@ -5060,6 +5149,16 @@ function renderValidacoesPedagogia() {
 // ---- upload do documento (Escola) ----
 let docUploadTargetId = null;
 let pendingWizardProposalFile = null;
+// Marca se o arquivo foi escolhido NESTA solicitação (o navegador pode manter o anterior).
+const arquivoEscolhidoWizard = { proposta: false, financeiro: false };
+// Troca o campo de arquivo por um novo vazio (value='' nem sempre zera o histórico).
+function zerarCampoArquivo(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  try { el.value = ''; } catch (_) {}
+  const novo = el.cloneNode(false);
+  el.parentNode.replaceChild(novo, el);
+}
 
 function slugify(text) {
   return (text || 'unidade').toLowerCase()
@@ -5100,7 +5199,7 @@ function openDocUploadModal(id) {
   } else {
     box.classList.add('hidden');
   }
-  document.getElementById('docFileInput').value = '';
+  zerarCampoArquivo('docFileInput');
   if (pendingWizardProposalFile && window.DataTransfer) {
     const transfer = new DataTransfer();
     transfer.items.add(pendingWizardProposalFile);
@@ -5111,7 +5210,7 @@ function openDocUploadModal(id) {
 }
 function closeDocUploadModal() {
   document.getElementById('docUploadModal').classList.add('hidden');
-  const fileInput = document.getElementById('docFileInput'); if (fileInput) fileInput.value = '';
+  zerarCampoArquivo('docFileInput');
   pendingWizardProposalFile = null;
   docUploadTargetId = null;
 }
@@ -7173,8 +7272,8 @@ function updatePcdField(i, field, value) {
 }
 
 function clearWizardProposalInput(clearPending = true) {
-  const proposalInput = document.getElementById('wPropostaDocument');
-  if (proposalInput) proposalInput.value = '';
+  zerarCampoArquivo('wPropostaDocument');
+  arquivoEscolhidoWizard.proposta = false;
   if (clearPending) pendingWizardProposalFile = null;
 }
 
@@ -7238,8 +7337,8 @@ function resetWizard(options = {}) {
   document.getElementById('wObservacoes').value = '';
   const financeRequested = document.getElementById('wFinanceRequested');
   if (financeRequested) financeRequested.checked = false;
-  const financeDocument = document.getElementById('wFinanceDocument');
-  if (financeDocument) financeDocument.value = '';
+  zerarCampoArquivo('wFinanceDocument');
+  arquivoEscolhidoWizard.financeiro = false;
   document.querySelectorAll('[data-finance-quantity],[data-finance-value]').forEach((input) => { input.value = ''; });
   toggleFinanceFields();
   const unico = document.querySelector('input[name="wRecorrencia"][value="unico"]');
@@ -7608,7 +7707,7 @@ async function submitSolicitacao() {
   const dataInicial = document.getElementById('wData').value;
   const recorrencia = document.querySelector('input[name="wRecorrencia"]:checked').value;
   const datasAdicionais = selectedRecurrenceDates();
-  const propostaFile = document.getElementById('wPropostaDocument')?.files?.[0] || null;
+  const propostaFile = arquivoEscolhidoWizard.proposta ? (document.getElementById('wPropostaDocument')?.files?.[0] || null) : null;
   const anexarProposta = !!propostaFile;
   const solicitarAporte = !!document.getElementById('wFinanceRequested')?.checked;
   const financeItems = solicitarAporte ? financeItemsFromWizard() : [];
@@ -7700,7 +7799,7 @@ async function submitSolicitacao() {
 
     if (solicitarAporte && data?.length) {
       const requestedTotal = financeItems.reduce((total, item) => total + item.value, 0);
-      const financeFile = document.getElementById('wFinanceDocument')?.files?.[0];
+      const financeFile = arquivoEscolhidoWizard.financeiro ? document.getElementById('wFinanceDocument')?.files?.[0] : null;
       const { data: finance, error: financeError } = await sb.from('finance_requests').insert([{
         root_excursion_id: data[0].id,
         recurrence_group_id: recurrenceGroupId,
@@ -8028,11 +8127,27 @@ let editUnidadeId = null;
 
 function renderUnidades() {
   const tbody = document.getElementById('unidadesTable');
+  const selUn = document.getElementById('unidadesFiltroUnidade');
+  const selTipo = document.getElementById('unidadesFiltroTipo');
+  const fTipo = selTipo?.value || '';
+  if (selUn) {
+    const atual = selUn.value;
+    const opcoes = schools.filter((s) => !fTipo || (fTipo === 'entidade' ? s.tipo === 'entidade' : s.tipo !== 'entidade'))
+      .slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
+    selUn.innerHTML = '<option value="">Todas</option>' + opcoes.map((s) => `<option value="${s.id}">${escapeHtml(s.acronym ? s.acronym + ' - ' + s.name : s.name)}</option>`).join('');
+    selUn.value = opcoes.some((s) => s.id === atual) ? atual : '';
+  }
+  const fUn = selUn?.value || '';
   if (schools.length === 0) {
     tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Nenhuma unidade cadastrada</td></tr>';
     return;
   }
-  tbody.innerHTML = schools.map((s) => {
+  const lista = schools.filter((s) => (!fUn || s.id === fUn) && (!fTipo || (fTipo === 'entidade' ? s.tipo === 'entidade' : s.tipo !== 'entidade')));
+  if (!lista.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Nenhuma unidade encontrada</td></tr>';
+    return;
+  }
+  tbody.innerHTML = lista.map((s) => {
     const statusBadge = s.active === false
       ? '<span class="bg-slate-100 text-slate-500 px-2 py-1 rounded text-xs font-medium">Bloqueada</span>'
       : '<span class="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-xs font-medium">Ativa</span>';
