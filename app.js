@@ -5167,11 +5167,54 @@ async function postAppsScript(driveUrl, payload) {
   const resp = await fetch(driveUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
   return resp.json().catch(() => ({}));
 }
+// Abertura antecipada: ao escolher o arquivo, o Bora Lá já pede ao Google a sessão de
+// envio (a parte de ~3 s); ao clicar em Enviar, só falta transferir o arquivo.
+const sessoesDrivePre = new Map();
+function chaveSessaoDrive(excursionId, filename, mimeType, size) { return `${excursionId}|${filename}|${mimeType}|${size}`; }
+function preAbrirEnvioDrive(excursionId, filename, mimeType, blob) {
+  const driveUrl = getDriveUploadUrl();
+  if (!sb || !driveUrl || !excursionId || !blob?.size) return;
+  const chave = chaveSessaoDrive(excursionId, filename, mimeType, blob.size);
+  if (sessoesDrivePre.has(chave)) return;
+  sessoesDrivePre.set(chave, (async () => {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session?.access_token) return null;
+    return postAppsScript(driveUrl, { action: 'iniciar', excursionId, filename, mimeType, size: blob.size, origin: window.location.origin, accessToken: session.access_token });
+  })().catch(() => null));
+}
+function nomeArquivoProposta(trip, file) {
+  const ext = (file.name.split('.').pop() || 'pdf').toLowerCase();
+  const unidadeSlug = slugify(schoolName(trip.school_id) || trip.requester_name);
+  return { ext, filename: `${trip.id}_${trip.trip_date}_${unidadeSlug}.${ext}` };
+}
+function nomeArquivoListagemEnviado(trip, did, arquivo) {
+  const v = driverVehicle(did);
+  const unidadeSlug = slugify(schoolName(trip.school_id) || trip.requester_name);
+  const motoristaSlug = slugify(driverName(did) || (v ? v.plate : did));
+  const ext = ((arquivo.name.match(/\.(xlsx|pdf)$/i)?.[1] || (arquivo.type === 'application/pdf' ? 'pdf' : 'xlsx')).toLowerCase());
+  const filename = `${dataArquivoListagem(trip)}_${unidadeSlug}_${motoristaSlug}.${ext}`;
+  const mimeType = arquivo.type || (ext === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/pdf');
+  return { filename, mimeType };
+}
+function preAbrirEnvioProposta() {
+  const trip = agenda.find((a) => a.id === docUploadTargetId);
+  const file = document.getElementById('docFileInput')?.files?.[0];
+  if (!trip || !file || file.size > 8 * 1024 * 1024) return;
+  preAbrirEnvioDrive(trip.id, nomeArquivoProposta(trip, file).filename, file.type, file);
+}
+
 async function enviarArquivoDrive(driveUrl, { excursionId, filename, mimeType, blob, accessToken, replaceFileId = '' }, onProgress) {
   let inicio = null;
-  try {
-    inicio = await postAppsScript(driveUrl, { action: 'iniciar', excursionId, filename, mimeType, size: blob.size, origin: window.location.origin, accessToken });
-  } catch (err) { inicio = null; }
+  const chave = chaveSessaoDrive(excursionId, filename, mimeType, blob.size);
+  if (sessoesDrivePre.has(chave)) {
+    inicio = await sessoesDrivePre.get(chave);
+    sessoesDrivePre.delete(chave);
+  }
+  if (!inicio?.ok || !inicio.uploadUrl) {
+    try {
+      inicio = await postAppsScript(driveUrl, { action: 'iniciar', excursionId, filename, mimeType, size: blob.size, origin: window.location.origin, accessToken });
+    } catch (err) { inicio = null; }
+  }
   if (inicio?.ok && inicio.uploadUrl) {
     try {
       const meta = await putBinarioDrive(inicio.uploadUrl, blob, mimeType, onProgress);
@@ -5225,9 +5268,7 @@ async function confirmUploadDocInterno() {
   if (!file) { toast('⚠️ Escolha um arquivo antes de enviar.', true); return; }
   if (file.size > 8 * 1024 * 1024) { toast('⚠️ O arquivo deve ter no máximo 8 MB para envio seguro ao Google Drive.', true); return; }
 
-  const ext = (file.name.split('.').pop() || 'pdf').toLowerCase();
-  const unidadeSlug = slugify(schoolName(trip.school_id) || trip.requester_name);
-  const filename = `${trip.id}_${trip.trip_date}_${unidadeSlug}.${ext}`;
+  const { filename } = nomeArquivoProposta(trip, file);
   const driveUrl = getDriveUploadUrl();
 
   let docPatch = { doc_filename: filename };
@@ -5902,6 +5943,8 @@ function onListagemPdfSelected(driverId, input) {
   const aceita = file.type === 'application/pdf' || file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || /\.(pdf|xlsx)$/i.test(file.name);
   if (!aceita) { toast('⚠️ Para upload, selecione um arquivo Excel (.xlsx) ou PDF.', true); input.value = ''; return; }
   listagemMetodoByDriver[driverId] = 'pdf'; listagemUploadsByDriver[driverId] = file; renderListagemVeiculoModal();
+  const trip = agenda.find((a) => a.id === listagemVeiculoTargetId);
+  if (trip) { const n = nomeArquivoListagemEnviado(trip, driverId, file); preAbrirEnvioDrive(trip.id, n.filename, n.mimeType, file); }
 }
 
 function abrirArquivoListagem(driverId) {
@@ -6204,14 +6247,12 @@ async function confirmEnviarListagemInterno() {
       const prepararArquivo = async (did) => {
         const v = driverVehicle(did);
         const unidadeSlug = slugify(schoolName(trip.school_id) || trip.requester_name);
-        const motoristaSlug = slugify(driverName(did) || (v ? v.plate : did));
         const arquivoEnviado = listagemMetodoByDriver[did] === 'pdf' ? listagemUploadsByDriver[did] : null;
         const blob = arquivoEnviado || gerarListagemPdf(trip, did);
         if (!blob) return null;
-        const extEnviado = arquivoEnviado ? ((arquivoEnviado.name.match(/\.(xlsx|pdf)$/i)?.[1] || (arquivoEnviado.type === 'application/pdf' ? 'pdf' : 'xlsx')).toLowerCase()) : '';
-        const filename = arquivoEnviado ? `${dataArquivoListagem(trip)}_${unidadeSlug}_${motoristaSlug}.${extEnviado}` : `${trip.trip_date}_${unidadeSlug}_${v ? v.plate : did}.pdf`;
-        const mimeType = arquivoEnviado?.type || (filename.toLowerCase().endsWith('.xlsx') ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/pdf');
-        return { did, filename, mimeType, blob };
+        if (arquivoEnviado) { const n = nomeArquivoListagemEnviado(trip, did, arquivoEnviado); return { did, filename: n.filename, mimeType: n.mimeType, blob }; }
+        const filename = `${trip.trip_date}_${unidadeSlug}_${v ? v.plate : did}.pdf`;
+        return { did, filename, mimeType: 'application/pdf', blob };
       };
       const totalArquivos = driversEnviar.length;
       const fracoes = {};

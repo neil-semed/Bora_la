@@ -1970,7 +1970,7 @@
       <div id="docUploadCorrecaoBox" class="hidden mb-3 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900"></div>
       <div>
         <label class="block text-sm font-medium mb-1">Arquivo (PDF ou Word)</label>
-        <input type="file" id="docFileInput" accept=".pdf,.doc,.docx" class="w-full text-sm" />
+        <input type="file" id="docFileInput" accept=".pdf,.doc,.docx" onchange="preAbrirEnvioProposta()" class="w-full text-sm" />
         <p class="text-xs text-slate-400 mt-1">Ao enviar, o arquivo é salvo com o nome "data_unidade" na pasta do Drive — um novo envio substitui o anterior.</p>
       </div>
       <div class="flex justify-end gap-2 mt-4">
