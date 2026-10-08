@@ -73,8 +73,17 @@ Deno.serve(async (req) => {
     const to = emails(body?.to);
     const cc = emails(body?.cc);
     const subject = String(body?.subject || '').trim();
-    const text = String(body?.text || '').trim();
-    const html = String(body?.html || '').trim();
+    // Aviso de "não responda" no fim de todo e-mail automático. Exceção: e-mails às
+    // cooperativas (ATF/PCD), que podem responder; só Admin/administrativo pede essa exceção.
+    const permitirResposta = body?.permitirResposta === true && (ehAdmin || ehOperacionalAgenda);
+    const AVISO = 'Esta mensagem é automática. Não responda a este e-mail.';
+    const textoBase = String(body?.text || '').trim();
+    const htmlBase = String(body?.html || '').trim();
+    // Frase no fim do corpo (após a assinatura), com fundo cinza-claro e negrito.
+    const text = textoBase && !permitirResposta ? `${textoBase}\n\n${AVISO}` : textoBase;
+    const html = htmlBase && !permitirResposta
+      ? `${htmlBase}<p style="margin:16px 0 0;padding:8px 12px;background:#f1f5f9;border-radius:6px;font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#334155">${AVISO}</p>`
+      : htmlBase;
     if (!to.length || !subject || (!text && !html)) {
       return json({ error: 'Faltam destinatário, assunto e conteúdo do e-mail.' }, 400);
     }
