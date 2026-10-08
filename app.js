@@ -6437,7 +6437,7 @@ async function confirmRejeitarListagem() {
 
 // Tenta mandar o e-mail de verdade via Edge Function (Resend) - se não estiver
 // configurada ou der erro, devolve false e preserva a mensagem para a própria tela.
-async function tentarEnviarEmailAutomatico(to, subject, text, cc = '', html = '') {
+async function tentarEnviarEmailAutomatico(to, subject, text, cc = '', html = '', opcoes = {}) {
   ultimoErroEnvioAutomatico = '';
   if (!sb) { ultimoErroEnvioAutomatico = 'O envio automático exige conexão com o Supabase.'; return false; }
   try {
@@ -6447,7 +6447,8 @@ async function tentarEnviarEmailAutomatico(to, subject, text, cc = '', html = ''
     const resp = await fetch(`${url}/functions/v1/send-cooperativa-email`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session ? session.access_token : anonKey}`, apikey: anonKey },
-      body: JSON.stringify({ to, subject, text, cc: cc || undefined, html: html || undefined }),
+      // permitirResposta: só nos e-mails às cooperativas (sem o aviso de "não responda").
+      body: JSON.stringify({ to, subject, text, cc: cc || undefined, html: html || undefined, permitirResposta: opcoes.permitirResposta === true || undefined }),
     });
     const json = await resp.json().catch(() => ({}));
     if (!resp.ok || json.error) ultimoErroEnvioAutomatico = json.error || `Falha no envio (HTTP ${resp.status}).`;
@@ -6551,7 +6552,7 @@ async function enviarListagemParaCooperativas(id) {
     const body = buildListagemEmailBody(trip, driversDoGrupo, grouped, files);
     const html = buildListagemEmailHtml(trip, driversDoGrupo, grouped, files);
     const copiaSetor = appSettings.email_copia_setor || appSettings.remetente_email || '';
-    const enviouAuto = coop && coop.email ? await tentarEnviarEmailAutomatico(coop.email, subject, body, copiaSetor, html) : false;
+    const enviouAuto = coop && coop.email ? await tentarEnviarEmailAutomatico(coop.email, subject, body, copiaSetor, html, { permitirResposta: true }) : false;
     if (enviouAuto) {
       await updateExcursion(id, { cooperativa_email_sent_at: new Date().toISOString(), atf_cooperativa_enviado_em: new Date().toISOString(), atf_status: precisaListagemComNomesDocumentos(trip) ? 'aguardando' : trip.atf_status, cooperativa_email_last_error: null, situacao: 'envio_coop' });
       toast(`✉️ E-mail enviado automaticamente para ${coop.name}.`);
@@ -6778,7 +6779,7 @@ async function sendCooperativaEmail(somenteAbrirEmail = false) {
   const corpo = document.getElementById('emailCorpo').value;
   const copiaSetor = appSettings.email_copia_setor || appSettings.remetente_email || '';
   // "Abrir e-mail" só abre o programa de e-mail; "Enviar pela aplicação" tenta o envio automático.
-  const enviou = somenteAbrirEmail ? false : await tentarEnviarEmailAutomatico(coop.email, assunto, corpo, copiaSetor, emailHtmlBody);
+  const enviou = somenteAbrirEmail ? false : await tentarEnviarEmailAutomatico(coop.email, assunto, corpo, copiaSetor, emailHtmlBody, { permitirResposta: true });
   if (!enviou) {
     const mailto = `mailto:${encodeURIComponent(coop.email)}?cc=${encodeURIComponent(copiaSetor)}&subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
     window.open(mailto, '_blank');
