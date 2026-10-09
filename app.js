@@ -2701,6 +2701,7 @@ function renderSolicitacoesCoop() {
 
 async function renderPendenciasCoop() {
   const box = document.getElementById('pendenciasCoopLista'); if (!box) return;
+  if (!validationTargets.length) await loadValidationConfig(); // nome do público-alvo nos cards
   populateCoopFilters();
   const data = document.getElementById('coopFiltroData')?.value || '';
   const unidade = document.getElementById('coopFiltroUnidade')?.value || '';
@@ -2760,6 +2761,7 @@ async function renderPendenciasCoop() {
     return `<article class="rounded-xl border ${tone} p-4 shadow-sm">${badge}
       <h3 class="mt-2 font-bold text-slate-800">${escapeHtml(originName(a))} <span class="text-slate-400">→</span> ${escapeHtml(a.destination || '-')}</h3>
       <div class="mt-1 text-sm"><b>${a.trip_date ? new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'}</b> | <b>${horaComH(a.departure_time)} → ${horaComH(a.return_time)}</b>${extra}</div>
+      <p class="mt-1 text-sm font-semibold text-violet-700">Público-alvo: ${escapeHtml(publicoAlvoLabel(a.validation_target_id || a.publico_alvo))}</p>
       <div class="mt-1 text-sm"><b>Origem:</b> ${escapeHtml(originName(a))}${originAddress(a) ? ` <span class="text-xs text-slate-500">→ ${escapeHtml(originAddress(a))}</span>` : ''}</div>
       <div class="text-sm"><b>Destino:</b> ${escapeHtml(a.destination || '-')}${destinoEnd ? ` <span class="text-xs text-slate-500">→ ${escapeHtml(destinoEnd)}</span>` : ''}</div>
       <div class="mt-1 text-xs font-medium text-slate-600">Motorista(s) escalado(s): ${motoristas || 'não informado'}</div>
@@ -4547,7 +4549,7 @@ function pendenciaCard(a, { badge, tone = 'amber', detail = '', action = '' } = 
         <div class="flex flex-wrap items-center gap-2"><span class="grid h-7 w-7 place-items-center rounded-lg ${toneClasses[tone] || toneClasses.amber}"><i data-lucide="${toneIcon[tone] || toneIcon.amber}" class="h-4 w-4"></i></span><span class="rounded-full px-2 py-0.5 text-xs font-bold ${toneClasses[tone] || toneClasses.amber}">${escapeHtml(badge || 'Pendente')}</span></div>
         <h3 class="mt-2 font-bold text-slate-800">${escapeHtml(originName(a))} <span class="text-slate-400">→</span> ${escapeHtml(a.destination || '-')}</h3>
         <div class="mt-1 text-xs text-slate-500">${pendenciaDataHora(a)}</div>
-        <p class="mt-1 text-xs font-semibold text-violet-700">Público-alvo: ${escapeHtml(publicoAlvoLabel(a.validation_target_id || a.publico_alvo))}</p>
+        <p class="mt-1 text-sm font-semibold text-violet-700">Público-alvo: ${escapeHtml(publicoAlvoLabel(a.validation_target_id || a.publico_alvo))}</p>
         <p class="mt-1 text-sm text-slate-600">${escapeHtml(a.requester_name || schoolName(a.school_id) || 'Solicitante não identificado')} · ${totalPassengers(a)} passageiros</p>
         <p class="mt-1 text-xs text-slate-500">${escapeHtml(originAddress(a) || '-') } → ${escapeHtml(a.destination_address || a.city || '-')}</p>
         ${detail ? `<p class="mt-2 text-xs font-medium text-slate-600">${detail}</p>` : ''}
