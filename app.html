@@ -1319,11 +1319,19 @@
                 <h3 class="font-semibold">Motoristas</h3>
                 <button id="btnNovoMotorista" onclick="openDriverModal()" class="px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm">+ Adicionar motorista</button>
               </div>
-              <div class="mb-4 max-w-sm">
-                <label class="block text-xs font-medium text-slate-500 mb-1">Filtrar por cooperativa</label>
-                <select id="motoristasFiltroCooperativa" onchange="renderMotoristas()" class="w-full px-3 py-2 border rounded-lg text-sm">
-                  <option value="">Todas as cooperativas</option>
-                </select>
+              <div class="mb-4 flex flex-wrap items-end gap-3">
+                <div class="w-full max-w-sm">
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Filtrar por cooperativa</label>
+                  <select id="motoristasFiltroCooperativa" onchange="renderMotoristas()" class="w-full px-3 py-2 border rounded-lg text-sm">
+                    <option value="">Todas as cooperativas</option>
+                  </select>
+                </div>
+                <div class="w-full max-w-sm">
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Filtrar por motorista</label>
+                  <select id="motoristasFiltroMotorista" onchange="renderMotoristas()" class="w-full px-3 py-2 border rounded-lg text-sm">
+                    <option value="">Todos os motoristas</option>
+                  </select>
+                </div>
               </div>
               <div class="overflow-x-auto">
                 <table class="w-full text-left">
@@ -1466,6 +1474,7 @@
                   <input type="date" id="relFiltroFim" onchange="renderRelatorioPreview()" class="w-32 px-2 py-2 border rounded-lg text-sm" />
                 </div>
                 <button onclick="setRelatorioHoje()" class="px-3 py-2 text-sm font-semibold text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-50">Hoje</button>
+                <button onclick="setRelatorioAmanha()" class="px-3 py-2 text-sm font-semibold text-sky-700 border border-sky-200 bg-sky-50 rounded-lg hover:bg-sky-100">Amanhã</button>
                 <div class="w-64">
                   <label class="block text-xs font-medium text-slate-500 mb-1">Unidade solicitante</label>
                   <select id="relFiltroUnidade" onchange="renderRelatorioPreview()" class="w-full px-3 py-2 border rounded-lg text-sm">
@@ -2217,7 +2226,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=filtros-admin-20261008-002"></script>
+  <script src="app.js?v=relatorios-motoristas-20261009-001"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */

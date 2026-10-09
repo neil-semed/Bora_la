@@ -7993,7 +7993,16 @@ function renderMotoristas() {
     filtroCooperativa.value = selecionada;
   }
   const coopId = filtroCooperativa?.value || '';
-  const motoristas = coopId ? drivers.filter((m) => driverBelongsToCooperativa(m, coopId)) : drivers;
+  const daCoop = coopId ? drivers.filter((m) => driverBelongsToCooperativa(m, coopId)) : drivers;
+  const filtroMotorista = document.getElementById('motoristasFiltroMotorista');
+  if (filtroMotorista) {
+    const atual = filtroMotorista.value;
+    const opcoes = daCoop.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
+    filtroMotorista.innerHTML = '<option value="">Todos os motoristas</option>' + opcoes.map((m) => `<option value="${m.id}">${escapeHtml(m.name || '-')}</option>`).join('');
+    filtroMotorista.value = opcoes.some((m) => m.id === atual) ? atual : '';
+  }
+  const motoristaId = filtroMotorista?.value || '';
+  const motoristas = motoristaId ? daCoop.filter((m) => m.id === motoristaId) : daCoop;
   if (motoristas.length === 0) {
     tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Nenhum motorista cadastrado</td></tr>';
     return;
@@ -8457,6 +8466,16 @@ function setRelatorioHoje() {
   const fim = document.getElementById('relFiltroFim');
   if (inicio) inicio.value = hoje;
   if (fim) fim.value = hoje;
+  renderRelatorioPreview();
+}
+
+function setRelatorioAmanha() {
+  const d = new Date(); d.setDate(d.getDate() + 1);
+  const amanha = fmtDate(d);
+  const inicio = document.getElementById('relFiltroInicio');
+  const fim = document.getElementById('relFiltroFim');
+  if (inicio) inicio.value = amanha;
+  if (fim) fim.value = amanha;
   renderRelatorioPreview();
 }
 
