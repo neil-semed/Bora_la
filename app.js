@@ -4576,11 +4576,9 @@ function abrirAgendaDaPendencia(data) {
 }
 
 function abrirValidacaoDaPendencia(id) {
+  // Abre o modal sobre a própria tela de Pendências (que continua ao fundo).
   validacaoReturnScreen = 'pendencias';
-  showScreen('validacoes');
-  // A tela de validações é montada ao abrir; aguarda o desenho antes de sobrepor
-  // exatamente a solicitação selecionada.
-  window.setTimeout(() => openValidacaoModal(id), 80);
+  openValidacaoModal(id);
 }
 
 function populatePendenciasUnidadeFilter() {
