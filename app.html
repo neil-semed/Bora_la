@@ -554,7 +554,7 @@
               </div>
               <div class="screen-panel px-4 py-3 flex flex-wrap items-end gap-3">
                 <div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Data da viagem</label><input id="pendenciasFiltroData" type="date" onchange="renderPendencias()" class="px-3 py-2 border rounded-lg text-sm"></div>
-                <div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Tipo de pendência</label><select id="pendenciasFiltroTipo" onchange="renderPendencias()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todas</option><option value="novas">Novas solicitações</option><option value="validacao">Sem validação pedagógica</option><option value="proposta">Proposta aguardada</option><option value="listagem">Listagens</option><option value="canceladas">Canceladas pela unidade</option><option value="financeiro">Aporte financeiro</option></select></div>
+                <div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Tipo de pendência</label><select id="pendenciasFiltroTipo" onchange="renderPendencias()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todas</option><option value="novas">Novas solicitações</option><option value="validacao">Sem validação pedagógica</option><option value="proposta">Proposta aguardada</option><option value="semsetor">Sem setor responsável</option><option value="confirmacao">Confirmar viagem</option><option value="listagem">Listagens</option><option value="canceladas">Canceladas pela unidade</option><option value="financeiro">Aporte financeiro</option></select></div>
                 <div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Público-alvo</label><select id="pendenciasFiltroPublico" onchange="renderPendencias()" class="min-w-52 px-3 py-2 border rounded-lg text-sm"><option value="">Todos os públicos</option></select></div>
                 <button onclick="limparFiltrosPendencias()" class="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Limpar seleção</button>
               </div>
@@ -888,17 +888,18 @@
                 <div class="grid grid-cols-2 gap-4">
                   <div>
                     <label class="block text-sm font-medium mb-1">Data <span class="text-red-600">*</span></label>
-                    <input type="date" id="wData" required class="w-full px-3 py-2 border rounded-lg" />
+                    <input type="date" id="wData" required oninput="atualizarPrazoListagemWizard()" class="w-full px-3 py-2 border rounded-lg" />
                   </div>
                   <div>
                     <label class="block text-sm font-medium mb-1">Horário de saída <span class="text-red-600">*</span></label>
-                    <input type="time" id="wHora" required class="w-full px-3 py-2 border rounded-lg" />
+                    <input type="time" id="wHora" required oninput="atualizarPrazoListagemWizard()" class="w-full px-3 py-2 border rounded-lg" />
                   </div>
                   <div>
                     <label class="block text-sm font-medium mb-1">Horário de retorno (previsto) <span class="text-red-600">*</span></label>
                     <input type="time" id="wHoraRetorno" required class="w-full px-3 py-2 border rounded-lg" />
                   </div>
                 </div>
+                <div id="wPrazoListagemInfo" class="hidden mt-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800"></div>
               </div>
 
               <!-- STEP 4: PARTICIPANTES -->
@@ -2024,13 +2025,14 @@
       <div id="validacaoInfo" class="bg-slate-50 border rounded-lg p-3 text-sm mb-4 grid grid-cols-2 gap-1"></div>
 
       <div class="mb-4">
-        <label class="block text-sm font-medium mb-1">Documento enviado pela unidade</label>
+        <div class="mb-1 flex items-center justify-between gap-2"><label class="block text-sm font-medium">Documento enviado pela unidade</label><a id="validacaoDocLink" href="#" target="_blank" rel="noopener" class="hidden text-xs font-semibold text-blue-700 hover:text-blue-900">↗ Abrir documento em nova aba</a></div>
         <div id="validacaoDocPreview" class="border rounded-lg overflow-hidden bg-slate-50" style="min-height:62vh"></div>
       </div>
 
       <div class="grid md:grid-cols-2 gap-4">
         <div class="border rounded-lg p-3">
           <h4 class="font-semibold text-sm mb-2">Parecer</h4>
+          <div id="parecerAviso" class="hidden mb-2 rounded-lg border px-3 py-2 text-xs"></div>
           <select id="parecerSelect" class="w-full px-3 py-2 border rounded-lg text-sm mb-2">
             <option value="aceito">✅ Aceitar</option>
             <option value="correcoes">✏️ Solicitar correções</option>
@@ -2050,6 +2052,7 @@
             <option value="tempo_integral">Tempo Integral</option>
             <option value="administracao">Administração</option>
           </select>
+          <input id="encaminharMotivo" type="text" placeholder="Motivo do encaminhamento *" class="w-full px-3 py-2 border rounded-lg text-sm mb-2" />
           <button id="btnEncaminharValidacao" onclick="confirmEncaminhar()" class="w-full px-3 py-2 bg-blue-600 text-white rounded-lg text-sm">↪️ Encaminhar</button>
         </div>
       </div>
@@ -2226,7 +2229,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=pendencias-publico-20261009-003"></script>
+  <script src="app.js?v=correcoes-perfis-20261016-001"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */

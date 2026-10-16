@@ -855,12 +855,19 @@ async function enterApp() {
 
   applyRoleUI(currentUser.role);
 
-  await Promise.all([loadSchools(), loadVehicles(), loadDrivers(), loadProfiles(), loadCooperativas(), loadAppSettings()]);
+  // P2: setores/públicos já no login (trava de setor e encaminhamento valem em qualquer tela).
+  await Promise.all([loadSchools(), loadVehicles(), loadDrivers(), loadProfiles(), loadCooperativas(), loadAppSettings(), loadValidationConfig()]);
   await loadAgenda();
   await loadKmLogs();
   await loadNotifications();
   subscribeNotificationsRealtime();
   if (sb) window.setInterval(loadNotifications, 60000);
+  // C9: Pendências da cooperativa se atualizam sozinhas enquanto a tela estiver aberta.
+  if (sb && currentUser?.role === 'agente_externo') window.setInterval(async () => {
+    if (!document.getElementById('screen-pendenciascoop')?.classList.contains('active-screen') || respostaCoopEmAndamento.size) return;
+    if (document.querySelector('[id^="pcdVeiculo-"]:focus, [id^="pcdMotorista-"]:focus')) return;
+    await loadAgenda(); renderPendenciasCoop();
+  }, 60000);
 
   showScreen(defaultScreenForCurrentUser());
 }
@@ -1690,8 +1697,18 @@ async function createNotification(userId, title, message, excursionId = null) {
   const { error } = await sb.from('notifications').insert([{ user_id: userId, title, message, excursion_id: excursionId }]);
   return !error;
 }
+// Avisos entre perfis: a função notificar_grupo (migration_044) define os destinatários
+// no banco, pois Escola/Pedagogia/Cooperativa não podem gravar avisos para terceiros.
+// Sem a migration, cai no caminho antigo (que funciona para o Admin).
+async function notificarGrupo(grupo, excursionId, title, message, alvoId = null) {
+  if (!sb) return false;
+  const { error } = await sb.rpc('notificar_grupo', { p_grupo: grupo, p_excursion_id: excursionId || null, p_titulo: title, p_mensagem: message, p_alvo: alvoId });
+  if (error) { console.warn('Aviso não enviado (' + grupo + '):', error.message); return false; }
+  return true;
+}
 async function notifyAdmins(title, message, excursionId = null) {
   if (!sb) return;
+  if (await notificarGrupo('admins', excursionId, title, message)) return;
   const { data } = await sb.from('profiles').select('id').eq('role', 'admin').eq('active', true);
   // Avisos em paralelo (antes era um por vez, o que atrasava o fim do envio).
   await Promise.all((data || []).map((p) => createNotification(p.id, title, message, excursionId)));
@@ -1750,8 +1767,16 @@ function requesterUserId(trip) {
   return null;
 }
 async function notifyRequester(trip, title, message) {
-  const uid = requesterUserId(trip);
+  // Aviso para o solicitante da viagem (quem criou a solicitação).
+  if (trip?.id && await notificarGrupo('solicitante', trip.id, title, message)) return;
+  const criador = allProfiles.find((x) => x.id === trip?.created_by && x.role === 'escola' && x.active !== false);
+  const uid = criador ? criador.id : requesterUserId(trip);
   if (uid) await createNotification(uid, title, message, trip.id);
+}
+async function notifyValidadoresSetor(trip, title, message, setorId = null) {
+  if (!trip?.id) return;
+  if (await notificarGrupo('validadores', trip.id, title, message, setorId)) return;
+  await notifyPedagogia(title, message, trip.id);
 }
 async function notifyRequesterEmail(trip, subject, text, html = '') {
   const to = (trip?.requester_email || '').trim();
@@ -1775,7 +1800,7 @@ Agora é necessário informar os passageiros desta viagem, com nome completo e n
 
 ${link ? 'Acesse o cadastro de passageiros pelo link abaixo:\n' + link + '\n' : 'Para isso, entre no sistema Bora Lá e acesse o menu Validações ou Agenda.'}
 
-Após o envio, nossa equipe fará a conferência. Mas não demore: o prazo é de 48h (em dias úteis) de antecedência da viagem.
+Após o envio, nossa equipe fará a conferência. Mas não demore: o prazo é de 48 horas antes do horário de saída da viagem.
 
 Bora Lá - Excursões / Semed Nova Lima`;
 }
@@ -1794,7 +1819,7 @@ function buildRequesterPassengerEmailHtml(trip, link = '') {
     + p(`<strong>Origem:</strong> ${escapeHtml(origem)}<br><strong>Destino:</strong> ${escapeHtml(destino)}<br><strong>Data:</strong> ${escapeHtml(data)}<br><strong>Saída:</strong> ${escapeHtml(hhmm(trip.departure_time))} - <strong>Retorno:</strong> ${escapeHtml(hhmm(trip.return_time))}`)
     + p('Agora é necessário informar os passageiros desta viagem, com nome completo e número do documento.')
     + acesso
-    + p('Após o envio, nossa equipe fará a conferência. Mas não demore: o prazo é de 48h (em dias úteis) de antecedência da viagem.')
+    + p('Após o envio, nossa equipe fará a conferência. Mas não demore: o prazo é de 48 horas antes do horário de saída da viagem.')
     + '<p style="margin:18px 0 0">Bora Lá - Excursões / Semed Nova Lima</p></div>';
 }
 function buildRequesterRejectedEmail(trip) {
@@ -1905,7 +1930,7 @@ function showScreen(name, el) {
   if (name === 'perfisacesso') { Promise.all([loadAccessProfiles(), loadRoleScreenPermissions()]).then(renderAccessProfiles); }
   if (name === 'validadores') openValidadoresScreen().then(() => aplicarSomenteConsulta('screen-validadores', 'validadores'));
   if (name === 'relatorios') populateRelatorioFilters();
-  if (name === 'relatorios') { document.getElementById('btnNotificarViagens')?.classList.toggle('hidden', ['agente_externo', 'escola', 'motorista'].includes(currentUser?.role)); renderRelatorioPreview(); }
+  if (name === 'relatorios') { document.getElementById('btnNotificarViagens')?.classList.toggle('hidden', ['agente_externo', 'escola', 'motorista', 'pedagogia'].includes(currentUser?.role)); renderRelatorioPreview(); }
   if (name === 'pendenciascoop') renderPendenciasCoop();
   if (name === 'solicitacoescoop') renderSolicitacoesCoop();
   if (name === 'financeiro') renderFinanceRequests();
@@ -1947,7 +1972,7 @@ async function refreshDadosDaTela(name) {
     if (name === 'avisos') openAvisosScreen();
     if (name === 'validadores') openValidadoresScreen().then(() => aplicarSomenteConsulta('screen-validadores', 'validadores'));
     if (name === 'relatorios') populateRelatorioFilters();
-    if (name === 'relatorios') { document.getElementById('btnNotificarViagens')?.classList.toggle('hidden', ['agente_externo', 'escola', 'motorista'].includes(currentUser?.role)); renderRelatorioPreview(); }
+    if (name === 'relatorios') { document.getElementById('btnNotificarViagens')?.classList.toggle('hidden', ['agente_externo', 'escola', 'motorista', 'pedagogia'].includes(currentUser?.role)); renderRelatorioPreview(); }
     if (name === 'pendenciascoop') renderPendenciasCoop();
     if (name === 'solicitacoescoop') renderSolicitacoesCoop();
     if (name === 'financeiro') renderFinanceRequests();
@@ -1995,9 +2020,21 @@ async function loadAppSettings() {
 
 function getDriveUploadUrl() { return (appSettings.drive_upload_url || '').trim(); }
 
+// C12: o Supabase devolve no máximo 1000 linhas por consulta; lê em páginas.
+async function selecionarTodos(montarConsulta, tamanho = 1000) {
+  let todos = [];
+  for (let de = 0; ; de += tamanho) {
+    const { data, error } = await montarConsulta().range(de, de + tamanho - 1);
+    if (error) return { data: todos.length ? todos : null, error };
+    todos = todos.concat(data || []);
+    if (!data || data.length < tamanho) break;
+  }
+  return { data: todos, error: null };
+}
+
 async function loadAgenda() {
   if (sb) {
-    const { data } = await sb.from('excursions').select('*').order('trip_date', { ascending: true });
+    const { data } = await selecionarTodos(() => sb.from('excursions').select('*').order('trip_date', { ascending: true }).order('id', { ascending: true }));
     agenda = data || [];
     await loadExcursionDriversInto(agenda);
   }
@@ -2007,7 +2044,7 @@ async function loadAgenda() {
 // viagens, como agenda[i].driver_ids = ['uuid-motorista-1', 'uuid-motorista-2', ...].
 async function loadExcursionDriversInto(list) {
   if (!sb || list.length === 0) return;
-  const { data } = await sb.from('excursion_drivers').select('excursion_id, driver_id');
+  const { data } = await selecionarTodos(() => sb.from('excursion_drivers').select('excursion_id, driver_id').order('excursion_id').order('driver_id'));
   const map = {};
   (data || []).forEach((row) => {
     (map[row.excursion_id] = map[row.excursion_id] || []).push(row.driver_id);
@@ -2017,8 +2054,7 @@ async function loadExcursionDriversInto(list) {
 
 async function loadKmLogs() {
   if (sb) {
-    let query = sb.from('driver_km_logs').select('*').order('log_date', { ascending: false });
-    const { data, error } = await query;
+    const { data, error } = await selecionarTodos(() => sb.from('driver_km_logs').select('*').order('log_date', { ascending: false }).order('id', { ascending: true }));
     if (error) { console.warn('Erro ao carregar registros de KM:', error.message); kmLogs = []; return; }
     kmLogs = data || [];
   }
@@ -2058,7 +2094,7 @@ async function renderFinanceRequests() {
     const trip = agenda.find((a) => a.finance_request_id === f.id) || agenda.find((a) => a.id === f.root_excursion_id);
     const items = (f.items || []).map((i) => `${escapeHtml(i.description)} · ${i.quantity} · R$ ${Number(i.value || 0).toLocaleString('pt-BR',{minimumFractionDigits:2})}`).join('<br>');
     const actions = currentUser?.role === 'financeiro' ? `<div class="flex gap-2 items-start"><button onclick="decideFinanceRequest('${f.id}','deferido')" class="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white">Deferir</button><button onclick="decideFinanceRequest('${f.id}','indeferido')" class="rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-bold text-red-700">Indeferir</button></div>` : '<span class="text-xs font-semibold text-slate-500">Consulta administrativa</span>';
-    return `<article class="rounded-xl border border-orange-200 bg-orange-50/50 p-4"><div class="flex flex-wrap justify-between gap-3"><div><span class="rounded-full bg-orange-100 px-2 py-1 text-xs font-bold text-orange-800">${escapeHtml(f.status)}</span><h3 class="mt-2 font-bold">${escapeHtml(originName(trip || {}))} → ${escapeHtml(trip?.destination || 'Excursão')}</h3><p class="text-sm text-slate-600">Valor solicitado: <strong>R$ ${Number(f.requested_total || 0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</strong></p><p class="mt-2 text-xs text-slate-600">${items}</p>${f.document_filename ? `<p class="mt-2 text-xs text-orange-800">📎 ${escapeHtml(f.document_filename)}</p>` : ''}</div>${actions}</div></article>`;
+    return `<article class="rounded-xl border border-orange-200 bg-orange-50/50 p-4"><div class="flex flex-wrap justify-between gap-3"><div><span class="rounded-full bg-orange-100 px-2 py-1 text-xs font-bold text-orange-800">${escapeHtml(f.status)}</span><h3 class="mt-2 font-bold">${escapeHtml(originName(trip || {}))} → ${escapeHtml(trip?.destination || 'Excursão')}</h3><p class="text-sm text-slate-600">Valor solicitado: <strong>R$ ${Number(f.requested_total || 0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</strong></p><p class="mt-2 text-xs text-slate-600">${items}</p>${f.document_drive_url ? `<a href="${escapeHtml(f.document_drive_url)}" target="_blank" rel="noopener" class="mt-2 inline-block rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">📎 Abrir ${escapeHtml(f.document_filename || 'documento')}</a>` : f.document_filename ? `<p class="mt-2 text-xs text-orange-800">📎 ${escapeHtml(f.document_filename)}</p>` : ''}</div>${actions}</div></article>`;
   }).join('');
 }
 
@@ -2247,6 +2283,13 @@ async function confirmSaveKm() {
   else { renderKmResumo(); renderKmChart(); renderKmTable(); }
 }
 
+// C12: o registro de KM guarda a cooperativa do momento do lançamento (migration_044);
+// registros sem essa informação seguem a regra atual do motorista.
+function kmDaCooperativa(k, coopId) {
+  if (!coopId) return false;
+  return k.cooperativa_id ? k.cooperativa_id === coopId : driverBelongsToCooperativa(k.driver_id, coopId);
+}
+
 // ---- ADMIN: editar qualquer registro + relatório por motorista/cooperativa/período ----
 function openKmAdminScreen() {
   const motoristaSel = document.getElementById('kmAdminFiltroMotorista');
@@ -2286,7 +2329,7 @@ function populateKmAnoMes() {
   const selAno = document.getElementById('kmAdminFiltroAno');
   const selMes = document.getElementById('kmAdminFiltroMes');
   if (!selAno || !selMes) return;
-  const base = kmLogs.filter((k) => currentUser?.role !== 'agente_externo' || driverBelongsToCooperativa(k.driver_id, currentUser.cooperativaId));
+  const base = kmLogs.filter((k) => currentUser?.role !== 'agente_externo' || kmDaCooperativa(k, currentUser.cooperativaId));
   const anoAtual = selAno.value;
   const anos = [...new Set(base.map((k) => (k.log_date || '').slice(0, 4)).filter(Boolean))].sort().reverse();
   selAno.innerHTML = '<option value="">Todos</option>' + anos.map((a) => `<option value="${a}">${a}</option>`).join('');
@@ -2309,11 +2352,11 @@ function filterKmAdmin() {
   const fim = usaAnoMes ? '' : document.getElementById('kmAdminFiltroFim').value;
   return kmLogs.filter((k) => {
     if (usaAnoMes && !kmPassaAnoMes(k.log_date)) return false;
-    if (currentUser?.role === 'agente_externo' && !driverBelongsToCooperativa(k.driver_id, currentUser.cooperativaId)) return false;
+    if (currentUser?.role === 'agente_externo' && !kmDaCooperativa(k, currentUser.cooperativaId)) return false;
     if (motoristaId && k.driver_id !== motoristaId) return false;
     const tipoKm = currentUser?.role === 'agente_externo' ? (document.getElementById('kmAdminFiltroTipo')?.value || '') : '';
     if (tipoKm && (driverVehicle(k.driver_id)?.type || '') !== tipoKm) return false;
-    if (coopId && !driverBelongsToCooperativa(k.driver_id, coopId)) return false;
+    if (coopId && !kmDaCooperativa(k, coopId)) return false;
     if (inicio && k.log_date < inicio) return false;
     if (fim && k.log_date > fim) return false;
     return true;
@@ -2400,16 +2443,17 @@ function renderKmAdmin() {
         if (fTipo && !mots.some((id) => (driverVehicle(id)?.type || '') === fTipo)) return false;
         return true;
       });
+      const contCoop = contadoresCoop(viagensCoop);
       const card = (label, valor, cls) => `<div class="rounded-lg border px-2 py-1.5 ${cls}"><div class="text-[10px] font-semibold">${label}</div><div class="text-base font-bold">${valor}</div></div>`;
       resumo.innerHTML = `<div class="grid gap-1.5" style="grid-template-columns:repeat(auto-fit,minmax(105px,1fr))">${[
         card('Registros', rows.length, 'border-slate-200 bg-slate-50 text-slate-800'),
         card('KM rodados', total.toLocaleString('pt-BR', { maximumFractionDigits: 1 }), 'border-blue-200 bg-blue-50 text-blue-900'),
         card('Motoristas', motoristas, 'border-emerald-200 bg-emerald-50 text-emerald-900'),
         card('Dias com registro', dias, 'border-violet-200 bg-violet-50 text-violet-900'),
-        card('ATF emitidas', viagensCoop.filter((a) => a.atf_status === 'emitida').length, 'border-emerald-200 bg-emerald-50 text-emerald-900'),
-        card('ATF negadas', viagensCoop.filter((a) => a.atf_cooperativa_response === 'rejeitada').length, 'border-red-200 bg-red-50 text-red-900'),
-        card('PCD realizados', viagensCoop.filter((a) => a.pcd_cooperativa_confirmado_em).length, 'border-emerald-200 bg-emerald-50 text-emerald-900'),
-        card('PCD negados', viagensCoop.filter((a) => a.pcd_cooperativa_response === 'negada').length, 'border-red-200 bg-red-50 text-red-900'),
+        card('ATF emitidas', contCoop.atfEmit, 'border-emerald-200 bg-emerald-50 text-emerald-900'),
+        card('ATF negadas', contCoop.atfNeg, 'border-red-200 bg-red-50 text-red-900'),
+        card('PCD realizados', contCoop.pcdConf, 'border-emerald-200 bg-emerald-50 text-emerald-900'),
+        card('PCD negados', contCoop.pcdNeg, 'border-red-200 bg-red-50 text-red-900'),
       ].join('')}</div>`;
       return;
     }
@@ -2613,6 +2657,7 @@ function numeroViagensIndicadas(trip, ids = trip?.driver_ids || []) {
   return capacidade > 0 ? Math.max(1, Math.ceil(totalPassengers(trip) / capacidade)) : 1;
 }
 async function notifyAssignedDrivers(trip, title, message) {
+  if (trip?.id && await notificarGrupo('motoristas', trip.id, title, message)) return;
   for (const p of allProfiles.filter((x) => x.role === 'motorista' && (trip.driver_ids || []).includes(x.driver_id) && x.active !== false)) await createNotification(p.id, title, message, trip.id);
 }
 
@@ -2682,6 +2727,22 @@ function cooperativeDriversForTrip(trip) {
   return (trip.driver_ids || []).map((id) => drivers.find((d) => d.id === id)).filter((d) => d && driverBelongsToCooperativa(d, currentUser?.cooperativaId));
 }
 
+// C6: contadores de ATF/PCD da cooperativa logada, por veículo dela (sem canceladas/reprovadas).
+function contadoresCoop(viagens) {
+  const coopId = currentUser?.cooperativaId;
+  const ativas = (viagens || []).filter((a) => !['cancelada', 'reprovada'].includes(a.situacao));
+  const enviados = (a) => cooperativeDriversForTrip(a).map((d) => d.id).filter((did) => lvTemControle(a) ? lvEnvio(a, did) : !!a.atf_cooperativa_enviado_em);
+  const atfReq = ativas.filter((a) => enviados(a).length);
+  const atfEmit = atfReq.filter((a) => enviados(a).every((did) => lvAtf(a, did) === 'aceita'));
+  const atfNeg = atfReq.filter((a) => enviados(a).some((did) => lvAtf(a, did) === 'rejeitada'));
+  const pcdMeu = ativas.filter((a) => (a.pca_count || 0) > 0 && a.pcd_cooperativa_enviado_em && (a.pcd_coop_id ? a.pcd_coop_id === coopId : true));
+  return {
+    atfReq: atfReq.length, atfEmit: atfEmit.length, atfNeg: atfNeg.length,
+    pcdReq: pcdMeu.length, pcdConf: pcdMeu.filter((a) => a.pcd_cooperativa_confirmado_em).length,
+    pcdNeg: pcdMeu.filter((a) => a.pcd_cooperativa_response === 'negada' && !a.pcd_cooperativa_confirmado_em).length,
+  };
+}
+
 function limparFiltrosCoop() {
   const data = document.getElementById('coopFiltroData'); if (data) data.value = '';
   const unidade = document.getElementById('coopFiltroUnidade'); if (unidade) unidade.value = '';
@@ -2714,7 +2775,10 @@ async function renderPendenciasCoop() {
     ? a.atf_status !== 'emitida' && cooperativeDriversForTrip(a).some((d) => lvEnvio(a, d.id) && !lvAtf(a, d.id))
     : a.atf_status === 'aguardando' && !recusadaAtf(a);
   const atf = rows.filter(atfPendente);
-  const pcd = rows.filter((a) => (a.pca_count || 0) > 0 && a.pcd_cooperativa_enviado_em && !a.pcd_cooperativa_confirmado_em && !recusadaPcd(a));
+  // C2: pedido PCD só para a cooperativa escolhida pelo Admin (e que opera PCD).
+  const minhaCoop = cooperativaById(currentUser?.cooperativaId);
+  const pcdParaMim = (a) => a.pcd_coop_id ? a.pcd_coop_id === currentUser?.cooperativaId : minhaCoop?.opera_pcd !== false;
+  const pcd = rows.filter((a) => (a.pca_count || 0) > 0 && a.pcd_cooperativa_enviado_em && !a.pcd_cooperativa_confirmado_em && !recusadaPcd(a) && pcdParaMim(a));
 
   // Lista digitada (contagem) x arquivo anexado, por viagem.
   const contagem = {}, arquivos = {};
@@ -2747,11 +2811,13 @@ async function renderPendenciasCoop() {
     const extra = pcdCard
       ? ` · ${a.pca_count || 0} estudante(s) PCD + ${a.apoio_count || 0} apoio(s)`
       : (qtd ? ` · ${qtd} passageiros` : '');
+    // C7: lista digitada e arquivo anexado aparecem juntos (veículos com métodos diferentes).
     let listaBtns = '';
     if (pcdCard || qtd) {
       listaBtns = `<button onclick="exportCoopList('${a.id}','${tipo}','pdf')" class="${btn}">⬇ PDF</button><button onclick="exportCoopList('${a.id}','${tipo}','excel')" class="${btn}">⬇ Excel</button>`;
-    } else if ((arquivos[a.id] || []).length) {
-      listaBtns = (arquivos[a.id] || []).filter((f) => f.drive_url).map((f) => `<a href="${escapeHtml(f.drive_url)}" target="_blank" rel="noopener" class="${btn} border-blue-200 text-blue-700" title="${escapeHtml(f.filename || '')}">🔗 Abrir listagem</a><a href="${escapeHtml(linkDownload(f))}" target="_blank" rel="noopener" class="${btn} border-blue-200 text-blue-700">⬇ Baixar</a>`).join('');
+    }
+    if (!pcdCard && (arquivos[a.id] || []).length) {
+      listaBtns += (arquivos[a.id] || []).filter((f) => f.drive_url).map((f) => { const placa = f.driver_id ? ` (${escapeHtml(lvPlaca(f.driver_id))})` : ''; return `<a href="${escapeHtml(f.drive_url)}" target="_blank" rel="noopener" class="${btn} border-blue-200 text-blue-700" title="${escapeHtml(f.filename || '')}">🔗 Abrir listagem${placa}</a><a href="${escapeHtml(linkDownload(f))}" target="_blank" rel="noopener" class="${btn} border-blue-200 text-blue-700">⬇ Baixar${placa}</a>`; }).join('');
     }
     const acoes = pcdCard
       ? `<div class="mt-3 grid gap-2 md:grid-cols-2"><input id="pcdVeiculo-${a.id}" placeholder="Veículo (opcional)" class="border rounded-lg px-3 py-2 text-sm"><input id="pcdMotorista-${a.id}" placeholder="Motorista (opcional)" class="border rounded-lg px-3 py-2 text-sm"></div><div class="mt-3 flex flex-wrap gap-2"><button onclick="confirmarPcdCoop('${a.id}')" class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white">Confirmar atendimento</button><button onclick="rejeitarPcdCoop('${a.id}')" class="rounded-lg border border-red-200 px-3 py-2 text-sm font-bold text-red-700">Recusar</button></div>`
@@ -2774,54 +2840,68 @@ async function renderPendenciasCoop() {
 // Aviso por e-mail ao setor quando a cooperativa confirma a ATF ou o transporte PCD
 // (mesmo padrão do e-mail de preenchimento de listagem). Destino: e-mail do setor
 // cadastrado em Admin › Cooperativas › Envio de e-mail.
-async function avisarSetorRespostaCoop(id, tipo) {
+async function avisarSetorRespostaCoop(id, tipo, { resultado = null, recusa = false, motivo = '' } = {}) {
   const destino = appSettings.email_copia_setor || appSettings.remetente_email || '';
   const a = agenda.find((x) => x.id === id);
-  if (!destino || !a) return;
+  if (!a) return null;
+  if (!destino) { ultimoErroEnvioAutomatico = 'e-mail do setor não cadastrado'; return false; }
   const pcd = tipo === 'pcd';
-  const coop = cooperativaById(currentUser?.cooperativaId)?.name || 'a cooperativa';
+  const coop = resultado?.cooperativa || cooperativaById(currentUser?.cooperativaId)?.name || 'a cooperativa';
   const quem = currentUser?.user_metadata?.full_name || currentUser?.email || '';
   const agora = new Date();
   const data = a.trip_date ? new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
   const origem = `${originName(a) || '-'}${originAddress(a) ? ' - ' + originAddress(a) : ''}${originCity(a) ? ' - ' + originCity(a) : ''}`;
   const destinoViagem = `${a.destination || '-'}${a.destination_address ? ' - ' + a.destination_address : ''}${a.city ? ' - ' + a.city : ''}`;
   const motoristas = cooperativeDriversForTrip(a).map((d) => { const v = driverVehicle(d.id); return `${d.name}${v?.plate ? ' · ' + v.plate : ''}${v?.capacity ? ' · ' + v.capacity + ' lugares' : ''}`; }).join(' / ') || '-';
-  const titulo = pcd ? 'Transporte PCD confirmado' : 'ATF emitida';
-  const assunto = `Bora Lá - ${pcd ? 'transporte PCD confirmado' : 'ATF emitida'} - ${a.destination || '-'} - ${data}`;
+  // C4: mensagem por cooperativa (veículos dela e, se houver, cooperativas que ainda faltam).
+  const titulo = recusa ? (pcd ? `Transporte PCD recusado (${coop})` : `ATF recusada (${coop})`) : (pcd ? `Transporte PCD confirmado (${coop})` : `ATF emitida (${coop})`);
+  const assunto = `Bora Lá - ${titulo} - ${a.destination || '-'} - ${data}`;
+  const pendentes = Array.isArray(resultado?.pendentes) ? resultado.pendentes : [];
   const quando = `${agora.toLocaleDateString('pt-BR')} às ${agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
-  const intro = pcd
-    ? `A cooperativa ${coop} confirmou, pelo sistema Bora Lá, o atendimento em veículo adaptado da viagem abaixo.`
-    : `A cooperativa ${coop} confirmou, pelo sistema Bora Lá, a emissão da ATF da viagem abaixo.`;
+  const intro = recusa
+    ? (pcd ? `A cooperativa ${coop} informou, pelo sistema Bora Lá, que não atenderá o transporte em veículo adaptado da viagem abaixo.` : `A cooperativa ${coop} informou, pelo sistema Bora Lá, que não emitirá a ATF da viagem abaixo.`)
+    : pcd
+      ? `A cooperativa ${coop} confirmou, pelo sistema Bora Lá, o atendimento em veículo adaptado da viagem abaixo.`
+      : `A cooperativa ${coop} emitiu, pelo sistema Bora Lá, a ATF ${resultado?.placas ? `dos veículos ${resultado.placas}` : 'da viagem abaixo'}.${pendentes.length ? ` Aguardando ATF de: ${pendentes.map((x) => `${x.cooperativa} (${x.veiculos} veículo${Number(x.veiculos) > 1 ? 's' : ''})`).join(', ')}.` : ''}`;
   const veicPcd = [document.getElementById(`pcdVeiculo-${id}`)?.value?.trim(), document.getElementById(`pcdMotorista-${id}`)?.value?.trim()].filter(Boolean).join(' · ');
   const linhas = [
     ['Origem', origem], ['Destino', destinoViagem], ['Data', data],
     ['Saída', `${hhmm(a.departure_time)}h - Retorno: ${hhmm(a.return_time)}h`],
     ...(pcd ? [['Estudantes PCD', `${a.pca_count || 0} + ${a.apoio_count || 0} apoio(s)`]] : [['Motorista(s)', motoristas]]),
-    ...(pcd && veicPcd ? [['Veículo / motorista informados', veicPcd]] : []),
+    ...(pcd && veicPcd && !recusa ? [['Veículo / motorista informados', veicPcd]] : []),
+    ...(recusa ? [['Motivo da recusa', motivo || '-']] : []),
   ];
   const declaracao = pcd
     ? 'Conforme declarado no aceite, a execução do atendimento é de inteira responsabilidade da cooperativa, e a SEMED considera este aceite como confirmação do atendimento.'
     : 'Conforme declarado no aceite, a emissão e a regularidade da ATF são de inteira responsabilidade da cooperativa, e a SEMED considera este aceite como comprovação de emissão do documento.';
-  const confirmado = `Confirmado em ${quando}${quem ? `, por ${quem} (${coop})` : ''}.`;
-  const texto = `${saudacaoEmailBrasilia()}\n\n${intro}\n\n${linhas.map(([k, v]) => k === 'Saída' ? `Saída: ${v}` : `${k}: ${v}`).join('\n')}\n\n${confirmado}\n\n${declaracao}\n\nBora Lá - Excursões / Semed Nova Lima`;
+  const confirmado = `${recusa ? 'Recusado' : 'Confirmado'} em ${quando}${quem ? `, por ${quem} (${coop})` : ''}.`;
+  const texto = `${saudacaoEmailBrasilia()}\n\n${intro}\n\n${linhas.map(([k, v]) => k === 'Saída' ? `Saída: ${v}` : `${k}: ${v}`).join('\n')}\n\n${confirmado}${recusa ? '' : `\n\n${declaracao}`}\n\nBora Lá - Excursões / Semed Nova Lima`;
   const p = (t) => `<p style="margin:0 0 12px">${t}</p>`;
   const html = `<div style="max-width:720px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.5;font-size:14px"><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | ${escapeHtml(titulo)}</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:3px;background:#16a34a;margin:3px 0 16px"></div>`
     + p(saudacaoEmailBrasilia()) + p(escapeHtml(intro))
     + p(linhas.map(([k, v]) => k === 'Saída' ? `<strong>Saída:</strong> ${escapeHtml(hhmm(a.departure_time))}h - <strong>Retorno:</strong> ${escapeHtml(hhmm(a.return_time))}h` : `<strong>${escapeHtml(k)}:</strong> ${escapeHtml(v)}`).join('<br>'))
     + p(escapeHtml(confirmado))
-    + `<p style="margin:0 0 12px;font-size:12px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px">${escapeHtml(declaracao)}</p>`
+    + (recusa ? '' : `<p style="margin:0 0 12px;font-size:12px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px">${escapeHtml(declaracao)}</p>`)
     + '<p style="margin:18px 0 0">Bora Lá - Excursões / Semed Nova Lima</p></div>';
-  await tentarEnviarEmailAutomatico(destino, assunto, texto, '', html);
+  return tentarEnviarEmailAutomatico(destino, assunto, texto, '', html);
 }
 
 // Janela de confirmação das respostas da cooperativa (ATF / PCD).
-function confirmarRespostaCoop({ titulo, info = '', texto = '', tom = 'amber', botao = 'Confirmar' }) {
+function confirmarRespostaCoop({ titulo, info = '', texto = '', tom = 'amber', botao = 'Confirmar', pedirMotivo = false }) {
   return new Promise((resolve) => {
     const cores = { amber: ['#fffbeb', '#fde68a', '#f59e0b'], blue: ['#eff6ff', '#bfdbfe', '#2563eb'], red: ['#fff1f2', '#fecdd3', '#e11d48'] }[tom] || ['#fffbeb', '#fde68a', '#f59e0b'];
     const wrap = document.createElement('div');
     wrap.className = 'fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4';
-    wrap.innerHTML = `<div class="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"><h4 class="text-base font-bold text-slate-900">${escapeHtml(titulo)}</h4>${info ? `<p class="mt-1 text-sm text-slate-600">${escapeHtml(info)}</p>` : ''}${texto ? `<p class="mt-3 rounded-lg p-3 text-xs leading-relaxed text-slate-700" style="background:${cores[0]};border:1px solid ${cores[1]}">${escapeHtml(texto)}</p>` : ''}<div class="mt-4 flex justify-end gap-2"><button data-r="0" class="rounded-lg border px-4 py-2 text-sm font-semibold text-slate-700">Voltar</button><button data-r="1" class="rounded-lg px-4 py-2 text-sm font-bold text-white" style="background:${cores[2]}">${escapeHtml(botao)}</button></div></div>`;
-    wrap.addEventListener('click', (e) => { const r = e.target?.dataset?.r; if (r === undefined) return; wrap.remove(); resolve(r === '1'); });
+    wrap.innerHTML = `<div class="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"><h4 class="text-base font-bold text-slate-900">${escapeHtml(titulo)}</h4>${info ? `<p class="mt-1 text-sm text-slate-600">${escapeHtml(info)}</p>` : ''}${texto ? `<p class="mt-3 rounded-lg p-3 text-xs leading-relaxed text-slate-700" style="background:${cores[0]};border:1px solid ${cores[1]}">${escapeHtml(texto)}</p>` : ''}${pedirMotivo ? '<label class="mt-3 block text-xs font-semibold text-slate-600">Motivo *</label><textarea data-motivo rows="2" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm" placeholder="Ex.: veículo em manutenção na data"></textarea>' : ''}<div class="mt-4 flex justify-end gap-2"><button data-r="0" class="rounded-lg border px-4 py-2 text-sm font-semibold text-slate-700">Voltar</button><button data-r="1" class="rounded-lg px-4 py-2 text-sm font-bold text-white" style="background:${cores[2]}">${escapeHtml(botao)}</button></div></div>`;
+    wrap.addEventListener('click', (e) => {
+      const r = e.target?.dataset?.r; if (r === undefined) return;
+      if (r === '1' && pedirMotivo) {
+        const motivo = (wrap.querySelector('[data-motivo]')?.value || '').trim();
+        if (!motivo) { toast('⚠️ Informe o motivo da recusa.', true); return; }
+        wrap.remove(); resolve({ motivo }); return;
+      }
+      wrap.remove(); resolve(r === '1');
+    });
     document.body.appendChild(wrap);
   });
 }
@@ -2831,14 +2911,36 @@ function infoViagemCoop(id) {
   return `${a.destination || '-'} · ${a.trip_date ? new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'}${mot ? ' · ' + mot : ''}`;
 }
 
+// C11: trava cada viagem enquanto uma resposta da cooperativa está sendo gravada.
+const respostaCoopEmAndamento = new Set();
+async function comTravaCoop(id, fn) {
+  if (respostaCoopEmAndamento.has(id)) return;
+  respostaCoopEmAndamento.add(id);
+  const botoes = [...document.querySelectorAll(`#pendenciasCoopLista button[onclick*="'${id}'"]`)];
+  botoes.forEach((b) => { b.disabled = true; b.dataset.textoOriginal = b.textContent; b.classList.add('opacity-60', 'cursor-wait'); });
+  try { await fn(); }
+  finally {
+    respostaCoopEmAndamento.delete(id);
+    botoes.forEach((b) => { if (document.body.contains(b)) { b.disabled = false; b.classList.remove('opacity-60', 'cursor-wait'); } });
+  }
+}
+function avisoEmailSetorCoop(enviado) {
+  return enviado === false ? ` Resposta registrada, mas o e-mail ao setor não foi enviado${ultimoErroEnvioAutomatico ? ': ' + ultimoErroEnvioAutomatico : ''}. Avise o setor por outro meio.` : '';
+}
+
 async function aceitarAtfCoop(id) {
   if (!sb) { toast('⚠️ Este aceite precisa do Supabase.', true); return; }
   if (!await confirmarRespostaCoop({ titulo: 'Confirmar emissão da ATF?', info: infoViagemCoop(id), tom: 'amber', botao: 'Confirmar emissão',
     texto: 'Declaro, em nome desta cooperativa, que a Autorização de Tráfego (ATF) referente a esta viagem foi emitida, sendo sua emissão e regularidade de inteira responsabilidade da cooperativa. A Secretaria Municipal de Educação (SEMED) considerará este aceite como comprovação de emissão do documento.' })) return;
-  const { error } = await sb.rpc('agent_accept_atf', { p_excursion_id: id });
-  if (error) { toast('❌ ' + error.message, true); return; }
-  await avisarSetorRespostaCoop(id, 'atf');
-  await loadAgenda(); await loadNotifications(); renderPendenciasCoop(); toast('✅ ATF marcada como emitida. Admin, Pedagogia e unidade foram notificados.');
+  await comTravaCoop(id, async () => {
+    const { data, error } = await sb.rpc('agent_accept_atf', { p_excursion_id: id });
+    if (error) { toast('❌ ' + error.message, true); return; }
+    const resultado = data && typeof data === 'object' ? data : {};
+    const enviado = await avisarSetorRespostaCoop(id, 'atf', { resultado });
+    await loadAgenda(); await loadNotifications(); renderPendenciasCoop();
+    const coop = resultado.cooperativa || cooperativaById(currentUser?.cooperativaId)?.name || 'cooperativa';
+    toast(`✅ ATF emitida pela ${coop}${resultado.placas ? ' — veículos ' + resultado.placas : ''}.${resultado.todas === false ? ' Aguardando as demais cooperativas.' : ''}${avisoEmailSetorCoop(enviado)}`, enviado === false);
+  });
 }
 
 async function confirmarPcdCoop(id) {
@@ -2846,26 +2948,39 @@ async function confirmarPcdCoop(id) {
   const tripPcd = agenda.find((x) => x.id === id);
   if (!await confirmarRespostaCoop({ titulo: 'Confirmar o transporte adaptado?', info: `${tripPcd?.destination || '-'} · ${tripPcd?.trip_date ? new Date(tripPcd.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'} · ${tripPcd?.pca_count || 0} estudante(s) PCD + ${tripPcd?.apoio_count || 0} apoio(s)`, tom: 'blue', botao: 'Confirmar atendimento',
     texto: 'Declaro, em nome desta cooperativa, que o atendimento em veículo adaptado para os estudantes relacionados está confirmado, sendo sua execução de inteira responsabilidade da cooperativa. A SEMED considerará este aceite como confirmação do atendimento.' })) return;
-  const veiculo = document.getElementById(`pcdVeiculo-${id}`)?.value.trim() || null;
-  const motorista = document.getElementById(`pcdMotorista-${id}`)?.value.trim() || null;
-  const { error } = await sb.rpc('agent_confirm_pcd', { p_excursion_id: id, p_vehicle: veiculo, p_driver: motorista });
-  if (error) { toast('❌ ' + error.message, true); return; }
-  await avisarSetorRespostaCoop(id, 'pcd');
-  await loadAgenda(); await loadNotifications(); renderPendenciasCoop(); toast('✅ Atendimento PCD confirmado. Admin e unidade foram notificados.');
+  await comTravaCoop(id, async () => {
+    const veiculo = document.getElementById(`pcdVeiculo-${id}`)?.value.trim() || null;
+    const motorista = document.getElementById(`pcdMotorista-${id}`)?.value.trim() || null;
+    const { error } = await sb.rpc('agent_confirm_pcd', { p_excursion_id: id, p_vehicle: veiculo, p_driver: motorista });
+    if (error) { toast('❌ ' + error.message, true); return; }
+    const enviado = await avisarSetorRespostaCoop(id, 'pcd');
+    await loadAgenda(); await loadNotifications(); renderPendenciasCoop();
+    toast('✅ Atendimento PCD confirmado. Admin e unidade foram notificados.' + avisoEmailSetorCoop(enviado), enviado === false);
+  });
 }
 async function rejeitarAtfCoop(id) {
   if (!sb) { toast('⚠️ Esta resposta precisa do Supabase.', true); return; }
-  if (!await confirmarRespostaCoop({ titulo: 'Recusar a emissão da ATF?', texto: 'POR GENTILEZA, ENTRE EM CONTATO COM O ADMINISTRADOR SEMED.', tom: 'red', botao: 'Confirmar recusa' })) return;
-  const { error } = await sb.rpc('agent_reject_atf', { p_excursion_id: id });
-  if (error) { toast('❌ ' + error.message, true); return; }
-  await loadAgenda(); await loadNotifications(); renderPendenciasCoop(); toast('ℹ️ Administrador notificado da recusa da ATF.');
+  const resp = await confirmarRespostaCoop({ titulo: 'Recusar ATF', info: infoViagemCoop(id), tom: 'red', botao: 'Recusar', pedirMotivo: true });
+  if (!resp) return;
+  await comTravaCoop(id, async () => {
+    const { error } = await sb.rpc('agent_reject_atf', { p_excursion_id: id, p_motivo: resp.motivo });
+    if (error) { toast('❌ ' + error.message, true); return; }
+    const enviado = await avisarSetorRespostaCoop(id, 'atf', { recusa: true, motivo: resp.motivo });
+    await loadAgenda(); await loadNotifications(); renderPendenciasCoop();
+    toast('ℹ️ Administrador notificado da recusa da ATF.' + avisoEmailSetorCoop(enviado), enviado === false);
+  });
 }
 async function rejeitarPcdCoop(id) {
   if (!sb) { toast('⚠️ Esta resposta precisa do Supabase.', true); return; }
-  if (!await confirmarRespostaCoop({ titulo: 'Recusar o transporte adaptado?', texto: 'POR GENTILEZA, ENTRE EM CONTATO COM O ADMINISTRADOR SEMED.', tom: 'red', botao: 'Confirmar recusa' })) return;
-  const { error } = await sb.rpc('agent_reject_pcd', { p_excursion_id: id });
-  if (error) { toast('❌ ' + error.message, true); return; }
-  await loadAgenda(); await loadNotifications(); renderPendenciasCoop(); toast('ℹ️ Administrador notificado da recusa do transporte PCD.');
+  const resp = await confirmarRespostaCoop({ titulo: 'Recusar o transporte adaptado', info: infoViagemCoop(id), tom: 'red', botao: 'Recusar', pedirMotivo: true });
+  if (!resp) return;
+  await comTravaCoop(id, async () => {
+    const { error } = await sb.rpc('agent_reject_pcd', { p_excursion_id: id, p_motivo: resp.motivo });
+    if (error) { toast('❌ ' + error.message, true); return; }
+    const enviado = await avisarSetorRespostaCoop(id, 'pcd', { recusa: true, motivo: resp.motivo });
+    await loadAgenda(); await loadNotifications(); renderPendenciasCoop();
+    toast('ℹ️ Administrador notificado da recusa do transporte PCD.' + avisoEmailSetorCoop(enviado), enviado === false);
+  });
 }
 
 // Deriva "precisa de contato com cooperativa" direto da viagem (destino fora de Nova
@@ -3041,7 +3156,9 @@ function renderDashboard() {
   const visible = visibleBruto.filter((a) => dashPassaFiltroData(a.trip_date) && (!unidadeFiltro || a.school_id === unidadeFiltro));
   const hoje = fmtDate(new Date());
   const viagensHoje = visible.filter((a) => a.trip_date === hoje).length;
-  const pendentes = visible.filter((a) => a.situacao === 'sem_validacao').length;
+  const pendentes = currentUser?.role === 'pedagogia'
+    ? filaPedagogia(visible.filter(aguardaParecerPedagogico)).length
+    : visible.filter((a) => a.situacao === 'sem_validacao').length;
   const aprovadas = visible.filter((a) => a.situacao === 'aprovada' || a.situacao === 'confirmada').length;
   const alunos = visible.reduce((s, a) => s + (a.students_count || 0), 0);
   const canceladas = visible.filter((a) => a.situacao === 'cancelada').length;
@@ -3361,10 +3478,15 @@ function renderAgenda() {
     .sort((a, b) => (a.trip_date + a.departure_time).localeCompare(b.trip_date + b.departure_time))
     .map((a) => {
       const turnoLabel = TURNO_LABELS[a.turno || turnoFromHora(a.departure_time)] || '-';
+      // E5: a escola só cancela antes de a viagem iniciar (o Admin não tem essa trava).
+      const viagemIniciada = a.status === 'in_transit' || (a.trip_date || '') < fmtDate(new Date());
       const podeCancelar = a.situacao !== 'cancelada' && a.situacao !== 'reprovada' && a.status !== 'completed'
-        && (role === 'admin' || (role === 'escola' && a.school_id === currentUser.schoolId));
+        && (role === 'admin' || (role === 'escola' && a.school_id === currentUser.schoolId && !viagemIniciada));
 
       let acoes = '<span class="text-slate-300 text-xs">—</span>';
+      if (role === 'escola' && a.school_id === currentUser.schoolId && a.status === 'in_transit' && !['cancelada', 'reprovada'].includes(a.situacao)) {
+        acoes = '<span class="text-xs italic text-slate-400">Viagem já iniciada — não é possível cancelar.</span>';
+      }
       // A atribuição é uma etapa operacional independente da decisão. Ela fica
       // disponível em qualquer solicitação ativa e só é publicada após aprovar.
       if (isAgendaEditor && a.situacao !== 'cancelada') {
@@ -3443,10 +3565,10 @@ function renderAgenda() {
           } else if (role === 'admin' && statusListagem === 'enviada') {
             listaLabel = '📋 Revisar listagem 🔔';
           }
-          const instanteSaida = new Date(`${a.trip_date}T${a.departure_time || '00:00'}:00`).getTime();
-          const prazoExpirado = instanteSaida <= Date.now() + (24 * 60 * 60 * 1000);
-          const listaBtn = role === 'escola' && prazoExpirado
-            ? `<span class="text-xs font-medium text-red-600 ml-2" title="A lista ATF deve ser enviada com mais de 24 horas de antecedência">📋 Prazo expirado</span>`
+          // E8: prazo único (48h antes da saída). Expirado, a escola não envia, mas ainda vê o que já enviou.
+          const prazoExpirado = prazoListagemExpirado(a);
+          const listaBtn = role === 'escola' && prazoExpirado && ['nao_enviada', 'rejeitada'].includes(statusListagem)
+            ? `<span class="text-xs font-medium text-red-600 ml-2" title="Prazo encerrado em ${prazoListagemTexto(a)} — contate o Admin">📋 Prazo expirado</span>`
             : `<button onclick="openListagemVeiculoModal('${a.id}')" class="text-slate-500 hover:text-slate-700 text-xs font-medium ml-2" title="Listagem de passageiros por veículo (nome + documento)">${listaLabel}</button>`;
           acoes = acoes.includes('text-slate-300') ? listaBtn : acoes + listaBtn;
         } else {
@@ -4484,7 +4606,7 @@ async function updateAtf(id, value) {
     await loadAgenda(); await loadNotifications(); renderAgenda();
   }
 
-  const semValidacao = visible.filter((a) => a.situacao === 'sem_validacao' && a.status === 'pending');
+  const semValidacao = filaPedagogia(visible.filter(aguardaParecerPedagogico));
   const semValidacaoBox = document.getElementById('dashboardSemValidacao');
   const semValidacaoLista = document.getElementById('dashboardSemValidacaoLista');
   if (semValidacaoBox) semValidacaoBox.classList.toggle('hidden', currentUser?.role !== 'pedagogia');
@@ -4499,7 +4621,7 @@ async function updateAtf(id, value) {
   if (dashboardValidacoes) dashboardValidacoes.classList.toggle('hidden', !mostraRelacao);
   const renderLinhaValidacao = (a) => `<button onclick="${a.status === 'pending' && currentUser?.role === 'pedagogia' ? `openValidacaoModal('${a.id}')` : `showScreen('agenda')`}" class="w-full text-left rounded-lg bg-white/75 hover:bg-white px-3 py-2 text-sm"><strong>${originName(a)}</strong> → ${a.destination}<span class="block text-xs text-slate-500">${a.trip_date ? new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'} • ${publicoAlvoLabel(a.validation_target_id || a.publico_alvo)}</span></button>`;
   if (mostraRelacao && listaAValidar && listaValidadas) {
-    const aValidar = visible.filter((a) => a.status === 'pending' && a.situacao === 'sem_validacao');
+    const aValidar = currentUser?.role === 'pedagogia' ? filaPedagogia(visible.filter(aguardaParecerPedagogico)) : visible.filter(aguardaParecerPedagogico);
     const validadas = visible.filter((a) => a.status !== 'pending' || ['aceito','correcoes','rejeitado'].includes(a.doc_status));
     listaAValidar.innerHTML = aValidar.slice(0, 8).map(renderLinhaValidacao).join('') || '<p class="text-sm text-amber-800">Nenhuma solicitação pendente.</p>';
     listaValidadas.innerHTML = validadas.slice(0, 8).map(renderLinhaValidacao).join('') || '<p class="text-sm text-emerald-800">Nenhuma solicitação validada no filtro.</p>';
@@ -4581,6 +4703,20 @@ function abrirValidacaoDaPendencia(id) {
   // Abre o modal sobre a própria tela de Pendências (que continua ao fundo).
   validacaoReturnScreen = 'pendencias';
   openValidacaoModal(id);
+}
+
+// P4: Admin define o setor de uma solicitação sem setor responsável (vale para a série).
+async function encaminharSemSetor(id) {
+  const trip = agenda.find((a) => a.id === id);
+  const setorId = document.getElementById(`semSetorSel-${id}`)?.value || '';
+  if (!trip) return;
+  if (!setorId) { toast('⚠️ Escolha o setor.', true); return; }
+  if (!await updateExcursion(id, { validation_sector_id: setorId })) return;
+  await replicarNaSerie(trip, { validation_sector_id: setorId });
+  await logDocHistory(id, 'encaminhado', trip.validation_sector_id || null, setorId, 'Setor definido pelo Admin (solicitação sem setor responsável).');
+  notifyValidadoresSetor({ ...trip, validation_sector_id: setorId }, 'Solicitação encaminhada ao seu setor', `${originName(trip)} → ${trip.destination || '-'} (${trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'}) aguarda análise da proposta pedagógica.`, setorId).catch(() => {});
+  await loadAgenda(); renderPendencias();
+  toast('↪️ Encaminhado para ' + (validationSectors.find((x) => x.id === setorId)?.name || 'o setor') + '.');
 }
 
 function populatePendenciasUnidadeFilter() {
@@ -4677,7 +4813,10 @@ function renderPendencias() {
       && publicoAlvoCorresponde(a, publicoFiltro))
     .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
   const abertas = recentes.filter((a) => !['cancelada', 'reprovada'].includes(a.situacao) && a.status !== 'rejected');
-  const semValidacao = abertas.filter((a) => a.status === 'pending' && a.situacao === 'sem_validacao');
+  const semValidacao = abertas.filter(aguardaParecerPedagogico);
+  // P4: sem setor responsável — visível ao Admin e a todos os validadores.
+  const semSetor = abertas.filter((a) => !['aceito', 'rejeitado'].includes(a.doc_status) && viagemSemSetor(a) && primeiraDaSerie(a));
+  const blocoSemSetor = () => pendenciaBloco('Sem setor responsável', 'Público-alvo sem setor ou setor removido: encaminhe para o setor correto.', semSetor.map((a) => pendenciaCard(a, { badge: 'Sem setor', tone: 'amber', detail: `Público-alvo: ${escapeHtml(publicoAlvoLabel(a.validation_target_id || a.publico_alvo))}`, action: semAcoesPend ? '' : `<div class="flex gap-2"><select id="semSetorSel-${a.id}" class="min-w-0 flex-1 rounded-lg border px-2 py-2 text-sm"><option value="">Encaminhar para setor…</option>${validationSectors.filter((x) => x.active !== false).map((x) => `<option value="${x.id}">${escapeHtml(x.name)}</option>`).join('')}</select><button onclick="encaminharSemSetor('${a.id}')" class="rounded-lg bg-violet-600 px-3 py-2 text-sm font-bold text-white">Encaminhar</button></div>` })), '⚠️', 'amber');
   const reenvio = abertas.filter((a) => ['solicitada', 'correcoes'].includes(a.doc_status));
   const botaoAgenda = (a) => (ehAdmin || currentUser.role === 'pedagogia') ? `<button onclick="abrirAgendaDaPendencia('${a.trip_date}')" class="w-full min-w-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-700">Abrir agenda da data</button>` : '';
   const botaoValidacaoAdmin = (a) => ehAdmin ? `<button onclick="abrirValidacaoDaPendencia('${a.id}')" class="w-full min-w-0 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-bold text-violet-700 hover:bg-violet-100">Validação pedagógica</button>` : '';
@@ -4704,6 +4843,7 @@ function renderPendencias() {
     const blocos = [
       ['novas', pendenciaBloco('Novas solicitações', 'Aguardando a primeira tratativa do Admin.', novas.map((a) => pendenciaCard(a, { badge: 'Nova solicitação', tone: 'emerald', action: acoesAdmin(a, { incluirReprovacao: true }) })), '🚌', 'emerald')],
       ['validacao', pendenciaBloco('Sem validação pedagógica', 'Solicitações que ainda não receberam parecer pedagógico.', semValidacao.map((a) => pendenciaCard(a, { badge: 'Aguardando validação', tone: 'amber', action: acoesAdmin(a) })), '⏳', 'amber')],
+      ['semsetor', blocoSemSetor()],
       ['proposta', pendenciaBloco('Proposta pedagógica aguardada', 'Solicitada pelo Admin ou devolvida pela Pedagogia.', reenvio.map((a) => pendenciaCard(a, { badge: a.doc_status === 'solicitada' ? 'Solicitada à unidade' : 'Aguardando reenvio', tone: 'blue', detail: escapeHtml(a.doc_parecer_comentario || 'Aguardando proposta pedagógica da unidade.'), action: acoesAdmin(a) })), '📄', 'blue')],
       ['listagem', pendenciaBloco('Listagens para conferência', 'Listagens enviadas pelas unidades e aguardando análise do Admin.', cardsConferencia, '👥', 'blue')],
       ['canceladas', pendenciaBloco('Canceladas pela unidade', 'Também chegam como notificação para o Admin e o motorista.', canceladasPelaUnidade.map((a) => pendenciaCard(a, { badge: 'Cancelada pela unidade', tone: 'red', detail: escapeHtml(a.cancel_reason || 'Sem motivo informado.') })), '🚫', 'red')],
@@ -4730,17 +4870,26 @@ function renderPendencias() {
     }
   } else if (ehEscola) {
     const minhas = abertas.filter((a) => a.school_id === currentUser.schoolId);
-    const propostas = minhas.filter((a) => ['solicitada', 'correcoes'].includes(a.doc_status));
+    const propostas = minhas.filter((a) => ['solicitada', 'correcoes'].includes(a.doc_status) && primeiraDaSerie(a));
+    // E10: proposta nunca enviada (ex.: janela de envio fechada após o wizard) e proposta rejeitada.
+    const naoEnviadas = minhas.filter((a) => a.status === 'pending' && (a.doc_status || 'nao_enviado') === 'nao_enviado' && primeiraDaSerie(a));
+    const rejeitadas = minhas.filter((a) => a.doc_status === 'rejeitado' && primeiraDaSerie(a));
+    const aConfirmar = minhas.filter((a) => a.admin_decision === 'aprovada' && !a.escola_confirmada_em && !['rejected', 'completed', 'in_transit'].includes(a.status));
     const listagens = minhas.filter((a) => viagemValidadaCompletamente(a) && precisaListagemComNomesDocumentos(a) && ['nao_enviada', 'rejeitada'].includes(a.listagem_status || 'nao_enviada'));
     const pcdPendentes = minhas.filter((a) => a.pcd_list_status === 'rejeitada');
-    const botaoProposta = (a) => `<button onclick="openDocUploadModal('${a.id}')" class="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700">${a.doc_status === 'correcoes' ? 'Reenviar proposta' : 'Enviar proposta'}</button>`;
+    const botaoProposta = (a) => `<button onclick="openDocUploadModal('${a.id}')" class="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700">${a.doc_status === 'correcoes' ? 'Reenviar proposta' : a.doc_status === 'rejeitado' ? 'Enviar nova proposta' : 'Enviar proposta'}</button>`;
     const botaoLista = (a) => `<button onclick="openListagemVeiculoModal('${a.id}')" class="shrink-0 rounded-lg border border-emerald-200 bg-emerald-100 px-3 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-200">${a.listagem_status === 'rejeitada' ? 'Corrigir listagem' : 'Preencher listagem'}</button>`;
     const blocosEscola = [
+      ['proposta', pendenciaBloco('Proposta pedagógica não enviada', 'Solicitações criadas sem o envio da proposta.', naoEnviadas.map((a) => pendenciaCard(a, { badge: 'Proposta não enviada', tone: 'red', detail: seloSerieHtml(a), action: botaoProposta(a) })), '📄', 'red')],
+      ['proposta', pendenciaBloco('Proposta pedagógica rejeitada', 'Envie uma nova proposta para continuar.', rejeitadas.map((a) => pendenciaCard(a, { badge: 'Proposta rejeitada', tone: 'red', detail: escapeHtml('Motivo: ' + (a.doc_parecer_comentario || 'não informado.')), action: botaoProposta(a) })), '❌', 'red')],
       ['proposta', pendenciaBloco('Proposta pedagógica', 'Envie ou reenvie o arquivo solicitado pelo fluxo administrativo/pedagógico.', propostas.map((a) => pendenciaCard(a, { badge: a.doc_status === 'correcoes' ? 'Correções solicitadas' : 'Proposta solicitada', tone: 'blue', detail: escapeHtml(a.doc_parecer_comentario || 'Envie a proposta pedagógica para a continuidade do fluxo.'), action: botaoProposta(a) })), '📄', 'blue')],
+      ['confirmacao', pendenciaBloco('Confirmar viagem', 'Viagens aprovadas aguardando a confirmação da unidade.', aConfirmar.map((a) => pendenciaCard(a, { badge: 'Aguardando confirmação', tone: 'blue', action: `<button onclick="confirmarViagemEscola('${a.id}')" class="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700">Confirmar</button>` })), '✅', 'blue')],
       ['listagem', pendenciaBloco('Listagem de passageiros', 'Viagens aprovadas que exigem lista por ATF e/ou PCD.', listagens.flatMap((a) => {
         const recusados = a.listagem_status === 'rejeitada' && lvTemControle(a) ? (a.driver_ids || []).filter((did) => lvStatus(a, did) === 'rejeitada') : [];
-        if (recusados.length) return recusados.map((did) => pendenciaCard(a, { badge: `Refazer listagem — veículo ${lvPlaca(did)}`, tone: 'emerald', detail: escapeHtml(lvMapa(a)[did]?.motivo || ''), action: botaoLista(a) }));
-        return [pendenciaCard(a, { badge: a.listagem_status === 'rejeitada' ? 'Listagem para corrigir' : 'Listagem para enviar', tone: 'emerald', action: botaoLista(a) })];
+        const expirado = prazoListagemExpirado(a);
+        const acaoLista = expirado ? '' : botaoLista(a);
+        if (recusados.length) return recusados.map((did) => pendenciaCard(a, { badge: `Refazer listagem — veículo ${lvPlaca(did)}`, tone: 'emerald', detail: `${escapeHtml(lvMapa(a)[did]?.motivo || '')}<div class="mt-1">${prazoListagemHtml(a)}</div>`, action: acaoLista }));
+        return [pendenciaCard(a, { badge: a.listagem_status === 'rejeitada' ? 'Listagem para corrigir' : 'Listagem para enviar', tone: 'emerald', detail: prazoListagemHtml(a), action: acaoLista })];
       }), '👥', 'emerald')],
       ['listagem', pendenciaBloco('Correções em Listagem PCD', 'A unidade deve revisar os dados de estudante PCD e respectivo apoio.', pcdPendentes.map((a) => pendenciaCard(a, { badge: 'Lista PCD pendente', tone: 'amber', detail: escapeHtml(a.pcd_list_reason || 'Revise a listagem PCD.'), action: `<button onclick="openPcdCorrectionModal('${a.id}')" class="shrink-0 rounded-lg bg-amber-600 px-3 py-2 text-sm font-bold text-white">Refazer listagem PCD</button>` })), '♿', 'amber')],
     ];
@@ -4748,11 +4897,75 @@ function renderPendencias() {
   } else {
     const botaoValidacao = (a) => `<button onclick="abrirValidacaoDaPendencia('${a.id}')" class="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-700">Abrir solicitação</button>`;
     const blocosPedagogia = [
-      ['validacao', pendenciaBloco('Solicitações sem validação pedagógica', 'Em ordem de criação; aguardando parecer da Pedagogia.', semValidacao.map((a) => pendenciaCard(a, { badge: 'Aguardando Pedagogia', tone: 'amber', action: botaoValidacao(a) })), '⏳', 'amber')],
-      ['proposta', pendenciaBloco('Proposta aguardando da unidade', 'Pedido do Admin ou correção solicitada pela Pedagogia.', reenvio.map((a) => pendenciaCard(a, { badge: a.doc_status === 'solicitada' ? 'Solicitada pelo Admin' : 'Aguardando reenvio', tone: 'blue', detail: escapeHtml(a.doc_parecer_comentario || 'Aguardando proposta pedagógica da unidade.'), action: botaoValidacao(a) })), '📄', 'blue')],
+      ['semsetor', blocoSemSetor()],
+      ['validacao', pendenciaBloco('Solicitações sem validação pedagógica', 'Em ordem de criação; aguardando parecer da Pedagogia.', filaPedagogia(semValidacao).map((a) => pendenciaCard(a, { badge: 'Aguardando Pedagogia', tone: 'amber', detail: seloSerieHtml(a), action: botaoValidacao(a) })), '⏳', 'amber')],
+      ['proposta', pendenciaBloco('Proposta aguardando da unidade', 'Pedido do Admin ou correção solicitada pela Pedagogia.', filaPedagogia(reenvio).map((a) => pendenciaCard(a, { badge: a.doc_status === 'solicitada' ? 'Solicitada pelo Admin' : 'Aguardando reenvio', tone: 'blue', detail: escapeHtml(a.doc_parecer_comentario || 'Aguardando proposta pedagógica da unidade.'), action: botaoValidacao(a) })), '📄', 'blue')],
     ];
     container.innerHTML = blocosPedagogia.filter(([tipo]) => !tipoFiltro || tipoFiltro === tipo).map(([, html]) => html).join('') || '<p class="rounded-xl bg-slate-50 p-6 text-center text-sm text-slate-500">Nenhuma pendência para este filtro.</p>';
   }
+}
+
+// ---- Série recorrente: a proposta/parecer é tratado só na 1ª ocorrência ativa ----
+function serieDaViagem(a) {
+  if (!a?.recurrence_group_id) return [a];
+  return agenda.filter((x) => x.recurrence_group_id === a.recurrence_group_id)
+    .sort((x, y) => (x.trip_date || '').localeCompare(y.trip_date || '') || String(x.id).localeCompare(String(y.id)));
+}
+function serieAtivas(a) {
+  const serie = serieDaViagem(a);
+  const ativas = serie.filter((x) => !['cancelada', 'reprovada'].includes(x.situacao));
+  return ativas.length ? ativas : serie;
+}
+function primeiraDaSerie(a) { return !a?.recurrence_group_id || serieAtivas(a)[0]?.id === a.id; }
+function seloSerieHtml(a) {
+  if (!a?.recurrence_group_id) return '';
+  const datas = serieAtivas(a).map((x) => x.trip_date ? new Date(x.trip_date + 'T00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '').filter(Boolean);
+  return `<span class="ml-1 inline-block rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700" title="${escapeHtml(datas.join(', '))}">🔁 Série: ${datas.length} data(s)</span><span class="block text-[11px] font-normal text-slate-500">${escapeHtml(datas.join(', '))}</span>`;
+}
+// Replica um patch nas demais ocorrências ativas da série (não toca canceladas/reprovadas).
+async function replicarNaSerie(trip, patch) {
+  if (!trip?.recurrence_group_id) return true;
+  const outras = serieDaViagem(trip).filter((x) => x.id !== trip.id && !['cancelada', 'reprovada'].includes(x.situacao));
+  if (!outras.length) return true;
+  if (sb) {
+    const { error } = await sb.from('excursions').update(patch).in('id', outras.map((x) => x.id));
+    if (error) { toast('⚠️ A 1ª data foi atualizada, mas as demais datas da série não: ' + error.message, true); return false; }
+  } else { outras.forEach((x) => Object.assign(x, patch)); saveDemoData(); }
+  return true;
+}
+
+// ---- Pedagogia: fila de análise (P1/P5) ----
+function meusSetoresValidacao() { return new Set(validatorSectorAssignments.filter((v) => v.profile_id === currentUser?.id).map((v) => v.sector_id)); }
+function viagemNoMeuSetor(a) {
+  if (currentUser?.role !== 'pedagogia' || !validationSectors.length) return true;
+  const meus = meusSetoresValidacao();
+  return !meus.size || meus.has(a.validation_sector_id);
+}
+// Aguarda parecer: proposta ainda não aceita/rejeitada (o aceite tira da fila, mesmo antes da decisão do Admin).
+function aguardaParecerPedagogico(a) {
+  return a.status === 'pending' && a.situacao === 'sem_validacao' && !['aceito', 'rejeitado'].includes(a.doc_status);
+}
+function filaPedagogia(lista) {
+  return lista.filter((a) => viagemNoMeuSetor(a) && primeiraDaSerie(a));
+}
+// P4: sem setor responsável (público-alvo sem setor ou setor removido).
+function viagemSemSetor(a) {
+  if (!validationSectors.length) return false;
+  const setor = validationSectors.find((s) => s.id === a.validation_sector_id);
+  return !setor || setor.active === false;
+}
+
+// ---- E8: prazo da listagem (48 horas antes da saída), igual em todas as telas ----
+function prazoListagemMs(trip) { return new Date(`${trip.trip_date}T${trip.departure_time ? hhmm(trip.departure_time) : '00:00'}:00`).getTime() - 48 * 60 * 60 * 1000; }
+function prazoListagemExpirado(trip) { return Date.now() >= prazoListagemMs(trip); }
+function prazoListagemTexto(trip) {
+  const d = new Date(prazoListagemMs(trip));
+  return `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+}
+function prazoListagemHtml(trip) {
+  return prazoListagemExpirado(trip)
+    ? `<span class="font-semibold text-red-600">Prazo da listagem encerrado em ${prazoListagemTexto(trip)} — contate o Admin.</span>`
+    : `<span class="font-semibold text-amber-700">⏰ Enviar listagem até ${prazoListagemTexto(trip)}</span>`;
 }
 
 // Quando a viagem faz parte de uma série recorrente (recurrence_group_id), aprovar
@@ -4862,6 +5075,7 @@ async function confirmarViagemEscola(id) {
   const ok = await updateExcursion(id, { escola_confirmada_em: new Date().toISOString(), escola_confirmada_por: currentUser.id });
   if (!ok) return;
   await loadAgenda(); renderAgenda(); renderValidacoesEscola();
+  if (document.getElementById('screen-pendencias')?.classList.contains('active-screen')) renderPendencias();
   toast('✅ Viagem confirmada.');
 }
 
@@ -5036,8 +5250,9 @@ function renderValidacoesEscola() {
   const passadas = ordenar(minhas.filter((a) => (a.trip_date || '') < hojeEscola));
   const secao = (titulo, n) => `<tr><td colspan="9" class="px-4 py-2 bg-slate-100 text-xs font-bold uppercase tracking-wide text-slate-700">${titulo} (${n})</td></tr>`;
   const linhaEscola = (passada) => (a) => {
-      const podeEnviar = !['cancelada', 'reprovada'].includes(a.situacao) && ['nao_enviado', 'solicitada', 'correcoes'].includes(a.doc_status);
-      const btnLabel = a.doc_status === 'correcoes' ? '📎 Reenviar' : a.doc_status === 'solicitada' ? '📎 Enviar proposta' : '📎 Anexar';
+      // P8: proposta rejeitada permite nova proposta da escola.
+      const podeEnviar = !['cancelada', 'reprovada'].includes(a.situacao) && ['nao_enviado', 'solicitada', 'correcoes', 'rejeitado'].includes(a.doc_status);
+      const btnLabel = a.doc_status === 'correcoes' ? '📎 Reenviar' : a.doc_status === 'rejeitado' ? '📎 Enviar nova proposta' : a.doc_status === 'solicitada' ? '📎 Enviar proposta' : '📎 Anexar';
       // Sempre mostra o nome completo de quem deu o parecer (não só o comentário) - fica
       // claro pra escola quem exatamente aprovou/pediu correção/rejeitou.
       const parecerPorTxt = a.doc_parecer_por ? ` <span class="text-slate-500">— ${validatorFullName(a.doc_parecer_por)}</span>` : '';
@@ -5050,7 +5265,7 @@ function renderValidacoesEscola() {
       if ((a.doc_status === 'correcoes' || a.doc_status === 'solicitada') && a.doc_parecer_comentario) {
         parecerCell = `<span class="text-xs text-amber-700">✏️ ${a.doc_parecer_comentario}${parecerPorTxt}</span>`;
       } else if (a.doc_status === 'rejeitado' && a.doc_parecer_comentario) {
-        parecerCell = `<span class="text-xs text-red-700">🚫 ${a.doc_parecer_comentario}${parecerPorTxt}</span>`;
+        parecerCell = `<span class="text-xs text-red-700">🚫 Proposta rejeitada: ${a.doc_parecer_comentario}${parecerPorTxt}</span><div class="text-[11px] text-slate-500">Envie uma nova proposta para continuar.</div>`;
       } else if (a.doc_status === 'aceito') {
         parecerCell = `<div class="text-xs text-emerald-700">✅ Aprovado</div>${aprovadoDataValidador}`;
       }
@@ -5115,7 +5330,7 @@ function renderValidacoesPedagogia() {
   const meusSetores = new Set(validatorSectorAssignments.filter((v) => v.profile_id === currentUser?.id).map((v) => v.sector_id));
   // A proposta solicitada pelo Admin aparece em Pendências como aviso à
   // Pedagogia, mas não pode ser analisada antes de a unidade enviar o arquivo.
-  let lista = agenda.filter((a) => !['cancelada', 'reprovada'].includes(a.situacao) && !['aceito', 'rejeitado', 'solicitada', 'correcoes'].includes(a.doc_status || 'nao_enviado'));
+  let lista = agenda.filter((a) => !['cancelada', 'reprovada'].includes(a.situacao) && !['aceito', 'rejeitado', 'solicitada', 'correcoes'].includes(a.doc_status || 'nao_enviado') && primeiraDaSerie(a));
   if (validationSectors.length) {
     lista = lista.filter((a) => setorFiltro ? a.validation_sector_id === setorFiltro : (!meusSetores.size || meusSetores.has(a.validation_sector_id)));
   } else if (setorFiltro) lista = lista.filter((a) => a.setor_pedagogico_atual === setorFiltro);
@@ -5134,7 +5349,7 @@ function renderValidacoesPedagogia() {
       const totalPax = (a.students_count || 0) + (a.companions_count || 0) + (a.pca_count || 0) + (a.apoio_count || 0);
       return `
     <tr class="hover:bg-slate-50">
-      <td class="px-4 py-3 text-sm">${new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR')}</td>
+      <td class="px-4 py-3 text-sm">${new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR')}${seloSerieHtml(a)}</td>
       <td class="px-4 py-3 text-sm">${originName(a)}${origemEhUnidade(a) ? '' : `<div class="text-xs text-slate-500">${originAddress(a) || '-'}</div>`}</td>
       <td class="px-4 py-3 text-sm">${a.destination}${destinoEhUnidade(a) ? '' : `<div class="text-xs text-slate-500">${a.destination_address || a.city || '-'}</div>`}</td>
       <td class="px-4 py-3 text-sm">${publicoAlvoLabel(a.validation_target_id || a.publico_alvo)}</td>
@@ -5337,6 +5552,7 @@ async function reactivateExcursion(id) {
   const patch = {
     status: 'pending', situacao: 'sem_validacao', admin_decision: 'pendente', admin_decision_by: null, admin_decision_at: null, admin_decision_reason: null,
     rejection_reason: null, cancel_reason: null, cancelled_by: null, cancelled_at: null, reactivated_at: new Date().toISOString(), reactivated_by: currentUser.id,
+    escola_confirmada_em: null, escola_confirmada_por: null,
   };
   const ok = await updateExcursion(id, patch);
   if (!ok) return;
@@ -5394,25 +5610,32 @@ async function confirmUploadDocInterno() {
   }
 
   const wasReenvio = !!(trip.doc_status && trip.doc_status !== 'nao_enviado');
-  const ok = await updateExcursion(docUploadTargetId, {
+  const patchEnvio = {
     ...docPatch,
     doc_uploaded_at: new Date().toISOString(),
     doc_status: 'em_analise',
     doc_parecer_comentario: null,
-  });
+  };
+  const ok = await updateExcursion(docUploadTargetId, patchEnvio);
   if (!ok) return;
+  // E9: a proposta vale para toda a série; a Pedagogia analisa só a 1ª data.
+  await replicarNaSerie(trip, patchEnvio);
+  // P3: avisa os validadores do setor.
+  notifyValidadoresSetor(trip, wasReenvio ? 'Nova versão da proposta pedagógica' : 'Nova proposta pedagógica para análise',
+    `${originName(trip)} → ${trip.destination || '-'} (${trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'}) aguarda análise.`).catch(() => {});
   // O envio já está gravado: fecha a janela na hora; histórico e recarga seguem em segundo plano.
   const idEnviado = docUploadTargetId;
   toast('✅ Documento enviado para análise da Pedagogia.');
   closeDocUploadModal();
   Promise.resolve(logDocHistory(idEnviado, wasReenvio ? 'reenviado' : 'enviado', null, trip.setor_pedagogico_atual, null))
-    .then(() => loadAgenda()).then(() => renderValidacoesEscola())
+    .then(() => loadAgenda()).then(() => { renderValidacoesEscola(); if (document.getElementById('screen-pendencias')?.classList.contains('active-screen')) renderPendencias(); })
     .catch((err) => console.warn('Atualização após o envio do documento falhou:', err));
 }
 
 // ---- parecer + encaminhamento (Pedagogia) ----
 let validacaoTargetId = null;
 let validacaoReturnScreen = null;
+let validacaoSnapshot = null;
 
 function openValidacaoModal(id, somenteLeituraForcada = false) {
   validacaoTargetId = id;
@@ -5436,8 +5659,14 @@ function openValidacaoModal(id, somenteLeituraForcada = false) {
     ${trip.doc_parecer_por ? `<div class="col-span-2"><strong>Última análise por:</strong> ${validatorFullName(trip.doc_parecer_por)}${trip.doc_parecer_em ? ' em ' + new Date(trip.doc_parecer_em).toLocaleDateString('pt-BR') : ''}</div>` : ''}
   `;
   const preview = document.getElementById('validacaoDocPreview');
+  // P9: link para abrir em nova aba (a pré-visualização embutida falha sem login Google).
+  const docLink = document.getElementById('validacaoDocLink');
+  if (docLink) {
+    docLink.classList.toggle('hidden', !trip.doc_drive_url);
+    docLink.href = trip.doc_drive_url ? String(trip.doc_drive_url).replace(/\/preview(\?.*)?$/, '/view') : '#';
+  }
   if (trip.doc_drive_url) {
-    preview.innerHTML = `<iframe src="${trip.doc_drive_url}" style="width:100%;height:62vh;min-height:520px;border:0"></iframe>`;
+    preview.innerHTML = `<iframe src="${escapeHtml(String(trip.doc_drive_url).replace(/\/view(\?.*)?$/, '/preview'))}" style="width:100%;height:62vh;min-height:520px;border:0"></iframe>`;
   } else if (trip.doc_filename) {
     preview.innerHTML = `<div class="p-4 text-sm text-slate-500">📄 ${trip.doc_filename}<br/><span class="text-xs">Google Drive não configurado ainda - documento registrado só localmente, sem pré-visualização.</span></div>`;
   } else {
@@ -5445,15 +5674,33 @@ function openValidacaoModal(id, somenteLeituraForcada = false) {
   }
   document.getElementById('parecerSelect').value = 'aceito';
   document.getElementById('parecerComentario').value = '';
+  const motivoEnc = document.getElementById('encaminharMotivo'); if (motivoEnc) motivoEnc.value = '';
+  // P7: retrato da proposta no momento da abertura (o parecer só grava se nada mudou).
+  validacaoSnapshot = { doc_status: trip.doc_status || null, doc_uploaded_at: trip.doc_uploaded_at || null };
   const encaminhar = document.getElementById('encaminharSetor');
   if (validationSectors.length) {
     encaminhar.innerHTML = validationSectors.filter((s) => s.active !== false).map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
     encaminhar.value = trip.validation_sector_id || validationSectors[0]?.id || '';
   } else encaminhar.value = trip.setor_pedagogico_atual || 'administracao';
-  const somenteConsulta = somenteLeituraForcada || (currentUser?.role === 'admin') || (currentUser?.role === 'operacional' && !canEditScreen('validacoes'));
+  const parecerFinal = ['aceito', 'rejeitado'].includes(trip.doc_status);
+  const somenteConsulta = somenteLeituraForcada || parecerFinal || (currentUser?.role === 'admin') || (currentUser?.role === 'operacional' && !canEditScreen('validacoes'));
+  // P6: sem documento (ou fora de "em análise") só é possível pedir correções.
+  const semDocumento = !trip.doc_drive_url && !trip.doc_filename;
+  const bloqueiaAceite = !somenteConsulta && (semDocumento || trip.doc_status !== 'em_analise');
+  const optAceito = document.querySelector('#parecerSelect option[value="aceito"]');
+  if (optAceito) optAceito.disabled = bloqueiaAceite;
+  if (bloqueiaAceite) document.getElementById('parecerSelect').value = 'correcoes';
+  const aviso = document.getElementById('parecerAviso');
+  if (aviso) {
+    const msg = parecerFinal ? `Parecer já registrado (${DOC_STATUS_LABELS[trip.doc_status] || trip.doc_status}) — somente consulta.`
+      : bloqueiaAceite ? (semDocumento ? 'Sem documento enviado — só é possível pedir correções.' : 'A proposta não está em análise — só é possível pedir correções.') : '';
+    aviso.textContent = msg;
+    aviso.className = msg ? 'mb-2 rounded-lg border bg-slate-50 px-3 py-2 text-xs text-slate-600' : 'hidden';
+  }
   document.getElementById('parecerSelect').disabled = somenteConsulta;
   document.getElementById('parecerComentario').disabled = somenteConsulta;
   document.getElementById('encaminharSetor').disabled = somenteConsulta;
+  const motivoEncEl = document.getElementById('encaminharMotivo'); if (motivoEncEl) motivoEncEl.disabled = somenteConsulta;
   document.getElementById('btnSalvarParecer').hidden = somenteConsulta;
   document.getElementById('btnEncaminharValidacao').hidden = somenteConsulta;
   document.getElementById('validacaoModal').classList.remove('hidden');
@@ -5464,7 +5711,8 @@ function closeValidacaoModal() {
   if (voltar) showScreen(voltar);
 }
 
-async function confirmParecer() {
+async function confirmParecer() { return comBotaoEnviando('#btnSalvarParecer', confirmParecerInterno); }
+async function confirmParecerInterno() {
   if (currentUser?.role === 'operacional' && !canEditScreen('validacoes')) { toast('⚠️ Seu perfil permite apenas consultar validações.', true); return; }
   const id = validacaoTargetId;
   if (!id) return;
@@ -5475,54 +5723,78 @@ async function confirmParecer() {
   if (parecer !== 'aceito' && !comentario) {
     toast('⚠️ Informe o comentário explicando a correção/rejeição.', true); return;
   }
+  if (parecer === 'aceito' && ((!trip.doc_drive_url && !trip.doc_filename) || trip.doc_status !== 'em_analise')) {
+    toast('⚠️ Só é possível aceitar uma proposta enviada e em análise.', true); return;
+  }
 
+  const agora = new Date().toISOString();
   const docPatch = {
     doc_status: parecer,
     doc_parecer_comentario: comentario || null,
     doc_parecer_por: currentUser.id,
-    doc_parecer_em: new Date().toISOString(),
+    doc_parecer_em: agora,
+    ...(parecer === 'aceito' ? { pedagogy_approved_by: currentUser.id, pedagogy_approved_at: agora } : {}),
   };
 
-  let ok;
-  if (parecer === 'aceito') {
-    ok = await updateExcursionCascade(id, {
-      ...docPatch,
-      pedagogy_approved_by: currentUser.id,
-      pedagogy_approved_at: new Date().toISOString(),
-    });
-  } else if (parecer === 'rejeitado') {
-    // A reprovação pedagógica é um parecer sobre a proposta, não cancela a viagem.
-    ok = await updateExcursion(id, docPatch);
+  // P7: grava só se a proposta continua como estava ao abrir (sem novo envio nem outro parecer).
+  const snap = validacaoSnapshot || { doc_status: trip.doc_status || null, doc_uploaded_at: trip.doc_uploaded_at || null };
+  if (sb) {
+    let q = sb.from('excursions').update(docPatch).eq('id', id);
+    q = snap.doc_status ? q.eq('doc_status', snap.doc_status) : q.is('doc_status', null);
+    q = snap.doc_uploaded_at ? q.eq('doc_uploaded_at', snap.doc_uploaded_at) : q.is('doc_uploaded_at', null);
+    const { data, error } = await q.select('id');
+    if (error) { toast('❌ Erro ao salvar: ' + error.message, true); return; }
+    if (!data || !data.length) {
+      toast('⚠️ A escola enviou nova versão ou outro validador registrou parecer enquanto esta janela estava aberta. Recarregue antes de salvar.', true);
+      await loadAgenda(); renderValidacoesPedagogia(); return;
+    }
   } else {
-    ok = await updateExcursion(id, docPatch); // correções: mantém "pending", só registra o parecer pra escola reenviar
+    if (!await updateExcursion(id, docPatch)) return;
   }
-  if (!ok) return;
+  // E9: o parecer da 1ª ocorrência vale para a série (exceto datas canceladas/reprovadas).
+  await replicarNaSerie(trip, docPatch);
 
-  await logDocHistory(id, parecer, trip.setor_pedagogico_atual, trip.setor_pedagogico_atual, comentario || null);
+  await logDocHistory(id, parecer, trip.validation_sector_id || trip.setor_pedagogico_atual, trip.validation_sector_id || trip.setor_pedagogico_atual, comentario || null);
+  // P3: avisa a unidade sobre o parecer.
+  const quando = trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
+  const resumo = `${originName(trip)} → ${trip.destination || '-'} (${quando})`;
+  const avisos = {
+    aceito: ['Proposta pedagógica aceita', `A proposta da solicitação ${resumo} foi aceita pela Pedagogia. Aguarde a decisão administrativa.`],
+    correcoes: ['Correções na proposta pedagógica', `A Pedagogia pediu correções na proposta da solicitação ${resumo}: ${comentario}`],
+    rejeitado: ['Proposta pedagógica rejeitada', `A proposta da solicitação ${resumo} foi rejeitada: ${comentario}. Envie uma nova proposta para continuar.`],
+  };
+  notifyRequester(trip, ...avisos[parecer]).catch(() => {});
   await loadAgenda();
   renderValidacoesPedagogia();
   renderDashboard();
   if (currentUser?.role === 'pedagogia') renderPendencias();
-  toast(parecer === 'aceito' ? '✅ Solicitação aprovada pedagogicamente!' : parecer === 'rejeitado' ? '🚫 Solicitação rejeitada.' : '✏️ Correções solicitadas à unidade.');
+  toast(parecer === 'aceito' ? '✅ Proposta pedagógica aceita!' : parecer === 'rejeitado' ? '🚫 Proposta pedagógica rejeitada. A unidade poderá enviar nova proposta.' : '✏️ Correções solicitadas à unidade.');
   closeValidacaoModal();
 }
 
-async function confirmEncaminhar() {
+async function confirmEncaminhar() { return comBotaoEnviando('#btnEncaminharValidacao', confirmEncaminharInterno); }
+async function confirmEncaminharInterno() {
   if (currentUser?.role === 'operacional' && !canEditScreen('validacoes')) { toast('⚠️ Seu perfil permite apenas consultar validações.', true); return; }
   const id = validacaoTargetId;
   if (!id) return;
   const trip = agenda.find((a) => a.id === id);
   if (!trip) return;
   const destino = document.getElementById('encaminharSetor').value;
+  const motivo = (document.getElementById('encaminharMotivo')?.value || '').trim();
   const setorAtual = validationSectors.length ? trip.validation_sector_id : trip.setor_pedagogico_atual;
   if (destino === setorAtual) { toast('⚠️ Esse já é o setor atual.', true); return; }
-  const ok = await updateExcursion(id, validationSectors.length ? { validation_sector_id: destino } : { setor_pedagogico_atual: destino });
+  if (!motivo) { toast('⚠️ Informe o motivo do encaminhamento.', true); return; }
+  const patch = validationSectors.length ? { validation_sector_id: destino } : { setor_pedagogico_atual: destino };
+  const ok = await updateExcursion(id, patch);
   if (!ok) return;
-  await logDocHistory(id, 'encaminhado', trip.setor_pedagogico_atual, destino, null);
+  await replicarNaSerie(trip, patch);
+  await logDocHistory(id, 'encaminhado', setorAtual || null, destino, motivo);
+  const nomeDestino = validationSectors.find((s) => s.id === destino)?.name || SETOR_PEDAGOGICO_LABELS[destino] || destino;
+  if (validationSectors.length) notifyValidadoresSetor({ ...trip, validation_sector_id: destino }, 'Solicitação encaminhada ao seu setor', `${originName(trip)} → ${trip.destination || '-'} (${trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'}). Motivo: ${motivo}`, destino).catch(() => {});
   await loadAgenda();
   renderValidacoesPedagogia();
   if (currentUser?.role === 'pedagogia') renderPendencias();
-  toast('↪️ Encaminhado para ' + (validationSectors.find((s) => s.id === destino)?.name || SETOR_PEDAGOGICO_LABELS[destino] || destino) + '.');
+  toast('↪️ Encaminhado para ' + nomeDestino + '.');
   closeValidacaoModal();
 }
 
@@ -6273,6 +6545,7 @@ async function confirmEnviarListagemInterno() {
   const id = listagemVeiculoTargetId;
   const trip = agenda.find((a) => a.id === id);
   if (!id || !trip) return;
+  if (currentUser?.role === 'escola' && prazoListagemExpirado(trip)) { toast(`⚠️ Prazo da listagem encerrado em ${prazoListagemTexto(trip)} — contate o Admin.`, true); return; }
   const driverIds = trip.driver_ids || [];
   if (!driverIds.length) { toast('⚠️ Esta viagem ainda não tem motorista/veículo atribuído.', true); return; }
 
@@ -6900,9 +7173,15 @@ async function sendCooperativaEmail(somenteAbrirEmail = false) {
   const ok = await updateExcursion(emailTargetId, {
     ...lvPatch,
     envio_coop_data: fmtDate(new Date()),
-    ...(isPcd ? { pcd_cooperativa_enviado_em: new Date().toISOString() } : { atf_cooperativa_enviado_em: new Date().toISOString(), atf_status: trip && precisaListagemComNomesDocumentos(trip) ? 'aguardando' : trip?.atf_status }),
+    ...(isPcd ? { pcd_cooperativa_enviado_em: new Date().toISOString(), pcd_coop_id: coop.id } : { atf_cooperativa_enviado_em: new Date().toISOString(), atf_status: trip && precisaListagemComNomesDocumentos(trip) ? 'aguardando' : trip?.atf_status }),
     situacao: 'envio_coop'
   });
+  if (ok && trip) {
+    // C9: aviso no sino dos agentes da cooperativa.
+    const qtdVeic = isPcd ? 0 : idsEmailCoop(trip).length;
+    notificarGrupo('cooperativa', trip.id, isPcd ? 'Novo pedido de transporte PCD' : 'Novo pedido de ATF',
+      `${trip.destination || '-'} · ${trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'}${qtdVeic ? ` · ${qtdVeic} veículo(s)` : ''}`, coop.id).catch(() => {});
+  }
   if (ok) { await loadAgenda(); renderAgenda(); }
   closeCooperativaEmailModal();
   toast(enviou ? '✉️ E-mail enviado à cooperativa, com cópia para o setor.' : '✉️ E-mail preparado com cópia para o setor. Confira e clique em enviar no seu programa de e-mail.');
@@ -7183,6 +7462,7 @@ function toggleFinanceFields() {
   document.getElementById('wFinanceFields')?.classList.toggle('hidden', !document.getElementById('wFinanceRequested')?.checked);
 }
 
+let financeItemsPadraoHtml = null;
 function addFinanceItemRow() {
   const box = document.getElementById('wFinanceItems');
   if (!box) return;
@@ -7339,6 +7619,10 @@ function resetWizard(options = {}) {
   if (financeRequested) financeRequested.checked = false;
   zerarCampoArquivo('wFinanceDocument');
   arquivoEscolhidoWizard.financeiro = false;
+  const itensAporte = document.getElementById('wFinanceItems');
+  if (itensAporte) { if (financeItemsPadraoHtml === null) financeItemsPadraoHtml = itensAporte.innerHTML; else itensAporte.innerHTML = financeItemsPadraoHtml; }
+  const prazoBox = document.getElementById('wPrazoListagemInfo'); if (prazoBox) prazoBox.classList.add('hidden');
+  ['wData', 'wHora', 'wHoraRetorno'].forEach((id) => document.getElementById(id)?.classList.remove('border-red-400'));
   document.querySelectorAll('[data-finance-quantity],[data-finance-value]').forEach((input) => { input.value = ''; });
   toggleFinanceFields();
   const unico = document.querySelector('input[name="wRecorrencia"][value="unico"]');
@@ -7426,6 +7710,16 @@ function validateWizardStep(step) {
       toast('⚠️ Informe data, horário de saída e horário de retorno.', true);
       return false;
     }
+    // E6: antecedência mínima de 36 horas e retorno depois da saída (o Admin não tem essa trava).
+    if (currentUser?.role !== 'admin') {
+      const campoErro = (id, on) => document.getElementById(id)?.classList.toggle('border-red-400', on);
+      const saida = new Date(`${document.getElementById('wData').value}T${document.getElementById('wHora').value}:00`).getTime();
+      const semAntecedencia = saida < Date.now() + 36 * 60 * 60 * 1000;
+      const retornoAntes = document.getElementById('wHoraRetorno').value <= document.getElementById('wHora').value;
+      campoErro('wData', semAntecedencia); campoErro('wHora', semAntecedencia); campoErro('wHoraRetorno', retornoAntes);
+      if (semAntecedencia) { toast('⚠️ A solicitação deve ser feita com no mínimo 36 horas de antecedência da saída.', true); return false; }
+      if (retornoAntes) { toast('⚠️ O retorno deve ser depois da saída.', true); return false; }
+    }
   }
 
   if (step === 4) {
@@ -7439,6 +7733,11 @@ function validateWizardStep(step) {
     }
     if (wizardPcdList.some((p) => !p.nome_aluno.trim() || !p.documento_aluno.trim() || (p.nome_apoio && !p.documento_apoio.trim()))) {
       toast('⚠️ Para cada PCD, informe nome e documento; se houver apoio, informe também seu documento.', true);
+      return false;
+    }
+    // E4: mesma regra da aprovação da lista PCD — apoio com documento é obrigatório.
+    if (currentUser?.role !== 'admin' && wizardPcdList.some((p) => !String(p.nome_apoio || '').trim() || !String(p.documento_apoio || '').trim())) {
+      toast('⚠️ Informe o nome e o documento do apoio de cada aluno PCD.', true);
       return false;
     }
     const recorrencia = document.querySelector('input[name="wRecorrencia"]:checked').value;
@@ -7498,8 +7797,33 @@ function wizardNext() {
       renderResumo();
     }
   } else {
-    submitSolicitacao();
+    enviarSolicitacaoTravada();
   }
+}
+
+// E7: impede envio duplicado (clique duplo) da solicitação.
+let enviandoSolicitacao = false;
+async function enviarSolicitacaoTravada() {
+  if (enviandoSolicitacao) return;
+  enviandoSolicitacao = true;
+  const b = document.getElementById('btnNext');
+  const texto = b ? b.textContent : '';
+  if (b) { b.disabled = true; b.classList.add('opacity-60', 'cursor-wait'); b.textContent = 'Enviando…'; }
+  try { await submitSolicitacao(); }
+  finally {
+    enviandoSolicitacao = false;
+    if (b) { b.disabled = false; b.classList.remove('opacity-60', 'cursor-wait'); if (b.textContent === 'Enviando…') b.textContent = texto; }
+  }
+}
+
+// Aviso do prazo da listagem no passo "Data e horário".
+function atualizarPrazoListagemWizard() {
+  const box = document.getElementById('wPrazoListagemInfo');
+  if (!box) return;
+  const data = document.getElementById('wData')?.value, hora = document.getElementById('wHora')?.value;
+  if (!data || !hora) { box.classList.add('hidden'); return; }
+  box.innerHTML = `⏰ Se a viagem exigir listagem de passageiros (ATF/PCD), ela deverá ser enviada até <b>${prazoListagemTexto({ trip_date: data, departure_time: hora })}</b>.`;
+  box.classList.remove('hidden');
 }
 
 function wizardPrev() {
@@ -7698,6 +8022,23 @@ async function avisarSetorNovaSolicitacao(a, qtdDatas = 1) {
   await tentarEnviarEmailAutomatico(destino, assunto, texto, '', html);
 }
 
+async function enviarDocumentoFinanceiro(trip, file) {
+  const driveUrl = getDriveUploadUrl();
+  if (!driveUrl || !sb) return null;
+  if (file.size > 8 * 1024 * 1024) { toast('⚠️ Documento financeiro acima de 8 MB não foi enviado ao Drive.', true); return null; }
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session?.access_token) return null;
+    const ext = (String(file.name).split('.').pop() || 'pdf').toLowerCase();
+    const filename = `${trip.trip_date || fmtDate(new Date())}_${slugify(originName(trip))}_aporte.${ext}`;
+    const resp = await enviarArquivoDrive(driveUrl, { excursionId: trip.id, filename, mimeType: file.type || 'application/pdf', blob: file, accessToken: session.access_token });
+    return resp?.url ? String(resp.url).replace(/\/preview(\?.*)?$/, '/view') : null;
+  } catch (err) {
+    toast('⚠️ Solicitação registrada, mas o documento financeiro não foi enviado ao Drive: ' + (err?.message || err), true);
+    return null;
+  }
+}
+
 async function submitSolicitacao() {
   const tipo = getTipoSolicitacaoWizard();
   const isAgendamento = tipo === 'agendamento';
@@ -7800,6 +8141,9 @@ async function submitSolicitacao() {
     if (solicitarAporte && data?.length) {
       const requestedTotal = financeItems.reduce((total, item) => total + item.value, 0);
       const financeFile = arquivoEscolhidoWizard.financeiro ? document.getElementById('wFinanceDocument')?.files?.[0] : null;
+      // E3: o documento financeiro vai para o Drive (mesma pasta da proposta).
+      let financeDriveUrl = null;
+      if (financeFile) financeDriveUrl = await enviarDocumentoFinanceiro(data[0], financeFile);
       const { data: finance, error: financeError } = await sb.from('finance_requests').insert([{
         root_excursion_id: data[0].id,
         recurrence_group_id: recurrenceGroupId,
@@ -7808,6 +8152,7 @@ async function submitSolicitacao() {
         items: financeItems,
         requested_total: requestedTotal,
         document_filename: financeFile?.name || null,
+        document_drive_url: financeDriveUrl,
         document_uploaded_at: financeFile ? new Date().toISOString() : null,
       }]).select().single();
       if (financeError) { toast('⚠️ Excursão criada, mas o aporte não foi registrado: ' + financeError.message, true); }
@@ -8430,7 +8775,7 @@ function populateRelatorioFilters() {
   const relUnidade = document.getElementById('relFiltroUnidade');
   if (relUnidade) { relUnidade.disabled = role === 'escola'; if (role === 'escola') relUnidade.value = currentUser.schoolId || ''; }
   document.getElementById('relFiltroMotorista')?.closest('div')?.classList.toggle('hidden', ['escola', 'motorista'].includes(role));
-  if (['escola', 'motorista', 'agente_externo'].includes(role)) document.getElementById('btnNotificarViagens')?.classList.add('hidden');
+  if (['escola', 'motorista', 'agente_externo', 'pedagogia'].includes(role)) document.getElementById('btnNotificarViagens')?.classList.add('hidden');
   const motorista = document.getElementById('relFiltroMotorista');
   if (motorista) {
     const atual = motorista.value;
@@ -8781,7 +9126,7 @@ async function relatorioLinhas() {
   const viagens = relatorioFiltroBase();
   if (tipo === 'escala') return viagens.filter((a) => a.admin_decision === 'aprovada' && !['cancelada', 'reprovada'].includes(a.situacao) && (a.driver_ids || []).length).map((a) => ({ ...relatorioDadosViagem(a), ATF: ATF_LABELS[a.atf_status] || '-', Situação: 'Aprovada' }));
   if (tipo === 'solicitacoes') return viagens.map((a) => ({ ...relatorioDadosViagem(a), 'Data da solicitação': a.created_at ? new Date(a.created_at).toLocaleDateString('pt-BR') : '-', Situação: a.situacao || '-', 'Decisão administrativa': a.admin_decision || 'pendente' }));
-  if (tipo === 'validacoes') return viagens.map((a) => ({ ...relatorioDadosViagem(a), 'Proposta pedagógica': DOC_STATUS_LABELS[a.doc_status] || a.doc_status || 'Não enviada', Validador: validatorFullName(a.doc_validated_by) || '-', 'Data da validação': a.doc_validated_at ? new Date(a.doc_validated_at).toLocaleDateString('pt-BR') : '-', Parecer: a.doc_parecer_comentario || '-' }));
+  if (tipo === 'validacoes') return viagens.map((a) => ({ ...relatorioDadosViagem(a), 'Proposta pedagógica': DOC_STATUS_LABELS[a.doc_status] || a.doc_status || 'Não enviada', Validador: validatorFullName(a.doc_parecer_por) || '-', 'Data da validação': a.doc_parecer_em ? new Date(a.doc_parecer_em).toLocaleDateString('pt-BR') : '-', Parecer: a.doc_parecer_comentario || '-' }));
   if (tipo === 'atf') return viagens.filter((a) => a.atf_status !== 'nao_precisa' || (a.pca_count || 0) > 0).map((a) => ({ ...relatorioDadosViagem(a), ATF: ATF_LABELS[a.atf_status] || '-', 'Listagem': LISTAGEM_STATUS_LABELS[a.listagem_status] || a.listagem_status || '—', PCD: `${a.pca_count || 0} estudante(s) / ${a.apoio_count || 0} apoio(s)` }));
   if (tipo === 'cancelamentos') return viagens.filter((a) => a.situacao === 'cancelada' || a.admin_decision === 'reprovada').map((a) => ({ ...relatorioDadosViagem(a), Resultado: a.situacao === 'cancelada' ? 'Cancelada' : 'Reprovada', Motivo: a.cancel_reason || a.admin_decision_reason || a.rejection_reason || '-' }));
   if (tipo === 'financeiro') {
@@ -8813,7 +9158,7 @@ async function relatorioLinhas() {
     const inicio = document.getElementById('relFiltroInicio')?.value || '', fim = document.getElementById('relFiltroFim')?.value || '', motorista = document.getElementById('relFiltroMotorista')?.value || '';
     const cooperativaId = currentUser?.role === 'agente_externo' ? currentUser.cooperativaId : '';
     const proprioMotorista = currentUser?.role === 'motorista' ? currentUser.driverId : '';
-    return (kmLogs || []).filter((k) => (!cooperativaId || driverBelongsToCooperativa(k.driver_id, cooperativaId)) && (!proprioMotorista || k.driver_id === proprioMotorista) && (!inicio || k.log_date >= inicio) && (!fim || k.log_date <= fim) && (!motorista || k.driver_id === motorista)).map((k) => ({ Data: k.log_date ? new Date(`${k.log_date}T00:00`).toLocaleDateString('pt-BR') : '-', Motorista: drivers.find((d) => d.id === k.driver_id)?.name || '-', Veículo: driverVehicle(k.driver_id)?.plate || '-', 'Odômetro inicial': k.odometer_start ?? '-', 'Odômetro final': k.odometer_end ?? '-', 'KM rodado': k.km_rodado ?? '-', Observações: k.observacoes || '-' }));
+    return (kmLogs || []).filter((k) => (!cooperativaId || kmDaCooperativa(k, cooperativaId)) && (!proprioMotorista || k.driver_id === proprioMotorista) && (!inicio || k.log_date >= inicio) && (!fim || k.log_date <= fim) && (!motorista || k.driver_id === motorista)).map((k) => ({ Data: k.log_date ? new Date(`${k.log_date}T00:00`).toLocaleDateString('pt-BR') : '-', Motorista: drivers.find((d) => d.id === k.driver_id)?.name || '-', Veículo: driverVehicle(k.driver_id)?.plate || '-', 'Odômetro inicial': k.odometer_start ?? '-', 'Odômetro final': k.odometer_end ?? '-', 'KM rodado': k.km_rodado ?? '-', Observações: k.observacoes || '-' }));
   }
   return [];
 }
@@ -8847,14 +9192,14 @@ function resumoRelatorioHtml(tipo, rows, viagens = []) {
   }
   // Cooperativa: somatórias de ATF e PCD na sequência dos cards nativos, menores e ajustados à largura.
   if (currentUser?.role === 'agente_externo') {
-    const v = viagens || [];
+    const cc = contadoresCoop(viagens);
     cards.push(
-      ['ATF requeridas', v.filter((a) => a.atf_cooperativa_enviado_em).length, 'slate'],
-      ['ATF emitidas', v.filter((a) => a.atf_status === 'emitida').length, 'emerald'],
-      ['ATF negadas', v.filter((a) => a.atf_cooperativa_response === 'rejeitada').length, 'red'],
-      ['PCD requeridos', v.filter((a) => a.pcd_cooperativa_enviado_em).length, 'slate'],
-      ['PCD confirmados', v.filter((a) => a.pcd_cooperativa_confirmado_em).length, 'emerald'],
-      ['PCD negados', v.filter((a) => a.pcd_cooperativa_response === 'negada').length, 'red'],
+      ['ATF requeridas', cc.atfReq, 'slate'],
+      ['ATF emitidas', cc.atfEmit, 'emerald'],
+      ['ATF negadas', cc.atfNeg, 'red'],
+      ['PCD requeridos', cc.pcdReq, 'slate'],
+      ['PCD confirmados', cc.pcdConf, 'emerald'],
+      ['PCD negados', cc.pcdNeg, 'red'],
     );
     return `<div class="mb-4 grid gap-1.5" style="grid-template-columns:repeat(auto-fit,minmax(105px,1fr))">${cards.map(([label,value,tone]) => `<div class="rounded-lg border px-2 py-1.5 ${tones[tone]}"><div class="text-[10px] font-semibold">${label}</div><div class="text-base font-bold">${value}</div></div>`).join('')}</div>`;
   }
@@ -8901,13 +9246,18 @@ async function exportCoopList(id, tipo, formato) {
     if (error) { toast('❌ Não foi possível carregar a listagem: ' + error.message, true); return; }
     nomes = data || [];
     if (tipo !== 'pcd' && currentUser?.role === 'agente_externo') {
-      const meus = cooperativeDriversForTrip(trip).map((d) => d.id);
+      // C8: só veículos da cooperativa já enviados a ela.
+      const meus = cooperativeDriversForTrip(trip).map((d) => d.id).filter((did) => !lvTemControle(trip) || lvEnvio(trip, did));
       nomes = nomes.filter((p) => !p.driver_id || meus.includes(p.driver_id));
     }
   } else nomes = tipo === 'pcd' ? (trip.pcd_students || []) : (trip.passengers || []);
+  if (tipo !== 'pcd') {
+    nomes = nomes.filter((p) => String(p.nome || '').trim());
+    cabecalho.Passageiros = nomes.length;
+  }
   const dados = nomes.length ? nomes.map((p) => tipo === 'pcd'
     ? ({ ...cabecalho, 'Aluno PCD': p.nome_aluno || '-', 'Documento aluno': p.documento_aluno || '-', Apoio: p.nome_apoio || '-', 'Documento apoio': p.documento_apoio || '-', Cadeirante: p.cadeirante ? 'Sim' : 'Não' })
-    : ({ ...cabecalho, Passageiro: p.nome || '-', Documento: p.documento || '-', Tipo: p.tipo_documento || '-' })) : [cabecalho];
+    : ({ ...cabecalho, Veículo: p.driver_id ? lvPlaca(p.driver_id) : '-', Passageiro: p.nome || '-', Documento: p.documento || '-', Tipo: p.tipo_documento || '-' })) : [cabecalho];
   if (formato === 'excel') {
     if (!window.XLSX) { toast('⚠️ Gerador de Excel indisponível.', true); return; }
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dados), tipo === 'pcd' ? 'PCD' : 'ATF'); XLSX.writeFile(wb, `bora-la-${tipo}-${trip.trip_date}.xlsx`); return;
