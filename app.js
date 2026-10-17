@@ -9468,6 +9468,7 @@ const AJUDA_VIDEOS = {
     { arquivo: 'E3_confirmar_viagens.mp4', titulo: 'Confirmar viagens', duracao: '0:46' },
     { arquivo: 'E4_preencher_enviar_listagem.mp4', titulo: 'Preencher e enviar a listagem', duracao: '0:58' },
     { arquivo: 'E5_cancelar_viagem.mp4', titulo: 'Cancelar uma viagem', duracao: '0:33' },
+    { arquivo: 'E6_pedir_transporte_pcd.mp4', titulo: 'Pedir transporte PCD', duracao: '1:06' },
   ],
   pedagogia: [
     { arquivo: 'P1_encontrar_abrir_proposta.mp4', titulo: 'Encontrar e abrir a proposta', duracao: '0:33' },
@@ -9490,6 +9491,7 @@ const AJUDA_VIDEO_DA_PERGUNTA = {
   'Quando envio a listagem de passageiros?': 'E4_preencher_enviar_listagem.mp4',
   'Preciso corrigir a listagem já enviada.': 'E4_preencher_enviar_listagem.mp4',
   'Até quando posso cancelar?': 'E5_cancelar_viagem.mp4',
+  'O que preencho para aluno PCD?': 'E6_pedir_transporte_pcd.mp4',
   'Onde vejo o que analisar?': 'P1_encontrar_abrir_proposta.mp4',
   'O documento não abre.': 'P1_encontrar_abrir_proposta.mp4',
   'Por que não consigo aceitar?': 'P2_dar_parecer.mp4',
