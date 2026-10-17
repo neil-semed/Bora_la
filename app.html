@@ -280,6 +280,10 @@
       }
     }
     .driver-bottom-nav { display: none; }
+    /* Ajuda: dica ⓘ (passar o mouse ou tocar) */
+    .dica-i { position: relative; display: inline-block; margin-left: 3px; color: #2563eb; font-weight: 700; cursor: help; outline: none; }
+    .dica-i .dica-bubble { display: none; position: absolute; z-index: 80; left: 50%; top: 125%; transform: translateX(-50%); width: 250px; padding: 8px 10px; border-radius: 8px; background: #1e293b; color: #fff; font-size: 11px; font-weight: 400; line-height: 1.4; text-align: left; white-space: normal; box-shadow: 0 8px 20px rgb(0 0 0 / .2); }
+    .dica-i:hover .dica-bubble, .dica-i:focus .dica-bubble { display: block; }
   </style>
 </head>
 <body class="bg-slate-200 min-h-screen" data-page="app">
@@ -326,6 +330,9 @@
           </a>
           <a data-screen="unidades" data-roles="admin" onclick="showScreen('unidades', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
             🏫 Unidades
+          </a>
+          <a data-screen="ajuda" data-roles="admin" onclick="showScreen('ajuda', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            ❓ Ajuda
           </a>
           <a data-screen="veiculos" data-roles="admin" onclick="showScreen('veiculos', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
             🚌 Veículos
@@ -384,6 +391,7 @@
           <img id="escolaPageFavicon" src="assets/favicon-512.png" alt="Bora Lá" class="hidden w-8 h-8 shrink-0" />
           <img id="markcarroPageFavicon" src="assets/markcarro-favicon.png" alt="MarkCarro" class="hidden w-8 h-8 shrink-0 rounded-lg" />
           <div class="min-w-0 flex-1"><p id="pageGreeting" class="hidden"></p><h1 class="text-xl font-bold text-slate-800 truncate" id="pageTitle">Dashboard</h1><p class="text-sm text-slate-500 truncate" id="pageSubtitle">Visão geral do sistema</p><p id="pageRoleName" class="hidden text-xs font-semibold text-emerald-700 mt-0.5"></p></div><div class="relative shrink-0">
+            <button id="btnAjuda" onclick="abrirAjuda()" class="hidden h-9 w-9 rounded-full border border-emerald-200 bg-emerald-50 font-bold text-emerald-700 hover:bg-emerald-100" title="Ajuda" aria-label="Ajuda">?</button>
             <button id="notificationBell" onclick="toggleNotificationPanel()" class="relative p-2 rounded-lg hover:bg-slate-100" aria-label="Notificações">
               🔔<span id="notificationCount" class="hidden absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] leading-[18px] text-center">0</span>
             </button>
@@ -413,6 +421,7 @@
           <a data-screen="usuarios" data-roles="admin" onclick="showScreen('usuarios',this)" class="top-nav-link"><i data-lucide="users-round" class="w-4 h-4 mr-1.5 text-indigo-600"></i>Usuários</a>
           <a data-screen="perfisacesso" data-roles="admin" onclick="showScreen('perfisacesso',this)" class="top-nav-link"><i data-lucide="shield-check" class="w-4 h-4 mr-1.5 text-fuchsia-600"></i>Perfis de acesso</a>
           <a data-screen="validadores" data-roles="admin" onclick="showScreen('validadores',this)" class="top-nav-link"><i data-lucide="badge-check" class="w-4 h-4 mr-1.5 text-pink-600"></i>Validadores</a>
+          <a data-screen="ajuda" data-roles="admin" onclick="showScreen('ajuda',this)" class="top-nav-link"><i data-lucide="circle-help" class="w-4 h-4 mr-1.5 text-emerald-600"></i>Ajuda</a>
           <a data-screen="cooperativas" data-roles="admin" onclick="showScreen('cooperativas',this)" class="top-nav-link"><i data-lucide="send" class="w-4 h-4 mr-1.5 text-cyan-700"></i>Cooperativas</a>
           <a data-screen="pendenciascoop" data-roles="agente_externo" onclick="showScreen('pendenciascoop',this)" class="top-nav-link"><i data-lucide="file-warning" class="w-4 h-4 mr-1.5 text-amber-600"></i>Pendências</a>
           <a data-screen="solicitacoescoop" data-roles="agente_externo" onclick="showScreen('solicitacoescoop',this)" class="top-nav-link"><i data-lucide="bus-front" class="w-4 h-4 mr-1.5 text-emerald-600"></i>Solicitações</a>
@@ -790,6 +799,7 @@
           <!-- NOVA SOLICITAÇÃO (WIZARD) -->
           <section id="screen-solicitacao" class="hidden-screen">
             <div class="screen-shell">
+            <div id="solicitacaoAvisoEscola" class="hidden mb-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900"></div>
             <div class="bg-white wizard-card p-5 md:p-7">
               <div class="screen-kicker mb-1">Cadastro de excursão</div>
               <div class="flex items-center gap-2 mb-2 text-sm text-slate-500">
@@ -887,7 +897,7 @@
                 <p class="text-xs text-slate-400 mb-3">O turno (Manhã/Tarde/Noite) é calculado automaticamente pelo horário de saída e aparece na Agenda Mestra.</p>
                 <div class="grid grid-cols-2 gap-4">
                   <div>
-                    <label class="block text-sm font-medium mb-1">Data <span class="text-red-600">*</span></label>
+                    <label class="block text-sm font-medium mb-1">Data <span class="text-red-600">*</span> <span id="dicaAntecedencia"></span></label>
                     <input type="date" id="wData" required oninput="atualizarPrazoListagemWizard()" class="w-full px-3 py-2 border rounded-lg" />
                   </div>
                   <div>
@@ -1115,6 +1125,31 @@
           </section>
 
           <!-- CONFIGURAÇÃO DE VALIDADORES (Admin) -->
+          <!-- AJUDA (Admin / Co_Admin) -->
+          <section id="screen-ajuda" class="hidden-screen">
+            <div class="bg-white rounded-xl border shadow-sm p-5">
+              <div class="mb-4 flex flex-wrap border-b text-sm font-semibold">
+                <button data-ajuda-admin-aba="faq" onclick="trocarAbaAjudaAdmin('faq')" class="border-b-2 px-4 py-2">Perguntas do FAQ</button>
+                <button data-ajuda-admin-aba="dicas" onclick="trocarAbaAjudaAdmin('dicas')" class="border-b-2 px-4 py-2">Dicas ⓘ</button>
+                <button data-ajuda-admin-aba="duvidas" onclick="trocarAbaAjudaAdmin('duvidas')" class="border-b-2 px-4 py-2">Dúvidas recebidas <span id="ajudaDuvidasBadge" class="hidden ml-1 rounded-full bg-red-500 px-1.5 text-xs text-white">0</span></button>
+              </div>
+              <div id="ajudaAdmin-faq">
+                <div class="mb-3 flex flex-wrap items-end gap-3">
+                  <div><label class="block text-xs font-medium text-slate-500 mb-1">Perfil</label><select id="ajudaAdminFiltroPerfil" onchange="renderAjudaAdmin()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todos</option><option value="escola">Escola</option><option value="pedagogia">Pedagogia</option><option value="cooperativa">Cooperativa</option></select></div>
+                  <div><label class="block text-xs font-medium text-slate-500 mb-1">Tela</label><select id="ajudaAdminFiltroTela" onchange="renderAjudaAdmin()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todas</option></select></div>
+                  <div><label class="block text-xs font-medium text-slate-500 mb-1">Buscar</label><input id="ajudaAdminBusca" oninput="renderAjudaAdmin()" class="px-3 py-2 border rounded-lg text-sm" /></div>
+                  <button id="btnNovaFaq" onclick="editarFaqAjuda()" class="ml-auto px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm">+ Nova pergunta</button>
+                </div>
+                <div class="overflow-x-auto"><table class="w-full text-left"><thead><tr class="border-b border-slate-200 text-xs uppercase text-slate-500"><th class="px-3 py-2">Ordem</th><th class="px-3 py-2">Perfil</th><th class="px-3 py-2">Tela</th><th class="px-3 py-2">Pergunta / resposta</th><th class="px-3 py-2 text-center">Ativa</th><th class="px-3 py-2"></th></tr></thead><tbody id="ajudaAdminFaqTabela" class="divide-y divide-slate-100"></tbody></table></div>
+              </div>
+              <div id="ajudaAdmin-dicas" class="hidden"><p class="mb-3 text-xs text-slate-500">Textos exibidos ao passar o mouse ou tocar no ícone ⓘ (e nos avisos da Nova solicitação e da listagem).</p><div id="ajudaAdminDicasLista" class="grid gap-3 md:grid-cols-2"></div></div>
+              <div id="ajudaAdmin-duvidas" class="hidden">
+                <div class="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs"><div id="ajudaAdminDuvidasResumo" class="text-slate-600"></div><label class="flex items-center gap-1 text-slate-600"><input id="ajudaMostrarArquivadas" type="checkbox" onchange="renderAjudaAdmin()"> Mostrar arquivadas</label></div>
+                <div id="ajudaAdminDuvidasLista" class="space-y-3"></div>
+              </div>
+            </div>
+          </section>
+
           <section id="screen-validadores" class="hidden-screen">
             <div class="grid lg:grid-cols-2 gap-5">
               <div class="bg-white rounded-xl border shadow-sm p-5">
@@ -2031,7 +2066,7 @@
 
       <div class="grid md:grid-cols-2 gap-4">
         <div class="border rounded-lg p-3">
-          <h4 class="font-semibold text-sm mb-2">Parecer</h4>
+          <h4 class="font-semibold text-sm mb-2">Parecer <span id="dicaParecer"></span></h4>
           <div id="parecerAviso" class="hidden mb-2 rounded-lg border px-3 py-2 text-xs"></div>
           <select id="parecerSelect" class="w-full px-3 py-2 border rounded-lg text-sm mb-2">
             <option value="aceito">✅ Aceitar</option>
@@ -2112,10 +2147,52 @@
   </div>
 
   <!-- MODAL LISTAGEM DE PASSAGEIROS POR VEÍCULO (viagens que precisam de cooperativa) -->
+  <!-- AJUDA: painel lateral "?" -->
+  <div id="ajudaPainel" class="hidden fixed inset-0 z-[55] flex justify-end bg-black/30" onclick="if (event.target === this) fecharAjuda()">
+    <div class="flex h-full w-full max-w-[420px] flex-col bg-white shadow-2xl">
+      <div class="flex items-center justify-between border-b px-4 py-3"><b id="ajudaTitulo">Ajuda</b><div class="flex items-center gap-2"><select id="ajudaPerfilAdmin" onchange="ajudaPerfilAdmin=this.value;renderAjuda()" class="hidden rounded border px-2 py-1 text-xs"><option value="escola">Escola</option><option value="pedagogia">Pedagogia</option><option value="cooperativa">Cooperativa</option></select><button onclick="fecharAjuda()" class="text-slate-400 hover:text-slate-700" aria-label="Fechar">✕</button></div></div>
+      <div class="flex border-b text-xs font-semibold"><button data-ajuda-aba="perguntas" onclick="trocarAbaAjuda('perguntas')" class="flex-1 border-b-2 py-2">Perguntas</button><button data-ajuda-aba="guia" onclick="trocarAbaAjuda('guia')" class="flex-1 border-b-2 py-2">Guia rápido</button></div>
+      <div class="flex-1 overflow-y-auto p-3">
+        <div id="ajudaAbaPerguntas" class="space-y-2">
+          <input id="ajudaBusca" oninput="renderAjuda()" class="w-full rounded-lg border px-3 py-2 text-sm" placeholder="🔎 Buscar: prazo, listagem, rejeitada…" />
+          <div id="ajudaChips" class="flex flex-wrap gap-2 text-xs"></div>
+          <div id="ajudaLista" class="space-y-2"></div>
+        </div>
+        <div id="ajudaAbaGuia" class="hidden"></div>
+      </div>
+      <div class="border-t bg-slate-50 p-3 text-xs">
+        <b>Não achei minha dúvida</b>
+        <p class="text-slate-500">Setor: <span id="ajudaContato"></span></p>
+        <button onclick="abrirFormDuvidaAjuda()" class="mt-2 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 font-semibold text-emerald-700">Enviar minha dúvida ao setor</button>
+        <div id="ajudaFormDuvida" class="hidden mt-3 space-y-2">
+          <p id="ajudaDuvidaInfo" class="text-slate-500"></p>
+          <textarea id="ajudaDuvidaTexto" rows="3" class="w-full rounded-lg border px-3 py-2 text-sm" placeholder="Descreva sua dúvida"></textarea>
+          <div class="flex justify-end gap-2"><button onclick="document.getElementById('ajudaFormDuvida').classList.add('hidden')" class="rounded-lg border px-3 py-1.5">Voltar</button><button onclick="enviarDuvidaAjuda()" class="rounded-lg bg-emerald-600 px-3 py-1.5 font-semibold text-white">Enviar</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AJUDA: cadastro de pergunta (Admin / Co_Admin) -->
+  <div id="faqModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+    <div class="w-full max-w-lg space-y-3 rounded-2xl bg-white p-6">
+      <h3 id="faqModalTitulo" class="text-lg font-bold">Nova pergunta</h3>
+      <div class="flex flex-wrap gap-4 text-sm"><label><input id="faqPerfil-escola" type="checkbox"> Escola</label><label><input id="faqPerfil-pedagogia" type="checkbox"> Pedagogia</label><label><input id="faqPerfil-cooperativa" type="checkbox"> Cooperativa</label></div>
+      <div><label class="block text-xs font-medium text-slate-500 mb-1">Tela</label><select id="faqTela" class="w-full rounded-lg border px-3 py-2 text-sm"></select></div>
+      <div><label class="block text-xs font-medium text-slate-500 mb-1">Pergunta *</label><input id="faqPergunta" class="w-full rounded-lg border px-3 py-2 text-sm" /></div>
+      <div><label class="block text-xs font-medium text-slate-500 mb-1">Resposta * (curta e clara)</label><textarea id="faqResposta" rows="3" class="w-full rounded-lg border px-3 py-2 text-sm"></textarea></div>
+      <div><label class="block text-xs font-medium text-slate-500 mb-1">Onde clicar (opcional)</label><input id="faqOndeClicar" class="w-full rounded-lg border px-3 py-2 text-sm" placeholder="Ex.: Pendências › Enviar proposta" /></div>
+      <div><label class="block text-xs font-medium text-slate-500 mb-1">Link do vídeo (opcional)</label><input id="faqVideo" class="w-full rounded-lg border px-3 py-2 text-sm" placeholder="https://" /></div>
+      <label class="flex items-center gap-2 text-sm"><input id="faqAtiva" type="checkbox" checked> Ativa</label>
+      <div class="flex justify-end gap-2"><button onclick="fecharFaqAjuda()" class="rounded-lg bg-slate-100 px-4 py-2 text-sm">Cancelar</button><button onclick="salvarFaqAjuda()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">Salvar</button></div>
+    </div>
+  </div>
+
   <div id="listagemVeiculoModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
     <div class="bg-white rounded-2xl p-6 max-w-6xl w-full max-h-[92vh] overflow-y-auto">
       <h3 class="font-bold text-lg mb-1">📋 Listagem de passageiros por veículo</h3>
       <p id="listagemVeiculoInfo" class="text-xs text-slate-500 mb-2"></p>
+      <div id="listagemAviso" class="hidden mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"></div>
       <div id="listagemStatusBox" class="mb-4"></div>
       <div id="listagemVeiculoBlocos" class="space-y-5"></div>
       <div id="listagemArquivoPreview" class="hidden mt-5 rounded-xl border border-blue-200 bg-blue-50/40 p-4"></div>
@@ -2229,7 +2306,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=correcoes-perfis-20261016-001"></script>
+  <script src="app.js?v=ajuda-fase1-20261016-001"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */

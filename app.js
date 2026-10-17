@@ -78,6 +78,7 @@ const ACCESS_SCREEN_CATALOG = [
   { key: 'carronova', label: 'Nova Solicitação Carro (MarkCarro)', editable: false },
   { key: 'unidades', label: 'Unidades', editable: true, coAdminOnly: true },
   { key: 'validadores', label: 'Validadores', editable: true, coAdminOnly: true },
+  { key: 'ajuda', label: 'Ajuda (FAQ, dicas e dúvidas)', editable: true, coAdminOnly: true },
 ];
 const CO_ADMIN_NAME = 'Co_Admin';
 // Agenda Mestra com "editar" (Admin ou perfil administrativo): mesmas edições do Admin.
@@ -137,6 +138,7 @@ const SCREEN_ROLES = {
   avisos: ['admin'],
   perfisacesso: ['admin'],
   validadores: ['admin'],
+  ajuda: ['admin'],
   relatorios: ['admin', 'pedagogia', 'agente_externo'],
   pendenciascoop: ['agente_externo'],
   solicitacoescoop: ['agente_externo'],
@@ -238,6 +240,7 @@ const DEMO_PROFILES = [
   { id: 'demo-escola', email: 'escola@teste.com', full_name: 'Escola Teste', role: 'escola', school_id: 's1', driver_id: null, setor_pedagogico: null, active: true },
   { id: 'demo-pedagogia', email: 'pedagogia@teste.com', full_name: 'Pedagogia Teste', role: 'pedagogia', school_id: null, driver_id: null, setor_pedagogico: 'ensino_fundamental', active: true },
   { id: 'demo-motorista', email: 'motorista@teste.com', full_name: 'Motorista Teste', role: 'motorista', school_id: null, driver_id: 'd1', setor_pedagogico: null, active: true },
+  { id: 'demo-coop', email: 'coop@teste.com', full_name: 'Cooperativa Teste', role: 'agente_externo', school_id: null, driver_id: null, cooperativa_id: 'c1', setor_pedagogico: null, active: true },
 ];
 
 // Formata pelo calendário local. toISOString() usa UTC e, no Brasil à noite,
@@ -489,6 +492,7 @@ function backfillDemoData() {
   cooperativas.forEach((c) => { if (c.active === undefined) c.active = true; });
   if (!appSettings) appSettings = { ...DEMO_APP_SETTINGS };
   if (!demoProfiles || !demoProfiles.length) demoProfiles = DEMO_PROFILES.map((p) => ({ ...p }));
+  DEMO_PROFILES.forEach((p) => { if (!demoProfiles.some((x) => x.id === p.id)) demoProfiles.push({ ...p }); });
   demoProfiles.forEach((p) => { if (p.active === undefined) p.active = true; });
   if (!kmLogs) kmLogs = buildDemoKmLogs();
   agenda.forEach((a) => {
@@ -832,6 +836,7 @@ function detectRole(email) {
   if (lower.includes('pedagogia')) return 'pedagogia';
   if (lower.includes('motorista')) return 'motorista';
   if (lower.includes('escola')) return 'escola';
+  if (lower.includes('coop')) return 'agente_externo';
   return 'admin';
 }
 
@@ -856,7 +861,7 @@ async function enterApp() {
   applyRoleUI(currentUser.role);
 
   // P2: setores/públicos já no login (trava de setor e encaminhamento valem em qualquer tela).
-  await Promise.all([loadSchools(), loadVehicles(), loadDrivers(), loadProfiles(), loadCooperativas(), loadAppSettings(), loadValidationConfig()]);
+  await Promise.all([loadSchools(), loadVehicles(), loadDrivers(), loadProfiles(), loadCooperativas(), loadAppSettings(), loadValidationConfig(), carregarAjuda().catch(() => {})]);
   await loadAgenda();
   await loadKmLogs();
   await loadNotifications();
@@ -928,6 +933,7 @@ function applyRoleUI(role) {
   // definição da ferramenta que usa o markcarro"): mesmo botão único no
   // topo, só pro Condutor/Motorista (ver reportarPaneMecanicaBoraLa()).
   document.getElementById('btnPaneMecanicaBoraLa')?.classList.toggle('hidden', role !== 'motorista');
+  document.getElementById('btnAjuda')?.classList.toggle('hidden', !['escola', 'pedagogia', 'agente_externo', 'admin', 'operacional'].includes(role));
   document.getElementById('navAgendaLabel').textContent = role === 'motorista' ? 'Minhas Viagens' : 'Agenda';
   const navAgendaTopLabel = document.getElementById('navAgendaTopLabel');
   if (navAgendaTopLabel) navAgendaTopLabel.textContent = role === 'motorista' ? 'Hoje' : 'Agenda';
@@ -1889,6 +1895,7 @@ function showScreen(name, el) {
     avisos: ['Avisos administrativos', 'Envie comunicados para usuários e perfis do sistema'],
     perfisacesso: ['Perfis de acesso', 'Telas e permissões dos perfis administrativos'],
     validadores: ['Validadores', 'Público-alvo, setor responsável e prerrogativas pedagógicas'],
+    ajuda: ['Ajuda', 'Perguntas do FAQ, dicas ⓘ e dúvidas dos operadores'],
     relatorios: ['Escala', 'Viagens confirmadas e com motorista atribuído'],
     pendenciascoop: ['Pendências da cooperativa', 'ATF e transporte PCD aguardando confirmação'],
     solicitacoescoop: ['Solicitações da cooperativa', 'Viagens confirmadas atribuídas à cooperativa'],
@@ -1929,6 +1936,7 @@ function showScreen(name, el) {
   if (name === 'avisos') openAvisosScreen();
   if (name === 'perfisacesso') { Promise.all([loadAccessProfiles(), loadRoleScreenPermissions()]).then(renderAccessProfiles); }
   if (name === 'validadores') openValidadoresScreen().then(() => aplicarSomenteConsulta('screen-validadores', 'validadores'));
+  if (name === 'ajuda') openAjudaAdmin();
   if (name === 'relatorios') populateRelatorioFilters();
   if (name === 'relatorios') { document.getElementById('btnNotificarViagens')?.classList.toggle('hidden', ['agente_externo', 'escola', 'motorista', 'pedagogia'].includes(currentUser?.role)); renderRelatorioPreview(); }
   if (name === 'pendenciascoop') renderPendenciasCoop();
@@ -1971,6 +1979,7 @@ async function refreshDadosDaTela(name) {
     if (name === 'usuarios') openUsuariosScreen();
     if (name === 'avisos') openAvisosScreen();
     if (name === 'validadores') openValidadoresScreen().then(() => aplicarSomenteConsulta('screen-validadores', 'validadores'));
+    if (name === 'ajuda') openAjudaAdmin();
     if (name === 'relatorios') populateRelatorioFilters();
     if (name === 'relatorios') { document.getElementById('btnNotificarViagens')?.classList.toggle('hidden', ['agente_externo', 'escola', 'motorista', 'pedagogia'].includes(currentUser?.role)); renderRelatorioPreview(); }
     if (name === 'pendenciascoop') renderPendenciasCoop();
@@ -2820,8 +2829,8 @@ async function renderPendenciasCoop() {
       listaBtns += (arquivos[a.id] || []).filter((f) => f.drive_url).map((f) => { const placa = f.driver_id ? ` (${escapeHtml(lvPlaca(f.driver_id))})` : ''; return `<a href="${escapeHtml(f.drive_url)}" target="_blank" rel="noopener" class="${btn} border-blue-200 text-blue-700" title="${escapeHtml(f.filename || '')}">🔗 Abrir listagem${placa}</a><a href="${escapeHtml(linkDownload(f))}" target="_blank" rel="noopener" class="${btn} border-blue-200 text-blue-700">⬇ Baixar${placa}</a>`; }).join('');
     }
     const acoes = pcdCard
-      ? `<div class="mt-3 grid gap-2 md:grid-cols-2"><input id="pcdVeiculo-${a.id}" placeholder="Veículo (opcional)" class="border rounded-lg px-3 py-2 text-sm"><input id="pcdMotorista-${a.id}" placeholder="Motorista (opcional)" class="border rounded-lg px-3 py-2 text-sm"></div><div class="mt-3 flex flex-wrap gap-2"><button onclick="confirmarPcdCoop('${a.id}')" class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white">Confirmar atendimento</button><button onclick="rejeitarPcdCoop('${a.id}')" class="rounded-lg border border-red-200 px-3 py-2 text-sm font-bold text-red-700">Recusar</button></div>`
-      : `<div class="mt-3 flex flex-wrap gap-2"><button onclick="aceitarAtfCoop('${a.id}')" class="rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-white">Aprovar e emitir ATF</button><button onclick="rejeitarAtfCoop('${a.id}')" class="rounded-lg border border-red-200 px-3 py-2 text-sm font-bold text-red-700">Reprovar</button></div>`;
+      ? `<div class="mt-3 grid gap-2 md:grid-cols-2"><input id="pcdVeiculo-${a.id}" placeholder="Veículo (opcional)" class="border rounded-lg px-3 py-2 text-sm"><input id="pcdMotorista-${a.id}" placeholder="Motorista (opcional)" class="border rounded-lg px-3 py-2 text-sm"></div><div class="mt-3 flex flex-wrap gap-2"><button onclick="confirmarPcdCoop('${a.id}')" class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white">Confirmar atendimento</button>${dicaHtml('coop_pcd')}<button onclick="rejeitarPcdCoop('${a.id}')" class="rounded-lg border border-red-200 px-3 py-2 text-sm font-bold text-red-700">Recusar</button></div>`
+      : `<div class="mt-3 flex flex-wrap gap-2"><button onclick="aceitarAtfCoop('${a.id}')" class="rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-white">Aprovar e emitir ATF</button>${dicaHtml('coop_atf')}<button onclick="rejeitarAtfCoop('${a.id}')" class="rounded-lg border border-red-200 px-3 py-2 text-sm font-bold text-red-700">Reprovar</button></div>`;
     const tone = pcdCard ? 'border-blue-200 bg-blue-50/40' : 'border-amber-200 bg-amber-50/40';
     const badge = pcdCard ? '<span class="rounded-full bg-blue-100 px-3 py-1 text-sm font-extrabold text-blue-700">♿ Transporte e lista PCD</span>' : '<span class="rounded-full bg-amber-100 px-3 py-1 text-sm font-extrabold text-amber-800">🕒 ATF aguardando emissão</span>';
     return `<article class="rounded-xl border ${tone} p-4 shadow-sm">${badge}
@@ -2887,17 +2896,17 @@ async function avisarSetorRespostaCoop(id, tipo, { resultado = null, recusa = fa
 }
 
 // Janela de confirmação das respostas da cooperativa (ATF / PCD).
-function confirmarRespostaCoop({ titulo, info = '', texto = '', tom = 'amber', botao = 'Confirmar', pedirMotivo = false }) {
+function confirmarRespostaCoop({ titulo, info = '', texto = '', tom = 'amber', botao = 'Confirmar', pedirMotivo = false, rotuloMotivo = 'Motivo *', placeholderMotivo = 'Ex.: veículo em manutenção na data' }) {
   return new Promise((resolve) => {
     const cores = { amber: ['#fffbeb', '#fde68a', '#f59e0b'], blue: ['#eff6ff', '#bfdbfe', '#2563eb'], red: ['#fff1f2', '#fecdd3', '#e11d48'] }[tom] || ['#fffbeb', '#fde68a', '#f59e0b'];
     const wrap = document.createElement('div');
     wrap.className = 'fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4';
-    wrap.innerHTML = `<div class="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"><h4 class="text-base font-bold text-slate-900">${escapeHtml(titulo)}</h4>${info ? `<p class="mt-1 text-sm text-slate-600">${escapeHtml(info)}</p>` : ''}${texto ? `<p class="mt-3 rounded-lg p-3 text-xs leading-relaxed text-slate-700" style="background:${cores[0]};border:1px solid ${cores[1]}">${escapeHtml(texto)}</p>` : ''}${pedirMotivo ? '<label class="mt-3 block text-xs font-semibold text-slate-600">Motivo *</label><textarea data-motivo rows="2" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm" placeholder="Ex.: veículo em manutenção na data"></textarea>' : ''}<div class="mt-4 flex justify-end gap-2"><button data-r="0" class="rounded-lg border px-4 py-2 text-sm font-semibold text-slate-700">Voltar</button><button data-r="1" class="rounded-lg px-4 py-2 text-sm font-bold text-white" style="background:${cores[2]}">${escapeHtml(botao)}</button></div></div>`;
+    wrap.innerHTML = `<div class="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"><h4 class="text-base font-bold text-slate-900">${escapeHtml(titulo)}</h4>${info ? `<p class="mt-1 text-sm text-slate-600">${escapeHtml(info)}</p>` : ''}${texto ? `<p class="mt-3 rounded-lg p-3 text-xs leading-relaxed text-slate-700" style="background:${cores[0]};border:1px solid ${cores[1]}">${escapeHtml(texto)}</p>` : ''}${pedirMotivo ? `<label class="mt-3 block text-xs font-semibold text-slate-600">${escapeHtml(rotuloMotivo)}</label><textarea data-motivo rows="2" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm" placeholder="${escapeHtml(placeholderMotivo)}"></textarea>` : ''}<div class="mt-4 flex justify-end gap-2"><button data-r="0" class="rounded-lg border px-4 py-2 text-sm font-semibold text-slate-700">Voltar</button><button data-r="1" class="rounded-lg px-4 py-2 text-sm font-bold text-white" style="background:${cores[2]}">${escapeHtml(botao)}</button></div></div>`;
     wrap.addEventListener('click', (e) => {
       const r = e.target?.dataset?.r; if (r === undefined) return;
       if (r === '1' && pedirMotivo) {
         const motivo = (wrap.querySelector('[data-motivo]')?.value || '').trim();
-        if (!motivo) { toast('⚠️ Informe o motivo da recusa.', true); return; }
+        if (!motivo) { toast('⚠️ Preencha o campo obrigatório.', true); return; }
         wrap.remove(); resolve({ motivo }); return;
       }
       wrap.remove(); resolve(r === '1');
@@ -3478,14 +3487,14 @@ function renderAgenda() {
     .sort((a, b) => (a.trip_date + a.departure_time).localeCompare(b.trip_date + b.departure_time))
     .map((a) => {
       const turnoLabel = TURNO_LABELS[a.turno || turnoFromHora(a.departure_time)] || '-';
-      // E5: a escola só cancela antes de a viagem iniciar (o Admin não tem essa trava).
-      const viagemIniciada = a.status === 'in_transit' || (a.trip_date || '') < fmtDate(new Date());
+      // A escola cancela até 2 h antes da saída (o Admin não tem essa trava).
+      const viagemIniciada = a.status === 'in_transit' || foraPrazoCancelamento(a);
       const podeCancelar = a.situacao !== 'cancelada' && a.situacao !== 'reprovada' && a.status !== 'completed'
         && (role === 'admin' || (role === 'escola' && a.school_id === currentUser.schoolId && !viagemIniciada));
 
       let acoes = '<span class="text-slate-300 text-xs">—</span>';
-      if (role === 'escola' && a.school_id === currentUser.schoolId && a.status === 'in_transit' && !['cancelada', 'reprovada'].includes(a.situacao)) {
-        acoes = '<span class="text-xs italic text-slate-400">Viagem já iniciada — não é possível cancelar.</span>';
+      if (role === 'escola' && a.school_id === currentUser.schoolId && (a.status === 'in_transit' || foraPrazoCancelamento(a)) && (a.trip_date || '') >= fmtDate(new Date()) && !['cancelada', 'reprovada'].includes(a.situacao) && a.status !== 'completed') {
+        acoes = '<span class="text-xs italic text-slate-400">Cancelamento permitido até 2 h antes da saída.</span>';
       }
       // A atribuição é uma etapa operacional independente da decisão. Ela fica
       // disponível em qualquer solicitação ativa e só é publicada após aprovar.
@@ -3525,7 +3534,7 @@ function renderAgenda() {
               ? `<button onclick="confirmarViagemEscola('${a.id}')" class="bg-transparent px-0 py-0.5 text-xs font-semibold text-blue-700 hover:text-blue-900">✅ Confirmar</button>`
               : '<button disabled title="Disponível após a aprovação do Admin" class="cursor-not-allowed bg-transparent px-0 py-0.5 text-xs font-semibold text-slate-400">✅ Confirmar</button>')
             : '';
-          cancelBtn = `<div class="inline-flex flex-col items-start gap-1 align-top">${confirmBtn}<button onclick="openCancelModal('${a.id}')" class="bg-transparent px-0 py-0.5 text-xs font-semibold text-red-700 hover:text-red-900">🚫 Cancelar</button></div>`;
+          cancelBtn = `<div class="inline-flex flex-col items-start gap-1 align-top">${confirmBtn}<span><button onclick="openCancelModal('${a.id}')" class="bg-transparent px-0 py-0.5 text-xs font-semibold text-red-700 hover:text-red-900">🚫 Cancelar</button>${dicaHtml('cancelamento')}</span></div>`;
         }
         acoes = acoes.includes('text-slate-300') ? cancelBtn : acoes + cancelBtn;
       }
@@ -4835,6 +4844,10 @@ function renderPendencias() {
     const novas = abertas.filter((a) => !a.admin_processed_at && ['pending', 'pedagogy_approved'].includes(a.status));
     const canceladasPelaUnidade = recentes.filter((a) => a.situacao === 'cancelada' && a.cancelled_by && a.cancelled_by === a.created_by);
     const listagensConferencia = abertas.filter((a) => a.listagem_status === 'enviada' || (lvTemControle(a) && (a.driver_ids || []).some((did) => lvStatus(a, did) === 'enviada')));
+    // Pedidos de correção da listagem feitos pela escola.
+    const cardsCorrecao = semAcoesPend ? [] : abertas.flatMap((a) => (a.driver_ids || []).filter((did) => lvMapa(a)[did]?.correcao_pedida_em).map((did) => pendenciaCard(a, {
+      badge: `Correção pedida · ${lvPlaca(did)}`, tone: 'amber', detail: `"${escapeHtml(lvMapa(a)[did].correcao_motivo || '')}"`,
+      action: `<div class="grid grid-cols-2 gap-2"><button onclick="liberarCorrecaoListagem('${a.id}','${did}')" class="rounded-lg bg-orange-600 px-3 py-2 text-sm font-bold text-white">Liberar para correção</button><button onclick="recusarPedidoCorrecaoListagem('${a.id}','${did}')" class="rounded-lg border px-3 py-2 text-sm font-bold text-slate-700">Recusar pedido</button></div>` })));
     const cardsConferencia = listagensConferencia.flatMap((a) => {
       const botao = semAcoesPend ? '' : `<button onclick="openListagemVeiculoModal('${a.id}')" class="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700">Conferir listagem</button>`;
       if (!lvTemControle(a)) return [pendenciaCard(a, { badge: 'Aguardando conferência', tone: 'blue', action: botao })];
@@ -4845,7 +4858,7 @@ function renderPendencias() {
       ['validacao', pendenciaBloco('Sem validação pedagógica', 'Solicitações que ainda não receberam parecer pedagógico.', semValidacao.map((a) => pendenciaCard(a, { badge: 'Aguardando validação', tone: 'amber', action: acoesAdmin(a) })), '⏳', 'amber')],
       ['semsetor', blocoSemSetor()],
       ['proposta', pendenciaBloco('Proposta pedagógica aguardada', 'Solicitada pelo Admin ou devolvida pela Pedagogia.', reenvio.map((a) => pendenciaCard(a, { badge: a.doc_status === 'solicitada' ? 'Solicitada à unidade' : 'Aguardando reenvio', tone: 'blue', detail: escapeHtml(a.doc_parecer_comentario || 'Aguardando proposta pedagógica da unidade.'), action: acoesAdmin(a) })), '📄', 'blue')],
-      ['listagem', pendenciaBloco('Listagens para conferência', 'Listagens enviadas pelas unidades e aguardando análise do Admin.', cardsConferencia, '👥', 'blue')],
+      ['listagem', pendenciaBloco('Listagens para conferência', 'Listagens enviadas pelas unidades e aguardando análise do Admin.', [...cardsCorrecao, ...cardsConferencia], '👥', 'blue')],
       ['canceladas', pendenciaBloco('Canceladas pela unidade', 'Também chegam como notificação para o Admin e o motorista.', canceladasPelaUnidade.map((a) => pendenciaCard(a, { badge: 'Cancelada pela unidade', tone: 'red', detail: escapeHtml(a.cancel_reason || 'Sem motivo informado.') })), '🚫', 'red')],
     ];
     container.innerHTML = blocos.filter(([tipo]) => !tipoFiltro || tipoFiltro === tipo).map(([, html]) => html).join('') || '<p class="rounded-xl bg-slate-50 p-6 text-center text-sm text-slate-500">Nenhuma pendência para este filtro.</p>';
@@ -4881,8 +4894,8 @@ function renderPendencias() {
     const botaoLista = (a) => `<button onclick="openListagemVeiculoModal('${a.id}')" class="shrink-0 rounded-lg border border-emerald-200 bg-emerald-100 px-3 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-200">${a.listagem_status === 'rejeitada' ? 'Corrigir listagem' : 'Preencher listagem'}</button>`;
     const blocosEscola = [
       ['proposta', pendenciaBloco('Proposta pedagógica não enviada', 'Solicitações criadas sem o envio da proposta.', naoEnviadas.map((a) => pendenciaCard(a, { badge: 'Proposta não enviada', tone: 'red', detail: seloSerieHtml(a), action: botaoProposta(a) })), '📄', 'red')],
-      ['proposta', pendenciaBloco('Proposta pedagógica rejeitada', 'Envie uma nova proposta para continuar.', rejeitadas.map((a) => pendenciaCard(a, { badge: 'Proposta rejeitada', tone: 'red', detail: escapeHtml('Motivo: ' + (a.doc_parecer_comentario || 'não informado.')), action: botaoProposta(a) })), '❌', 'red')],
-      ['proposta', pendenciaBloco('Proposta pedagógica', 'Envie ou reenvie o arquivo solicitado pelo fluxo administrativo/pedagógico.', propostas.map((a) => pendenciaCard(a, { badge: a.doc_status === 'correcoes' ? 'Correções solicitadas' : 'Proposta solicitada', tone: 'blue', detail: escapeHtml(a.doc_parecer_comentario || 'Envie a proposta pedagógica para a continuidade do fluxo.'), action: botaoProposta(a) })), '📄', 'blue')],
+      ['proposta', pendenciaBloco('Proposta pedagógica rejeitada', 'Envie uma nova proposta para continuar.', rejeitadas.map((a) => pendenciaCard(a, { badge: 'Proposta rejeitada', tone: 'red', detail: escapeHtml('Motivo: ' + (a.doc_parecer_comentario || 'não informado.')) + dicaHtml('proposta_rejeitada'), action: botaoProposta(a) })), '❌', 'red')],
+      ['proposta', pendenciaBloco('Proposta pedagógica', 'Envie ou reenvie o arquivo solicitado pelo fluxo administrativo/pedagógico.', propostas.map((a) => pendenciaCard(a, { badge: a.doc_status === 'correcoes' ? 'Correções solicitadas' : 'Proposta solicitada', tone: 'blue', detail: escapeHtml(a.doc_parecer_comentario || 'Envie a proposta pedagógica para a continuidade do fluxo.') + (a.doc_status === 'correcoes' ? dicaHtml('proposta_correcoes') : ''), action: botaoProposta(a) })), '📄', 'blue')],
       ['confirmacao', pendenciaBloco('Confirmar viagem', 'Viagens aprovadas aguardando a confirmação da unidade.', aConfirmar.map((a) => pendenciaCard(a, { badge: 'Aguardando confirmação', tone: 'blue', action: `<button onclick="confirmarViagemEscola('${a.id}')" class="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700">Confirmar</button>` })), '✅', 'blue')],
       ['listagem', pendenciaBloco('Listagem de passageiros', 'Viagens aprovadas que exigem lista por ATF e/ou PCD.', listagens.flatMap((a) => {
         const recusados = a.listagem_status === 'rejeitada' && lvTemControle(a) ? (a.driver_ids || []).filter((did) => lvStatus(a, did) === 'rejeitada') : [];
@@ -4965,7 +4978,7 @@ function prazoListagemTexto(trip) {
 function prazoListagemHtml(trip) {
   return prazoListagemExpirado(trip)
     ? `<span class="font-semibold text-red-600">Prazo da listagem encerrado em ${prazoListagemTexto(trip)} — contate o Admin.</span>`
-    : `<span class="font-semibold text-amber-700">⏰ Enviar listagem até ${prazoListagemTexto(trip)}</span>`;
+    : `<span class="font-semibold text-amber-700">⏰ Enviar listagem até ${prazoListagemTexto(trip)}</span>${dicaHtml('listagem_prazo')}`;
 }
 
 // Quando a viagem faz parte de uma série recorrente (recurrence_group_id), aprovar
@@ -5087,8 +5100,15 @@ function openCancelModal(id) {
   document.getElementById('cancelModal').classList.remove('hidden');
 }
 function closeCancelModal() { document.getElementById('cancelModal').classList.add('hidden'); cancelTargetId = null; }
+// Escola: cancelamento até 2 h antes da saída.
+function foraPrazoCancelamento(trip) {
+  if (!trip?.trip_date) return false;
+  return Date.now() > new Date(`${trip.trip_date}T${trip.departure_time ? hhmm(trip.departure_time) : '00:00'}:00`).getTime() - 2 * 60 * 60 * 1000;
+}
+
 async function confirmCancel() {
   const trip = agenda.find((a) => a.id === cancelTargetId);
+  if (currentUser?.role === 'escola' && trip && foraPrazoCancelamento(trip)) { toast('⚠️ Cancelamento permitido até 2 h antes da saída.', true); closeCancelModal(); return; }
   const escolhido = document.getElementById('cancelMotivoSelect').value;
   const motivo = escolhido === 'Outro' ? (document.getElementById('cancelMotivoOutro').value.trim() || 'Outro') : escolhido;
   const ok = await updateExcursion(cancelTargetId, {
@@ -5259,13 +5279,13 @@ function renderValidacoesEscola() {
       const aprovadoDataValidador = `${a.doc_parecer_em ? `<div class="text-xs text-slate-500">${new Date(a.doc_parecer_em).toLocaleDateString('pt-BR')}</div>` : ''}${a.doc_parecer_por ? `<div class="text-xs text-slate-500">${validatorFullName(a.doc_parecer_por)}</div>` : ''}`;
       // Viagem futura com validação pedagógica aprovada pode ser cancelada pela unidade,
       // mesmo sem motorista atribuído ou decisão do Admin.
-      const podeCancelarValidada = a.doc_status === 'aceito' && (a.trip_date || '') >= fmtDate(new Date())
+      const podeCancelarValidada = a.doc_status === 'aceito' && !foraPrazoCancelamento(a)
         && !['cancelada', 'reprovada'].includes(a.situacao) && !['rejected', 'completed', 'in_transit'].includes(a.status);
       let parecerCell = '<span class="text-xs text-slate-400">—</span>';
       if ((a.doc_status === 'correcoes' || a.doc_status === 'solicitada') && a.doc_parecer_comentario) {
         parecerCell = `<span class="text-xs text-amber-700">✏️ ${a.doc_parecer_comentario}${parecerPorTxt}</span>`;
       } else if (a.doc_status === 'rejeitado' && a.doc_parecer_comentario) {
-        parecerCell = `<span class="text-xs text-red-700">🚫 Proposta rejeitada: ${a.doc_parecer_comentario}${parecerPorTxt}</span><div class="text-[11px] text-slate-500">Envie uma nova proposta para continuar.</div>`;
+        parecerCell = `<span class="text-xs text-red-700">🚫 Proposta rejeitada: ${a.doc_parecer_comentario}${parecerPorTxt}</span>${dicaHtml('proposta_rejeitada')}<div class="text-[11px] text-slate-500">Envie uma nova proposta para continuar.</div>`;
       } else if (a.doc_status === 'aceito') {
         parecerCell = `<div class="text-xs text-emerald-700">✅ Aprovado</div>${aprovadoDataValidador}`;
       }
@@ -5283,7 +5303,7 @@ function renderValidacoesEscola() {
       <td class="px-4 py-3 text-sm">
         ${podeEnviar ? `<button onclick="openDocUploadModal('${a.id}')" class="text-xs text-emerald-600 hover:text-emerald-800">${btnLabel}</button>` : ''}
         ${a.status === 'approved' && (a.driver_ids || []).length && precisaListagemComNomesDocumentos(a) ? `<button onclick="openListagemVeiculoModal('${a.id}')" class="ml-2 text-xs text-indigo-600 hover:text-indigo-800">📋 ${a.listagem_status === 'rejeitada' ? 'Corrigir listagem' : 'Passageiros'}</button>` : ''}
-        ${podeCancelarValidada ? `<button onclick="openCancelModal('${a.id}')" class="ml-2 text-xs text-orange-600 hover:text-orange-800">🚫 Cancelar</button>` : ''}
+        ${podeCancelarValidada ? `<button onclick="openCancelModal('${a.id}')" class="ml-2 text-xs text-orange-600 hover:text-orange-800">🚫 Cancelar</button>${dicaHtml('cancelamento')}` : ''}
         ${!podeEnviar && !podeCancelarValidada && !(a.status === 'approved' && (a.driver_ids || []).length && precisaListagemComNomesDocumentos(a)) ? '<span class="text-slate-300 text-xs">—</span>' : ''}
       </td>
       <td class="px-4 py-3">${a.situacao === 'reprovada' ? '' : (a.escola_confirmada_em ? '<span class="text-xs font-bold text-blue-600">Confirmada</span>' : '<span class="text-xs font-bold text-black">Pendente</span>')}</td>
@@ -5675,6 +5695,7 @@ function openValidacaoModal(id, somenteLeituraForcada = false) {
   document.getElementById('parecerSelect').value = 'aceito';
   document.getElementById('parecerComentario').value = '';
   const motivoEnc = document.getElementById('encaminharMotivo'); if (motivoEnc) motivoEnc.value = '';
+  const dicaPar = document.getElementById('dicaParecer'); if (dicaPar) dicaPar.innerHTML = dicaHtml('parecer_aceite');
   // P7: retrato da proposta no momento da abertura (o parecer só grava se nada mudou).
   validacaoSnapshot = { doc_status: trip.doc_status || null, doc_uploaded_at: trip.doc_uploaded_at || null };
   const encaminhar = document.getElementById('encaminharSetor');
@@ -6020,6 +6041,8 @@ async function openListagemVeiculoModal(id) {
   });
 
   renderListagemVeiculoModal();
+  const aviso = document.getElementById('listagemAviso');
+  if (aviso) { const t = dicaTexto('listagem_aviso'); aviso.innerHTML = t ? `<b>Atenção:</b> ${escapeHtml(t)}` : ''; aviso.classList.toggle('hidden', !t); }
   document.getElementById('listagemVeiculoModal').classList.remove('hidden');
 }
 function closeListagemVeiculoModal() {
@@ -6098,6 +6121,18 @@ function painelVeiculoListagemHtml(trip, did) {
           <div class="flex justify-end gap-2"><button onclick="document.getElementById('atfManual-${did}').classList.add('hidden')" class="rounded border px-3 py-1">Cancelar</button><button onclick="registrarAtfManual('${did}')" class="rounded bg-emerald-600 px-3 py-1 font-bold text-white">Confirmar registro</button></div>
         </div>`;
     }
+  }
+  // Escola: listagem enviada é só consulta; antes da ATF e dentro do prazo, pode pedir correção ao Admin.
+  if (currentUser?.role === 'escola' && ['enviada', 'aceita'].includes(st)) {
+    const atfEmitida = lvAtf(trip, did) === 'aceita';
+    if (atfEmitida) html += '<div class="mt-2 text-slate-500">🔒 ATF emitida — não é possível editar nem incluir passageiros.</div>';
+    else if (e.correcao_pedida_em) html += `<div class="mt-2 flex flex-wrap items-center justify-between gap-2"><span class="text-slate-500">🔒 Listagem enviada — somente consulta.</span><span class="rounded-full bg-orange-100 px-2 py-1 font-semibold text-orange-700">Correção solicitada em ${new Date(e.correcao_pedida_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · aguardando o Admin</span></div>`;
+    else if (!prazoListagemExpirado(trip)) html += `<div class="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2"><span class="text-slate-500">🔒 Listagem enviada — somente consulta.</span><button onclick="pedirCorrecaoListagem('${did}')" class="rounded-lg border border-orange-300 bg-white px-3 py-1.5 font-semibold text-orange-700">✏️ Pedir correção ao Admin</button></div>`;
+    else html += '<div class="mt-2 text-slate-500">🔒 Listagem enviada — prazo encerrado. Fale com o Admin.</div>';
+    if (e.correcao_recusada_em && !e.correcao_pedida_em) html += `<div class="mt-1 text-red-700">Pedido de correção recusado: ${escapeHtml(e.correcao_recusa_motivo || '')}</div>`;
+  }
+  if (admin && e.correcao_pedida_em) {
+    html += `<div class="mt-2 rounded-lg border border-orange-200 bg-orange-50 p-2"><b class="text-orange-800">Correção pedida pela unidade:</b> ${escapeHtml(e.correcao_motivo || '')}<div class="mt-2 flex justify-end gap-2"><button onclick="closeListagemVeiculoModal();liberarCorrecaoListagem('${trip.id}','${did}')" class="rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-bold text-white">Liberar para correção</button><button onclick="closeListagemVeiculoModal();recusarPedidoCorrecaoListagem('${trip.id}','${did}')" class="rounded-lg border px-3 py-1.5 text-xs">Recusar pedido</button></div></div>`;
   }
   if (admin && st === 'enviada') {
     html += `<div class="mt-2 flex flex-wrap justify-end gap-2"><button onclick="aceitarListagemVeiculo('${did}')" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white">✅ Aceitar este veículo</button><button onclick="abrirRecusaListagemVeiculo('${did}')" class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white">Recusar este veículo</button></div>`;
@@ -7325,6 +7360,9 @@ async function completeTrip(id) {
 
 // ============ WIZARD (NOVA SOLICITAÇÃO) ============
 function openSolicitacaoScreen() {
+  const avisoEscola = document.getElementById('solicitacaoAvisoEscola');
+  if (avisoEscola) { avisoEscola.innerHTML = `<b>Importante:</b> ${escapeHtml(dicaTexto('solicitacao_aviso'))}`; avisoEscola.classList.toggle('hidden', currentUser?.role !== 'escola'); }
+  const dicaAnt = document.getElementById('dicaAntecedencia'); if (dicaAnt) dicaAnt.innerHTML = currentUser?.role === 'admin' ? '' : dicaHtml('solicitacao_antecedencia');
   populateEscolaSelect();
   populateAgendamentoDestinoSelect();
   aplicarRecorrenciaPorPerfil();
@@ -7710,14 +7748,16 @@ function validateWizardStep(step) {
       toast('⚠️ Informe data, horário de saída e horário de retorno.', true);
       return false;
     }
-    // E6: antecedência mínima de 36 horas e retorno depois da saída (o Admin não tem essa trava).
+    // Antecedência mínima: 36 h (Nova Lima) ou 72 h (origem ou destino fora); retorno depois da saída. Admin sem trava.
     if (currentUser?.role !== 'admin') {
       const campoErro = (id, on) => document.getElementById(id)?.classList.toggle('border-red-400', on);
       const saida = new Date(`${document.getElementById('wData').value}T${document.getElementById('wHora').value}:00`).getTime();
-      const semAntecedencia = saida < Date.now() + 36 * 60 * 60 * 1000;
+      const fora = wizardForaDeNovaLima();
+      const horasMin = fora ? 72 : 36;
+      const semAntecedencia = saida < Date.now() + horasMin * 60 * 60 * 1000;
       const retornoAntes = document.getElementById('wHoraRetorno').value <= document.getElementById('wHora').value;
       campoErro('wData', semAntecedencia); campoErro('wHora', semAntecedencia); campoErro('wHoraRetorno', retornoAntes);
-      if (semAntecedencia) { toast('⚠️ A solicitação deve ser feita com no mínimo 36 horas de antecedência da saída.', true); return false; }
+      if (semAntecedencia) { toast(fora ? '⚠️ Viagem para fora de Nova Lima: o pedido deve ser feito com no mínimo 72 h de antecedência da saída.' : '⚠️ O pedido deve ser feito com no mínimo 36 h de antecedência da saída.', true); return false; }
       if (retornoAntes) { toast('⚠️ O retorno deve ser depois da saída.', true); return false; }
     }
   }
@@ -7799,6 +7839,16 @@ function wizardNext() {
   } else {
     enviarSolicitacaoTravada();
   }
+}
+
+// Origem ou destino fora de Nova Lima, conforme os campos já preenchidos no wizard.
+function wizardForaDeNovaLima() {
+  const ag = getTipoSolicitacaoWizard() === 'agendamento';
+  const escolaId = document.getElementById('wEscola')?.value;
+  const cidadeDestino = ag ? document.getElementById('wCidadeAgendamento')?.value : document.getElementById('wCidade')?.value;
+  const cidadeOrigem = ag ? document.getElementById('wOrigemCidade')?.value
+    : (escolaId === '__outra__' ? document.getElementById('wOutraCidade')?.value : (schools.find((x) => x.id === escolaId)?.city || ''));
+  return cidadeEhForaDeNovaLima(cidadeDestino || '') || cidadeEhForaDeNovaLima(cidadeOrigem || '');
 }
 
 // E7: impede envio duplicado (clique duplo) da solicitação.
@@ -9349,6 +9399,381 @@ function exportEscalaExcel() {
 // Nomes antigos mantidos somente para atalhos salvos de versões anteriores.
 function exportPDF() { exportEscalaPDF(); }
 function exportExcel() { exportEscalaExcel(); }
+
+const AJUDA_FAQ_PADRAO = [{"perfis": ["escola"], "tela": "solicitacao", "pergunta": "Como faço um pedido de viagem?", "resposta": "Menu Nova solicitação › preencha os passos › Enviar solicitação.", "onde_clicar": "", "ordem": 1}, {"perfis": ["escola"], "tela": "solicitacao", "pergunta": "Com quanto tempo de antecedência peço a viagem?", "resposta": "Dentro de Nova Lima: mínimo 36 h antes da saída. Fora de Nova Lima: mínimo 72 h.", "onde_clicar": "", "ordem": 2}, {"perfis": ["escola"], "tela": "solicitacao", "pergunta": "Meu pedido garante a viagem?", "resposta": "Não. Depende de veículos e agenda disponíveis, informações corretas, validação pedagógica ou programação já definida.", "onde_clicar": "", "ordem": 3}, {"perfis": ["escola"], "tela": "pendencias", "pergunta": "Como envio a proposta pedagógica?", "resposta": "No próprio pedido ou depois. PDF ou Word, até 8 MB.", "onde_clicar": "Pendências › Enviar proposta", "ordem": 4}, {"perfis": ["escola"], "tela": "pendencias", "pergunta": "Minha proposta foi rejeitada. E agora?", "resposta": "A viagem não foi cancelada. Leia o motivo e envie uma nova proposta.", "onde_clicar": "Pendências › Enviar nova proposta", "ordem": 5}, {"perfis": ["escola"], "tela": "pendencias", "pergunta": "A Pedagogia pediu correções. O que faço?", "resposta": "Leia o comentário e reenvie a proposta corrigida.", "onde_clicar": "Pendências › Reenviar proposta", "ordem": 6}, {"perfis": ["escola"], "tela": "pendencias", "pergunta": "Quando envio a listagem de passageiros?", "resposta": "Após a aprovação, nas viagens que pedem ATF. Até 48 h antes da saída.", "onde_clicar": "Pendências › Preencher listagem", "ordem": 7}, {"perfis": ["escola"], "tela": "agenda", "pergunta": "Por que não consigo enviar a listagem?", "resposta": "O prazo de 48 h antes da saída acabou. Fale com o Admin.", "onde_clicar": "", "ordem": 8}, {"perfis": ["escola"], "tela": "agenda", "pergunta": "Preciso corrigir a listagem já enviada.", "resposta": "Antes da ATF: peça a correção ao Admin. Depois da ATF, não é possível alterar.", "onde_clicar": "Listagem › Pedir correção ao Admin", "ordem": 9}, {"perfis": ["escola"], "tela": "agenda", "pergunta": "Posso trocar passageiros entre os veículos?", "resposta": "Não. Os passageiros de cada veículo não podem ser trocados. A responsabilidade é da unidade.", "onde_clicar": "", "ordem": 10}, {"perfis": ["escola"], "tela": "pendencias", "pergunta": "Como confirmo a viagem?", "resposta": "Após a aprovação do Admin, confirme a viagem.", "onde_clicar": "Pendências › Confirmar", "ordem": 11}, {"perfis": ["escola"], "tela": "agenda", "pergunta": "Até quando posso cancelar?", "resposta": "Até 2 h antes da saída, informando o motivo.", "onde_clicar": "Agenda ou Validações › Cancelar", "ordem": 12}, {"perfis": ["escola"], "tela": "solicitacao", "pergunta": "Viagem recorrente: envio proposta para cada data?", "resposta": "Não. Uma proposta vale para todas as datas.", "onde_clicar": "", "ordem": 13}, {"perfis": ["escola"], "tela": "solicitacao", "pergunta": "O que preencho para aluno PCD?", "resposta": "Nome e documento do aluno e do apoio.", "onde_clicar": "", "ordem": 14}, {"perfis": ["pedagogia"], "tela": "pendencias", "pergunta": "Onde vejo o que analisar?", "resposta": "Em Pendências e Validações, com as solicitações do seu setor.", "onde_clicar": "", "ordem": 15}, {"perfis": ["pedagogia"], "tela": "validacoes", "pergunta": "Aceitei e a solicitação sumiu. Está certo?", "resposta": "Sim. Ela segue para a decisão do Admin.", "onde_clicar": "", "ordem": 16}, {"perfis": ["pedagogia"], "tela": "validacoes", "pergunta": "Por que não consigo aceitar?", "resposta": "Só dá para aceitar proposta enviada e em análise. Sem documento, peça correções.", "onde_clicar": "", "ordem": 17}, {"perfis": ["pedagogia"], "tela": "validacoes", "pergunta": "O documento não abre.", "resposta": "Clique em \"Abrir documento em nova aba\".", "onde_clicar": "", "ordem": 18}, {"perfis": ["pedagogia"], "tela": "validacoes", "pergunta": "Correções ou rejeitar?", "resposta": "Correções: a escola ajusta e reenvia. Rejeitar: a escola envia nova proposta.", "onde_clicar": "", "ordem": 19}, {"perfis": ["pedagogia"], "tela": "validacoes", "pergunta": "A solicitação caiu no setor errado.", "resposta": "Escolha o setor, informe o motivo e confirme.", "onde_clicar": "Janela de validação › Encaminhar", "ordem": 20}, {"perfis": ["pedagogia"], "tela": "pendencias", "pergunta": "O que é \"Sem setor responsável\"?", "resposta": "Pedido sem setor definido. Escolha o setor e encaminhe.", "onde_clicar": "Pendências › Encaminhar", "ordem": 21}, {"perfis": ["pedagogia"], "tela": "validacoes", "pergunta": "Série recorrente: analiso cada data?", "resposta": "Não. Analise a primeira; o parecer vale para todas.", "onde_clicar": "", "ordem": 22}, {"perfis": ["pedagogia"], "tela": "validacoes", "pergunta": "Apareceu \"nova versão ou outro parecer\".", "resposta": "A proposta mudou. Feche, recarregue e analise de novo.", "onde_clicar": "", "ordem": 23}, {"perfis": ["cooperativa"], "tela": "pendenciascoop", "pergunta": "Como sei que chegou um pedido?", "resposta": "Pelo aviso no sino e pelo card em Pendências.", "onde_clicar": "", "ordem": 24}, {"perfis": ["cooperativa"], "tela": "pendenciascoop", "pergunta": "Como emito a ATF?", "resposta": "Abra o card e confirme a emissão.", "onde_clicar": "Card › Aprovar e emitir ATF › Confirmar emissão", "ordem": 25}, {"perfis": ["cooperativa"], "tela": "pendenciascoop", "pergunta": "Aprovei e a ATF não aparece emitida.", "resposta": "Há outra cooperativa na viagem. A ATF fica completa quando todas confirmarem.", "onde_clicar": "", "ordem": 26}, {"perfis": ["cooperativa"], "tela": "pendenciascoop", "pergunta": "Como baixo a listagem?", "resposta": "No card: PDF, Excel ou Abrir listagem. Só aparecem os seus veículos.", "onde_clicar": "", "ordem": 27}, {"perfis": ["cooperativa"], "tela": "pendenciascoop", "pergunta": "Como recuso um pedido?", "resposta": "Informe o motivo da recusa.", "onde_clicar": "Card › Reprovar (ATF) ou Recusar (PCD)", "ordem": 28}, {"perfis": ["cooperativa"], "tela": "pendenciascoop", "pergunta": "Por que recebi pedido PCD?", "resposta": "A SEMED enviou para a sua cooperativa, que opera PCD.", "onde_clicar": "", "ordem": 29}, {"perfis": ["cooperativa"], "tela": "km", "pergunta": "Onde vejo o KM dos meus veículos?", "resposta": "Na tela KM, com filtros de motorista, ano e mês.", "onde_clicar": "", "ordem": 30}];
+const AJUDA_DICAS_PADRAO = {"listagem_prazo": {"titulo": "Prazo da listagem (cards e agenda)", "texto": "A listagem para ATF deve ser enviada até 48 h antes da saída. Depois disso, fale com o Admin."}, "listagem_aviso": {"titulo": "Aviso na janela da listagem", "texto": "Depois de enviada, a listagem não pode ser alterada. Após a emissão da ATF, não é possível editar nem incluir passageiros. Não pode haver troca de passageiros entre os veículos escalados — responsabilidade da unidade solicitante."}, "solicitacao_antecedencia": {"titulo": "Data — Nova solicitação", "texto": "Pedido com no mínimo 36 h de antecedência (Nova Lima) ou 72 h (fora de Nova Lima)."}, "solicitacao_aviso": {"titulo": "Aviso no topo da Nova solicitação (Escola)", "texto": "O atendimento das solicitações depende da disponibilidade de veículos e de espaço na agenda, da exatidão das informações, da validação pedagógica ou de programação preestabelecida."}, "proposta_rejeitada": {"titulo": "Proposta rejeitada (Escola)", "texto": "A rejeição é da proposta, não da viagem. Envie uma nova proposta."}, "proposta_correcoes": {"titulo": "Correções na proposta (Escola)", "texto": "Leia o comentário e reenvie a proposta corrigida."}, "cancelamento": {"titulo": "Botão Cancelar (Escola)", "texto": "Cancelamento até 2 h antes da saída."}, "parecer_aceite": {"titulo": "Parecer — janela de validação (Pedagogia)", "texto": "Só é possível aceitar proposta enviada e em análise. Sem documento, peça correções."}, "coop_atf": {"titulo": "Botão Aprovar e emitir ATF (Cooperativa)", "texto": "O aceite vale só para os seus veículos. A ATF da viagem fica completa quando todas as cooperativas confirmarem."}, "coop_pcd": {"titulo": "Transporte PCD (Cooperativa)", "texto": "O pedido PCD vai só para a cooperativa escolhida pela SEMED. Informe veículo e motorista, se possível."}};
+
+// ============ AJUDA (fase 1): painel "?", guia rápido, dicas ⓘ, dúvidas ============
+const AJUDA_PERFIL_POR_ROLE = { escola: 'escola', pedagogia: 'pedagogia', agente_externo: 'cooperativa' };
+const AJUDA_PERFIL_LABEL = { escola: 'Escola', pedagogia: 'Pedagogia', cooperativa: 'Cooperativa' };
+const AJUDA_TELAS = { dashboard: 'Dashboard', pendencias: 'Pendências', agenda: 'Agenda', solicitacao: 'Nova solicitação', validacoes: 'Validações', relatorios: 'Relatórios', pendenciascoop: 'Pendências da cooperativa', solicitacoescoop: 'Solicitações da cooperativa', km: 'KM' };
+const AJUDA_GUIA = {
+  escola: {
+    passos: [
+      '<b>Nova solicitação</b>: mínimo 36 h antes da saída (Nova Lima) ou 72 h (fora de Nova Lima).',
+      'Anexe a <b>proposta pedagógica</b> no pedido ou depois, em Pendências.',
+      'Acompanhe o parecer da Pedagogia em <b>Validações</b>.',
+      'Aprovada pelo Admin: <b>Confirmar</b> a viagem em Pendências.',
+      'Viagem com ATF: envie a <b>listagem de passageiros</b> até 48 h antes da saída.',
+      'Cancelamento até 2 h antes da saída.',
+    ],
+    prazos: 'Pedido: 36 h (Nova Lima) / 72 h (fora) antes · Listagem: até 48 h antes · Cancelar: até 2 h antes.',
+    aviso: true,
+  },
+  pedagogia: {
+    passos: [
+      'Veja em <b>Pendências</b> ou <b>Validações</b> as propostas do seu setor.',
+      'Abra a solicitação e leia o documento (se não abrir, use "Abrir em nova aba").',
+      'Dê o parecer: <b>Aceitar</b>, <b>Pedir correções</b> ou <b>Rejeitar</b> (com comentário).',
+      'Setor errado: <b>Encaminhar</b>, com o motivo.',
+      'Série recorrente: analise a primeira data; o parecer vale para todas.',
+    ],
+    prazos: 'Aceitar só proposta enviada e em análise. Correções e rejeição exigem comentário.',
+  },
+  cooperativa: {
+    passos: [
+      'Pedidos chegam no <b>sino</b> e em <b>Pendências</b>.',
+      'Baixe a listagem dos seus veículos (PDF, Excel ou arquivo).',
+      'Emita a ATF e clique em <b>Aprovar e emitir ATF</b>.',
+      'Pedido PCD: informe veículo e motorista e <b>Confirme</b>.',
+      'Não pode atender: <b>Reprovar</b>/<b>Recusar</b>, com o motivo.',
+      'Acompanhe o KM em <b>KM</b>.',
+    ],
+    prazos: 'O aceite vale só para os seus veículos da viagem.',
+  },
+};
+let ajudaFaq = null;
+let ajudaDicas = {};
+let ajudaAba = 'perguntas';
+let ajudaSoTela = true;
+let ajudaPerfilAdmin = 'escola';
+
+function ajudaPerfilAtual() {
+  return AJUDA_PERFIL_POR_ROLE[currentUser?.role] || null;
+}
+function ajudaPodeEditar() {
+  return currentUser?.role === 'admin' || (currentUser?.role === 'operacional' && canEditScreen('ajuda'));
+}
+function ajudaTelaAtual() {
+  return (document.querySelector('.active-screen')?.id || '').replace('screen-', '');
+}
+async function carregarAjuda(forcar = false) {
+  if (ajudaFaq && !forcar) return;
+  ajudaDicas = Object.fromEntries(Object.entries(AJUDA_DICAS_PADRAO).map(([k, v]) => [k, { ...v }]));
+  if (!sb) { ajudaFaq = AJUDA_FAQ_PADRAO.map((f, i) => ({ id: 'faq' + i, ativa: true, ...f })); return; }
+  const [faq, dicas] = await Promise.all([
+    sb.from('ajuda_faq').select('*').order('ordem').order('created_at'),
+    sb.from('ajuda_dicas').select('*'),
+  ]);
+  ajudaFaq = faq.error ? AJUDA_FAQ_PADRAO.map((f, i) => ({ id: 'faq' + i, ativa: true, ...f })) : (faq.data || []);
+  (dicas.data || []).forEach((d) => { ajudaDicas[d.chave] = { titulo: d.titulo, texto: d.texto }; });
+}
+function dicaTexto(chave) { return (ajudaDicas[chave] || AJUDA_DICAS_PADRAO[chave] || {}).texto || ''; }
+// Ícone ⓘ com a explicação ao passar o mouse ou tocar.
+function dicaHtml(chave) {
+  const t = dicaTexto(chave);
+  return t ? `<span class="dica-i" tabindex="0" data-dica="${chave}" onclick="event.stopPropagation()">ⓘ<span class="dica-bubble">${escapeHtml(t)}</span></span>` : '';
+}
+
+async function abrirAjuda() {
+  await carregarAjuda();
+  const painel = document.getElementById('ajudaPainel');
+  if (!painel) return;
+  if (!ajudaPerfilAtual()) ajudaPerfilAdmin = ajudaPerfilAdmin || 'escola';
+  ajudaSoTela = true;
+  const busca = document.getElementById('ajudaBusca'); if (busca) busca.value = '';
+  document.getElementById('ajudaFormDuvida')?.classList.add('hidden');
+  painel.classList.remove('hidden');
+  renderAjuda();
+}
+function fecharAjuda() { document.getElementById('ajudaPainel')?.classList.add('hidden'); }
+function trocarAbaAjuda(aba) { ajudaAba = aba; renderAjuda(); }
+function trocarFiltroTelaAjuda(soTela) { ajudaSoTela = soTela; renderAjuda(); }
+
+function renderAjuda() {
+  const perfil = ajudaPerfilAtual() || ajudaPerfilAdmin;
+  const tela = ajudaTelaAtual();
+  const titulo = document.getElementById('ajudaTitulo');
+  if (titulo) titulo.textContent = `Ajuda — ${AJUDA_PERFIL_LABEL[perfil] || ''}`;
+  const seletor = document.getElementById('ajudaPerfilAdmin');
+  if (seletor) { seletor.classList.toggle('hidden', !!ajudaPerfilAtual()); seletor.value = perfil; }
+  document.querySelectorAll('[data-ajuda-aba]').forEach((b) => {
+    const ativa = b.dataset.ajudaAba === ajudaAba;
+    b.classList.toggle('border-emerald-600', ativa); b.classList.toggle('text-emerald-700', ativa);
+    b.classList.toggle('border-transparent', !ativa); b.classList.toggle('text-slate-500', !ativa);
+  });
+  document.getElementById('ajudaAbaPerguntas')?.classList.toggle('hidden', ajudaAba !== 'perguntas');
+  document.getElementById('ajudaAbaGuia')?.classList.toggle('hidden', ajudaAba !== 'guia');
+  const contato = document.getElementById('ajudaContato');
+  if (contato) contato.textContent = appSettings.email_copia_setor || appSettings.remetente_email || '';
+
+  if (ajudaAba === 'guia') { renderAjudaGuia(perfil); return; }
+  const termo = (document.getElementById('ajudaBusca')?.value || '').trim().toLocaleLowerCase('pt-BR');
+  const doPerfil = (ajudaFaq || []).filter((f) => f.ativa !== false && (f.perfis || []).includes(perfil));
+  const temDaTela = doPerfil.some((f) => f.tela === tela);
+  const soTela = ajudaSoTela && temDaTela && !termo;
+  const chips = document.getElementById('ajudaChips');
+  if (chips) chips.innerHTML = temDaTela
+    ? `<button onclick="trocarFiltroTelaAjuda(true)" class="rounded-full px-2 py-1 ${soTela ? 'bg-emerald-600 text-white' : 'border text-slate-600'}">Nesta tela: ${escapeHtml(AJUDA_TELAS[tela] || tela)}</button><button onclick="trocarFiltroTelaAjuda(false)" class="rounded-full px-2 py-1 ${!soTela ? 'bg-emerald-600 text-white' : 'border text-slate-600'}">Todas as perguntas</button>`
+    : '<span class="rounded-full bg-emerald-600 px-2 py-1 text-white">Todas as perguntas</span>';
+  const lista = doPerfil.filter((f) => (!soTela || f.tela === tela)
+    && (!termo || `${f.pergunta} ${f.resposta} ${f.onde_clicar || ''}`.toLocaleLowerCase('pt-BR').includes(termo)));
+  const box = document.getElementById('ajudaLista');
+  if (!box) return;
+  box.innerHTML = lista.length ? lista.map((f) => `<details class="rounded-lg border bg-white group">
+      <summary class="cursor-pointer list-none px-3 py-2 font-semibold text-sm flex justify-between gap-2"><span>${escapeHtml(f.pergunta)}</span><span class="text-slate-400 group-open:hidden">+</span><span class="text-slate-400 hidden group-open:inline">−</span></summary>
+      <div class="px-3 pb-3 text-xs text-slate-700 space-y-1">
+        <p>${escapeHtml(f.resposta)}</p>
+        ${f.onde_clicar ? `<p class="text-slate-500"><b>Onde clicar:</b> ${escapeHtml(f.onde_clicar)}</p>` : ''}
+        ${f.video_url ? `<a href="${escapeHtml(f.video_url)}" target="_blank" rel="noopener" class="font-semibold text-blue-700">▶ Ver vídeo</a>` : ''}
+      </div></details>`).join('')
+    : '<p class="rounded-lg bg-slate-50 p-4 text-center text-xs text-slate-500">Nenhuma pergunta encontrada. Use "Enviar minha dúvida ao setor".</p>';
+}
+
+function renderAjudaGuia(perfil) {
+  const g = AJUDA_GUIA[perfil];
+  const box = document.getElementById('ajudaAbaGuia');
+  if (!box || !g) return;
+  box.innerHTML = `<div class="flex items-center justify-between"><b class="text-sm">${AJUDA_PERFIL_LABEL[perfil]} — passo a passo</b><a href="assets/guia-rapido-${perfil}.pdf" target="_blank" rel="noopener" class="text-xs font-semibold text-blue-700">⬇ PDF</a></div>
+    <ol class="mt-2 list-decimal space-y-1 pl-4 text-xs text-slate-700">${g.passos.map((p) => `<li>${p}</li>`).join('')}</ol>
+    <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800"><b>Prazos e regras:</b> ${g.prazos}</div>
+    ${g.aviso ? `<p class="mt-2 text-xs text-slate-500">${escapeHtml(dicaTexto('solicitacao_aviso'))}</p>` : ''}`;
+}
+
+function abrirFormDuvidaAjuda() {
+  const f = document.getElementById('ajudaFormDuvida'); if (!f) return;
+  const perfil = ajudaPerfilAtual() || ajudaPerfilAdmin;
+  const info = document.getElementById('ajudaDuvidaInfo');
+  if (info) info.textContent = `Tela: ${AJUDA_TELAS[ajudaTelaAtual()] || ajudaTelaAtual() || '-'} · Perfil: ${AJUDA_PERFIL_LABEL[perfil] || ROLE_LABELS[currentUser?.role] || ''}`;
+  document.getElementById('ajudaDuvidaTexto').value = '';
+  f.classList.remove('hidden');
+  document.getElementById('ajudaDuvidaTexto').focus();
+}
+async function enviarDuvidaAjuda() {
+  const texto = (document.getElementById('ajudaDuvidaTexto')?.value || '').trim();
+  if (!texto) { toast('⚠️ Descreva sua dúvida.', true); return; }
+  const perfil = ajudaPerfilAtual() || currentUser?.role;
+  const tela = ajudaTelaAtual();
+  if (!sb) { toast('✅ Dúvida enviada ao setor (modo demo).'); document.getElementById('ajudaFormDuvida')?.classList.add('hidden'); return; }
+  const { error } = await sb.from('ajuda_duvidas').insert([{ autor: currentUser.id, perfil, tela, texto }]);
+  if (error) { toast('❌ Não foi possível enviar: ' + error.message, true); return; }
+  const quem = currentUser?.user_metadata?.full_name || currentUser?.email || '';
+  const unidade = currentUser?.schoolId ? schoolName(currentUser.schoolId) : (currentUser?.cooperativaId ? cooperativaById(currentUser.cooperativaId)?.name : '');
+  notificarGrupo('admins', null, 'Nova dúvida na Ajuda', `${AJUDA_PERFIL_LABEL[perfil] || perfil}${unidade ? ' · ' + unidade : ''} · ${AJUDA_TELAS[tela] || tela}: ${texto}`).catch(() => {});
+  // E-mail ao setor: Escola e Cooperativa (a Pedagogia não envia e-mail).
+  const setor = appSettings.email_copia_setor || appSettings.remetente_email || '';
+  if (setor && ['escola', 'agente_externo'].includes(currentUser?.role)) {
+    tentarEnviarEmailAutomatico(setor, `Bora Lá - dúvida de ${AJUDA_PERFIL_LABEL[perfil] || perfil}${unidade ? ' - ' + unidade : ''}`,
+      `${saudacaoEmailBrasilia()}\n\nDúvida enviada pela Ajuda do Bora Lá.\n\nDe: ${quem}${unidade ? ' (' + unidade + ')' : ''}\nTela: ${AJUDA_TELAS[tela] || tela}\n\n${texto}\n\nResponda pela tela Ajuda do Bora Lá.`).catch(() => {});
+  }
+  document.getElementById('ajudaFormDuvida')?.classList.add('hidden');
+  toast('✅ Dúvida enviada ao setor. A resposta chegará no sino.');
+}
+
+// ---- Admin / Co_Admin: tela Ajuda ----
+let ajudaAdminAba = 'faq';
+let ajudaDuvidas = [];
+let ajudaEditFaqId = null;
+async function openAjudaAdmin() {
+  await carregarAjuda(true);
+  if (sb) {
+    const { data } = await sb.from('ajuda_duvidas').select('*').order('created_at', { ascending: false });
+    ajudaDuvidas = data || [];
+  }
+  renderAjudaAdmin();
+}
+function trocarAbaAjudaAdmin(aba) { ajudaAdminAba = aba; renderAjudaAdmin(); }
+function renderAjudaAdmin() {
+  const pode = ajudaPodeEditar();
+  document.querySelectorAll('[data-ajuda-admin-aba]').forEach((b) => {
+    const ativa = b.dataset.ajudaAdminAba === ajudaAdminAba;
+    b.classList.toggle('border-emerald-600', ativa); b.classList.toggle('text-emerald-700', ativa);
+    b.classList.toggle('border-transparent', !ativa); b.classList.toggle('text-slate-500', !ativa);
+  });
+  ['faq', 'dicas', 'duvidas'].forEach((a) => document.getElementById('ajudaAdmin-' + a)?.classList.toggle('hidden', ajudaAdminAba !== a));
+  const novas = ajudaDuvidas.filter((d) => d.status === 'nova').length;
+  const badge = document.getElementById('ajudaDuvidasBadge');
+  if (badge) { badge.textContent = novas; badge.classList.toggle('hidden', !novas); }
+  document.getElementById('btnNovaFaq')?.classList.toggle('hidden', !pode);
+  if (ajudaAdminAba === 'faq') {
+    const fp = document.getElementById('ajudaAdminFiltroPerfil')?.value || '';
+    const ft = document.getElementById('ajudaAdminFiltroTela')?.value || '';
+    const termo = (document.getElementById('ajudaAdminBusca')?.value || '').trim().toLocaleLowerCase('pt-BR');
+    const selTela = document.getElementById('ajudaAdminFiltroTela');
+    if (selTela && selTela.options.length <= 1) selTela.innerHTML = '<option value="">Todas</option>' + Object.entries(AJUDA_TELAS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+    const lista = (ajudaFaq || []).filter((f) => (!fp || (f.perfis || []).includes(fp)) && (!ft || f.tela === ft)
+      && (!termo || `${f.pergunta} ${f.resposta}`.toLocaleLowerCase('pt-BR').includes(termo)));
+    document.getElementById('ajudaAdminFaqTabela').innerHTML = lista.length ? lista.map((f) => `<tr class="hover:bg-slate-50">
+      <td class="px-3 py-2 text-xs">${f.ordem ?? ''}</td>
+      <td class="px-3 py-2 text-xs">${(f.perfis || []).map((p) => AJUDA_PERFIL_LABEL[p] || p).join(', ')}</td>
+      <td class="px-3 py-2 text-xs">${escapeHtml(AJUDA_TELAS[f.tela] || (f.tela ? f.tela : 'Todas'))}</td>
+      <td class="px-3 py-2 text-sm">${escapeHtml(f.pergunta)}<div class="text-xs text-slate-500">${escapeHtml(f.resposta)}</div></td>
+      <td class="px-3 py-2 text-center">${f.ativa !== false ? '✅' : '—'}</td>
+      <td class="px-3 py-2 text-right text-xs whitespace-nowrap">${pode ? `<button onclick="editarFaqAjuda('${f.id}')" class="text-emerald-700 hover:text-emerald-900">Editar</button> <button onclick="moverFaqAjuda('${f.id}',-1)" class="ml-1 text-slate-500">↑</button><button onclick="moverFaqAjuda('${f.id}',1)" class="text-slate-500">↓</button>` : ''}</td></tr>`).join('')
+      : '<tr><td colspan="6" class="py-6 text-center text-sm text-slate-500">Nenhuma pergunta.</td></tr>';
+  }
+  if (ajudaAdminAba === 'dicas') {
+    document.getElementById('ajudaAdminDicasLista').innerHTML = Object.keys(AJUDA_DICAS_PADRAO).map((k) => `<div class="rounded-lg border p-3">
+      <div class="text-xs font-semibold text-slate-600">${escapeHtml((ajudaDicas[k] || AJUDA_DICAS_PADRAO[k]).titulo)}</div>
+      <textarea id="dica-${k}" rows="2" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm" ${pode ? '' : 'disabled'}>${escapeHtml(dicaTexto(k))}</textarea>
+      ${pode ? `<div class="text-right"><button onclick="salvarDicaAjuda('${k}')" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white">Salvar</button></div>` : ''}</div>`).join('');
+  }
+  if (ajudaAdminAba === 'duvidas') {
+    const porTela = {};
+    ajudaDuvidas.forEach((d) => { const k = AJUDA_TELAS[d.tela] || d.tela || '-'; porTela[k] = (porTela[k] || 0) + 1; });
+    document.getElementById('ajudaAdminDuvidasResumo').innerHTML = Object.keys(porTela).length
+      ? 'Dúvidas por tela: ' + Object.entries(porTela).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="ml-1 rounded-full border bg-white px-2 py-0.5">${escapeHtml(k)}: <b>${n}</b></span>`).join('') : '';
+    const mostrarArq = !!document.getElementById('ajudaMostrarArquivadas')?.checked;
+    const lista = ajudaDuvidas.filter((d) => mostrarArq || d.status !== 'arquivada');
+    document.getElementById('ajudaAdminDuvidasLista').innerHTML = lista.length ? lista.map((d) => {
+      const autor = profilesById[d.autor] || allProfiles.find((p) => p.id === d.autor) || {};
+      const nome = autor.full_name || autor.email || 'Usuário';
+      const quando = d.created_at ? new Date(d.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+      const st = { nova: '<span class="rounded-full bg-red-100 px-2 py-0.5 text-red-700">Nova</span>', respondida: '<span class="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700">Respondida</span>', arquivada: '<span class="rounded-full bg-slate-100 px-2 py-0.5 text-slate-500">Arquivada</span>' }[d.status] || '';
+      return `<div class="rounded-lg border p-3 text-sm">
+        <div class="flex flex-wrap justify-between gap-2 text-xs"><span><b>${escapeHtml(nome)}</b> · ${escapeHtml(AJUDA_PERFIL_LABEL[d.perfil] || d.perfil || '')}</span><span class="text-slate-500">${quando} · ${escapeHtml(AJUDA_TELAS[d.tela] || d.tela || '-')} ${st}</span></div>
+        <p class="mt-1">${escapeHtml(d.texto)}</p>
+        ${d.resposta ? `<p class="mt-1 rounded bg-emerald-50 px-2 py-1 text-xs text-emerald-900"><b>Resposta:</b> ${escapeHtml(d.resposta)}</p>` : ''}
+        ${ajudaPodeEditar() && d.status === 'nova' ? `<textarea id="resp-${d.id}" rows="2" class="mt-2 w-full rounded-lg border px-3 py-2 text-xs" placeholder="Resposta (vai para o sino de quem perguntou)"></textarea>
+        <div class="mt-1 flex flex-wrap gap-2 text-xs"><button onclick="responderDuvidaAjuda('${d.id}', false)" class="rounded bg-emerald-600 px-2 py-1 text-white">Responder</button><button onclick="responderDuvidaAjuda('${d.id}', true)" class="rounded border px-2 py-1">Responder e criar pergunta no FAQ</button><button onclick="arquivarDuvidaAjuda('${d.id}')" class="rounded border px-2 py-1 text-slate-500">Arquivar</button></div>` : ''}
+      </div>`;
+    }).join('') : '<p class="rounded-lg bg-slate-50 p-4 text-center text-sm text-slate-500">Nenhuma dúvida recebida.</p>';
+  }
+}
+
+function editarFaqAjuda(id) {
+  ajudaEditFaqId = id || null;
+  const f = id ? (ajudaFaq || []).find((x) => x.id === id) : null;
+  const sel = document.getElementById('faqTela');
+  if (sel) sel.innerHTML = '<option value="">Todas as telas</option>' + Object.entries(AJUDA_TELAS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+  ['escola', 'pedagogia', 'cooperativa'].forEach((p) => { const c = document.getElementById('faqPerfil-' + p); if (c) c.checked = f ? (f.perfis || []).includes(p) : false; });
+  document.getElementById('faqTela').value = f?.tela || '';
+  document.getElementById('faqPergunta').value = f?.pergunta || '';
+  document.getElementById('faqResposta').value = f?.resposta || '';
+  document.getElementById('faqOndeClicar').value = f?.onde_clicar || '';
+  document.getElementById('faqVideo').value = f?.video_url || '';
+  document.getElementById('faqAtiva').checked = f ? f.ativa !== false : true;
+  document.getElementById('faqModalTitulo').textContent = f ? 'Editar pergunta' : 'Nova pergunta';
+  document.getElementById('faqModal').classList.remove('hidden');
+}
+function fecharFaqAjuda() { document.getElementById('faqModal')?.classList.add('hidden'); ajudaEditFaqId = null; }
+async function salvarFaqAjuda(base = null) {
+  if (!ajudaPodeEditar()) return false;
+  const reg = base || {
+    perfis: ['escola', 'pedagogia', 'cooperativa'].filter((p) => document.getElementById('faqPerfil-' + p)?.checked),
+    tela: document.getElementById('faqTela').value || null,
+    pergunta: document.getElementById('faqPergunta').value.trim(),
+    resposta: document.getElementById('faqResposta').value.trim(),
+    onde_clicar: document.getElementById('faqOndeClicar').value.trim() || null,
+    video_url: document.getElementById('faqVideo').value.trim() || null,
+    ativa: document.getElementById('faqAtiva').checked,
+  };
+  if (!reg.perfis.length || !reg.pergunta || !reg.resposta) { toast('⚠️ Informe perfil, pergunta e resposta.', true); return false; }
+  const atual = !base && ajudaEditFaqId ? (ajudaFaq || []).find((x) => x.id === ajudaEditFaqId) : null;
+  if (!atual) reg.ordem = Math.max(0, ...(ajudaFaq || []).map((x) => x.ordem || 0)) + 1;
+  if (sb) {
+    const q = atual ? sb.from('ajuda_faq').update({ ...reg, updated_at: new Date().toISOString() }).eq('id', atual.id) : sb.from('ajuda_faq').insert([reg]);
+    const { error } = await q;
+    if (error) { toast('❌ ' + error.message, true); return false; }
+  } else if (atual) Object.assign(atual, reg); else ajudaFaq.push({ id: 'faq' + Date.now(), ...reg });
+  if (!base) fecharFaqAjuda();
+  await carregarAjuda(true); renderAjudaAdmin(); toast('✅ Pergunta salva.');
+  return true;
+}
+async function moverFaqAjuda(id, dir) {
+  const lista = (ajudaFaq || []).slice().sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+  const i = lista.findIndex((x) => x.id === id), j = i + dir;
+  if (i < 0 || j < 0 || j >= lista.length) return;
+  const a = lista[i], b = lista[j];
+  const oa = a.ordem || i + 1, ob = b.ordem || j + 1;
+  if (sb) {
+    const r1 = await sb.from('ajuda_faq').update({ ordem: ob }).eq('id', a.id);
+    const r2 = await sb.from('ajuda_faq').update({ ordem: oa === ob ? ob + dir : oa }).eq('id', b.id);
+    if (r1.error || r2.error) { toast('❌ ' + (r1.error || r2.error).message, true); return; }
+  } else { a.ordem = ob; b.ordem = oa; }
+  await carregarAjuda(true); renderAjudaAdmin();
+}
+async function salvarDicaAjuda(chave) {
+  const texto = (document.getElementById('dica-' + chave)?.value || '').trim();
+  if (!texto) { toast('⚠️ Informe o texto da dica.', true); return; }
+  const titulo = (ajudaDicas[chave] || AJUDA_DICAS_PADRAO[chave]).titulo;
+  if (sb) {
+    const { error } = await sb.from('ajuda_dicas').upsert({ chave, titulo, texto, updated_at: new Date().toISOString() });
+    if (error) { toast('❌ ' + error.message, true); return; }
+  }
+  ajudaDicas[chave] = { titulo, texto };
+  toast('✅ Dica salva.');
+}
+async function responderDuvidaAjuda(id, criarFaq) {
+  const d = ajudaDuvidas.find((x) => x.id === id); if (!d) return;
+  const resposta = (document.getElementById('resp-' + id)?.value || '').trim();
+  if (!resposta) { toast('⚠️ Escreva a resposta.', true); return; }
+  if (sb) {
+    const { error } = await sb.from('ajuda_duvidas').update({ status: 'respondida', resposta, respondida_por: currentUser.id, respondida_em: new Date().toISOString() }).eq('id', id);
+    if (error) { toast('❌ ' + error.message, true); return; }
+    if (d.autor) notificarGrupo('usuario', null, 'Resposta à sua dúvida', `Sua dúvida: "${d.texto}". Resposta: ${resposta}`, d.autor).catch(() => {});
+  }
+  if (criarFaq) {
+    const perfil = ['escola', 'pedagogia', 'cooperativa'].includes(d.perfil) ? d.perfil : 'escola';
+    await salvarFaqAjuda({ perfis: [perfil], tela: d.tela || null, pergunta: d.texto, resposta, onde_clicar: null, video_url: null, ativa: true });
+  }
+  await openAjudaAdmin(); toast('✅ Resposta enviada.');
+}
+async function arquivarDuvidaAjuda(id) {
+  if (sb) { const { error } = await sb.from('ajuda_duvidas').update({ status: 'arquivada' }).eq('id', id); if (error) { toast('❌ ' + error.message, true); return; } }
+  await openAjudaAdmin();
+}
+
+// ---- Listagem: pedido de correção ao Admin (Escola) e tratamento (Admin) ----
+async function pedirCorrecaoListagem(did) {
+  const id = listagemVeiculoTargetId;
+  const trip = agenda.find((a) => a.id === id);
+  if (!trip) return;
+  const resp = await confirmarRespostaCoop({ titulo: `Pedir correção — veículo ${lvPlaca(did)}`, info: 'O Admin recebe o pedido e, se aceitar, libera a listagem deste veículo para você corrigir e reenviar dentro do prazo.', tom: 'amber', botao: 'Enviar pedido', pedirMotivo: true, rotuloMotivo: 'O que precisa ser corrigido? *', placeholderMotivo: 'Ex.: incluir 1 aluno; documento da Ana está errado' });
+  if (!resp) return;
+  if (sb) {
+    const { error } = await sb.rpc('school_request_listagem_correction', { p_excursion_id: id, p_driver_id: did, p_motivo: resp.motivo });
+    if (error) { toast('❌ ' + error.message, true); return; }
+  } else {
+    const mapa = lvGarantir(trip);
+    mapa[did] = { ...mapa[did], correcao_pedida_em: new Date().toISOString(), correcao_motivo: resp.motivo, correcao_por: currentUser.id };
+    trip.listagem_veiculos = mapa; saveDemoData();
+  }
+  await loadAgenda();
+  await openListagemVeiculoModal(id);
+  toast('✅ Pedido enviado ao Admin.');
+}
+// Admin: libera (devolve) a listagem do veículo para a escola corrigir, com o pedido como motivo.
+async function liberarCorrecaoListagem(id, did) {
+  const trip = agenda.find((a) => a.id === id);
+  if (!trip || !ehAgendaAdmin()) return;
+  const e = lvMapa(trip)[did] || {};
+  if (lvAtf(trip, did) === 'aceita' && !window.confirm(`A ATF do veículo ${lvPlaca(did)} já foi emitida. Liberar mesmo assim? A ATF deste veículo precisará ser emitida de novo.`)) return;
+  const motivo = e.correcao_motivo || 'Correção solicitada pela unidade.';
+  const agora = new Date().toISOString();
+  const mapa = lvGarantir(trip);
+  mapa[did] = { ...mapa[did], status: 'rejeitada', motivo, parecer_em: agora, parecer_por: currentUser.id, coop_enviado_em: null, atf: null, atf_em: null, correcao_pedida_em: null, correcao_motivo: null, correcao_por: null };
+  const comentario = (trip.driver_ids || []).filter((d) => mapa[d]?.status === 'rejeitada').map((d) => `${lvPlaca(d)}: ${mapa[d].motivo || '-'}`).join(' | ');
+  const patch = { listagem_veiculos: mapa, listagem_status: 'rejeitada', listagem_parecer_por: currentUser.id, listagem_parecer_em: agora, listagem_parecer_comentario: comentario };
+  if (trip.atf_status === 'emitida') patch.atf_status = 'aguardando';
+  if (!await updateExcursion(id, patch)) return;
+  await logDocHistory(id, 'rejeitado', null, null, `Veículo ${lvPlaca(did)} liberado para correção: ${motivo}`, 'listagem');
+  notifyRequester(trip, 'Listagem liberada para correção', `A listagem do veículo ${lvPlaca(did)} da viagem para ${trip.destination || '-'} foi liberada para correção. Corrija e reenvie dentro do prazo.`).catch(() => {});
+  await loadAgenda(); await loadNotifications(); renderPendencias();
+  toast(`✅ Listagem do veículo ${lvPlaca(did)} liberada para correção.`);
+}
+async function recusarPedidoCorrecaoListagem(id, did) {
+  const trip = agenda.find((a) => a.id === id);
+  if (!trip || !ehAgendaAdmin()) return;
+  const resp = await confirmarRespostaCoop({ titulo: `Recusar pedido — veículo ${lvPlaca(did)}`, tom: 'red', botao: 'Recusar pedido', pedirMotivo: true });
+  if (!resp) return;
+  const mapa = lvGarantir(trip);
+  mapa[did] = { ...mapa[did], correcao_pedida_em: null, correcao_motivo: null, correcao_por: null, correcao_recusada_em: new Date().toISOString(), correcao_recusa_motivo: resp.motivo };
+  if (!await updateExcursion(id, { listagem_veiculos: mapa })) return;
+  notifyRequester(trip, 'Pedido de correção da listagem recusado', `O pedido de correção da listagem do veículo ${lvPlaca(did)} (viagem para ${trip.destination || '-'}) foi recusado: ${resp.motivo}`).catch(() => {});
+  await loadAgenda(); renderPendencias();
+  toast('ℹ️ Pedido recusado. A unidade foi avisada.');
+}
 
 // ============ TOAST ============
 function toast(msg, isError = false) {
