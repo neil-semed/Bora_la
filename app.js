@@ -9460,6 +9460,57 @@ function exportExcel() { exportEscalaExcel(); }
 
 const AJUDA_FAQ_PADRAO = [{"perfis": ["escola"], "tela": "solicitacao", "pergunta": "Como faço um pedido de viagem?", "resposta": "Menu Nova solicitação › preencha os passos › Enviar solicitação.", "onde_clicar": "", "ordem": 1}, {"perfis": ["escola"], "tela": "solicitacao", "pergunta": "Com quanto tempo de antecedência peço a viagem?", "resposta": "Dentro de Nova Lima: mínimo 36 h antes da saída. Fora de Nova Lima: mínimo 72 h.", "onde_clicar": "", "ordem": 2}, {"perfis": ["escola"], "tela": "solicitacao", "pergunta": "Meu pedido garante a viagem?", "resposta": "Não. Depende de veículos e agenda disponíveis, informações corretas, validação pedagógica ou programação já definida.", "onde_clicar": "", "ordem": 3}, {"perfis": ["escola"], "tela": "pendencias", "pergunta": "Como envio a proposta pedagógica?", "resposta": "No próprio pedido ou depois. PDF ou Word, até 8 MB.", "onde_clicar": "Pendências › Enviar proposta", "ordem": 4}, {"perfis": ["escola"], "tela": "pendencias", "pergunta": "Minha proposta foi rejeitada. E agora?", "resposta": "A viagem não foi cancelada. Leia o motivo e envie uma nova proposta.", "onde_clicar": "Pendências › Enviar nova proposta", "ordem": 5}, {"perfis": ["escola"], "tela": "pendencias", "pergunta": "A Pedagogia pediu correções. O que faço?", "resposta": "Leia o comentário e reenvie a proposta corrigida.", "onde_clicar": "Pendências › Reenviar proposta", "ordem": 6}, {"perfis": ["escola"], "tela": "pendencias", "pergunta": "Quando envio a listagem de passageiros?", "resposta": "Após a aprovação, nas viagens que pedem ATF. Até 48 h antes da saída.", "onde_clicar": "Pendências › Preencher listagem", "ordem": 7}, {"perfis": ["escola"], "tela": "agenda", "pergunta": "Por que não consigo enviar a listagem?", "resposta": "O prazo de 48 h antes da saída acabou. Fale com o Admin.", "onde_clicar": "", "ordem": 8}, {"perfis": ["escola"], "tela": "agenda", "pergunta": "Preciso corrigir a listagem já enviada.", "resposta": "Antes da ATF: peça a correção ao Admin. Depois da ATF, não é possível alterar.", "onde_clicar": "Listagem › Pedir correção ao Admin", "ordem": 9}, {"perfis": ["escola"], "tela": "agenda", "pergunta": "Posso trocar passageiros entre os veículos?", "resposta": "Não. Os passageiros de cada veículo não podem ser trocados. A responsabilidade é da unidade.", "onde_clicar": "", "ordem": 10}, {"perfis": ["escola"], "tela": "pendencias", "pergunta": "Como confirmo a viagem?", "resposta": "Após a aprovação do Admin, confirme a viagem.", "onde_clicar": "Pendências › Confirmar", "ordem": 11}, {"perfis": ["escola"], "tela": "agenda", "pergunta": "Até quando posso cancelar?", "resposta": "Até 2 h antes da saída, informando o motivo.", "onde_clicar": "Agenda ou Validações › Cancelar", "ordem": 12}, {"perfis": ["escola"], "tela": "solicitacao", "pergunta": "Viagem recorrente: envio proposta para cada data?", "resposta": "Não. Uma proposta vale para todas as datas.", "onde_clicar": "", "ordem": 13}, {"perfis": ["escola"], "tela": "solicitacao", "pergunta": "O que preencho para aluno PCD?", "resposta": "Nome e documento do aluno e do apoio.", "onde_clicar": "", "ordem": 14}, {"perfis": ["pedagogia"], "tela": "pendencias", "pergunta": "Onde vejo o que analisar?", "resposta": "Em Pendências e Validações, com as solicitações do seu setor.", "onde_clicar": "", "ordem": 15}, {"perfis": ["pedagogia"], "tela": "validacoes", "pergunta": "Aceitei e a solicitação sumiu. Está certo?", "resposta": "Sim. Ela segue para a decisão do Admin.", "onde_clicar": "", "ordem": 16}, {"perfis": ["pedagogia"], "tela": "validacoes", "pergunta": "Por que não consigo aceitar?", "resposta": "Só dá para aceitar proposta enviada e em análise. Sem documento, peça correções.", "onde_clicar": "", "ordem": 17}, {"perfis": ["pedagogia"], "tela": "validacoes", "pergunta": "O documento não abre.", "resposta": "Clique em \"Abrir documento em nova aba\".", "onde_clicar": "", "ordem": 18}, {"perfis": ["pedagogia"], "tela": "validacoes", "pergunta": "Correções ou rejeitar?", "resposta": "Correções: a escola ajusta e reenvia. Rejeitar: a escola envia nova proposta.", "onde_clicar": "", "ordem": 19}, {"perfis": ["pedagogia"], "tela": "validacoes", "pergunta": "A solicitação caiu no setor errado.", "resposta": "Escolha o setor, informe o motivo e confirme.", "onde_clicar": "Janela de validação › Encaminhar", "ordem": 20}, {"perfis": ["pedagogia"], "tela": "pendencias", "pergunta": "O que é \"Sem setor responsável\"?", "resposta": "Pedido sem setor definido. Escolha o setor e encaminhe.", "onde_clicar": "Pendências › Encaminhar", "ordem": 21}, {"perfis": ["pedagogia"], "tela": "validacoes", "pergunta": "Série recorrente: analiso cada data?", "resposta": "Não. Analise a primeira; o parecer vale para todas.", "onde_clicar": "", "ordem": 22}, {"perfis": ["pedagogia"], "tela": "validacoes", "pergunta": "Apareceu \"nova versão ou outro parecer\".", "resposta": "A proposta mudou. Feche, recarregue e analise de novo.", "onde_clicar": "", "ordem": 23}, {"perfis": ["cooperativa"], "tela": "pendenciascoop", "pergunta": "Como sei que chegou um pedido?", "resposta": "Pelo aviso no sino e pelo card em Pendências.", "onde_clicar": "", "ordem": 24}, {"perfis": ["cooperativa"], "tela": "pendenciascoop", "pergunta": "Como emito a ATF?", "resposta": "Abra o card e confirme a emissão.", "onde_clicar": "Card › Aprovar e emitir ATF › Confirmar emissão", "ordem": 25}, {"perfis": ["cooperativa"], "tela": "pendenciascoop", "pergunta": "Aprovei e a ATF não aparece emitida.", "resposta": "Há outra cooperativa na viagem. A ATF fica completa quando todas confirmarem.", "onde_clicar": "", "ordem": 26}, {"perfis": ["cooperativa"], "tela": "pendenciascoop", "pergunta": "Como baixo a listagem?", "resposta": "No card: PDF, Excel ou Abrir listagem. Só aparecem os seus veículos.", "onde_clicar": "", "ordem": 27}, {"perfis": ["cooperativa"], "tela": "pendenciascoop", "pergunta": "Como recuso um pedido?", "resposta": "Informe o motivo da recusa.", "onde_clicar": "Card › Reprovar (ATF) ou Recusar (PCD)", "ordem": 28}, {"perfis": ["cooperativa"], "tela": "pendenciascoop", "pergunta": "Por que recebi pedido PCD?", "resposta": "A SEMED enviou para a sua cooperativa, que opera PCD.", "onde_clicar": "", "ordem": 29}, {"perfis": ["cooperativa"], "tela": "km", "pergunta": "Onde vejo o KM dos meus veículos?", "resposta": "Na tela KM, com filtros de motorista, ano e mês.", "onde_clicar": "", "ordem": 30}];
 const AJUDA_DICAS_PADRAO = {"listagem_prazo": {"titulo": "Prazo da listagem (cards e agenda)", "texto": "A listagem para ATF deve ser enviada até 48 h antes da saída. Depois disso, fale com o Admin."}, "listagem_aviso": {"titulo": "Aviso na janela da listagem", "texto": "Depois de enviada, a listagem não pode ser alterada. Após a emissão da ATF, não é possível editar nem incluir passageiros. Não pode haver troca de passageiros entre os veículos escalados — responsabilidade da unidade solicitante."}, "solicitacao_antecedencia": {"titulo": "Data — Nova solicitação", "texto": "Pedido com no mínimo 36 h de antecedência (Nova Lima) ou 72 h (fora de Nova Lima)."}, "solicitacao_aviso": {"titulo": "Aviso no topo da Nova solicitação (Escola)", "texto": "O atendimento das solicitações depende da disponibilidade de veículos e de espaço na agenda, da exatidão das informações, da validação pedagógica ou de programação preestabelecida."}, "proposta_rejeitada": {"titulo": "Proposta rejeitada (Escola)", "texto": "A rejeição é da proposta, não da viagem. Envie uma nova proposta."}, "proposta_correcoes": {"titulo": "Correções na proposta (Escola)", "texto": "Leia o comentário e reenvie a proposta corrigida."}, "cancelamento": {"titulo": "Botão Cancelar (Escola)", "texto": "Cancelamento até 2 h antes da saída."}, "parecer_aceite": {"titulo": "Parecer — janela de validação (Pedagogia)", "texto": "Só é possível aceitar proposta enviada e em análise. Sem documento, peça correções."}, "coop_atf": {"titulo": "Botão Aprovar e emitir ATF (Cooperativa)", "texto": "O aceite vale só para os seus veículos. A ATF da viagem fica completa quando todas as cooperativas confirmarem."}, "coop_pcd": {"titulo": "Transporte PCD (Cooperativa)", "texto": "O pedido PCD vai só para a cooperativa escolhida pela SEMED. Informe veículo e motorista, se possível."}};
+// Vídeos de treinamento (arquivos em assets/videos). Para incluir um vídeo novo, acrescente-o aqui.
+const AJUDA_VIDEOS = {
+  escola: [
+    { arquivo: 'E1_fazer_pedido_de_viagem.mp4', titulo: 'Fazer um pedido de viagem', duracao: '1:31' },
+    { arquivo: 'E2_enviar_proposta_pedagogica.mp4', titulo: 'Enviar a proposta pedagógica', duracao: '0:42' },
+    { arquivo: 'E3_confirmar_viagens.mp4', titulo: 'Confirmar viagens', duracao: '0:46' },
+    { arquivo: 'E4_preencher_enviar_listagem.mp4', titulo: 'Preencher e enviar a listagem', duracao: '0:58' },
+    { arquivo: 'E5_cancelar_viagem.mp4', titulo: 'Cancelar uma viagem', duracao: '0:33' },
+  ],
+  pedagogia: [],
+  cooperativa: [],
+};
+// Pergunta do FAQ padrão → vídeo (o Admin pode trocar ou remover o link no editor do FAQ).
+const AJUDA_VIDEO_DA_PERGUNTA = {
+  'Como faço um pedido de viagem?': 'E1_fazer_pedido_de_viagem.mp4',
+  'Como envio a proposta pedagógica?': 'E2_enviar_proposta_pedagogica.mp4',
+  'Minha proposta foi rejeitada. E agora?': 'E2_enviar_proposta_pedagogica.mp4',
+  'A Pedagogia pediu correções. O que faço?': 'E2_enviar_proposta_pedagogica.mp4',
+  'Como confirmo a viagem?': 'E3_confirmar_viagens.mp4',
+  'Quando envio a listagem de passageiros?': 'E4_preencher_enviar_listagem.mp4',
+  'Preciso corrigir a listagem já enviada.': 'E4_preencher_enviar_listagem.mp4',
+  'Até quando posso cancelar?': 'E5_cancelar_viagem.mp4',
+};
+AJUDA_FAQ_PADRAO.forEach((f) => { const v = AJUDA_VIDEO_DA_PERGUNTA[f.pergunta]; if (v && !f.video_url) f.video_url = 'assets/videos/' + v; });
+function videoAjudaInfo(url) {
+  const arq = String(url || '').split('/').pop();
+  return Object.values(AJUDA_VIDEOS).flat().find((v) => v.arquivo === arq) || null;
+}
+function linkVideoAjuda(url, titulo) {
+  if (!url) return '';
+  if (!/\.mp4(\?|$)/i.test(url)) return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="font-semibold text-blue-700">▶ Ver vídeo</a>`;
+  const info = videoAjudaInfo(url);
+  return `<button type="button" data-video="${escapeHtml(url)}" data-titulo="${escapeHtml(info?.titulo || titulo || 'Vídeo')}" onclick="abrirVideoAjuda(this.dataset.video, this.dataset.titulo)" class="font-semibold text-blue-700 hover:underline">▶ Ver vídeo${info?.duracao ? ` (${info.duracao})` : ''}</button>`;
+}
+function abrirVideoAjuda(url, titulo) {
+  const modal = document.getElementById('videoAjudaModal');
+  const player = document.getElementById('videoAjudaPlayer');
+  if (!modal || !player) { window.open(url, '_blank', 'noopener'); return; }
+  document.getElementById('videoAjudaTitulo').textContent = '▶ ' + (titulo || 'Vídeo');
+  player.src = url;
+  modal.classList.remove('hidden');
+  player.play().catch(() => {});
+}
+function fecharVideoAjuda() {
+  const player = document.getElementById('videoAjudaPlayer');
+  if (player) { player.pause(); player.removeAttribute('src'); player.load(); }
+  document.getElementById('videoAjudaModal')?.classList.add('hidden');
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !document.getElementById('videoAjudaModal')?.classList.contains('hidden')) fecharVideoAjuda();
+});
 
 // ============ AJUDA (fase 1): painel "?", guia rápido, dicas ⓘ, dúvidas ============
 const AJUDA_PERFIL_POR_ROLE = { escola: 'escola', pedagogia: 'pedagogia', agente_externo: 'cooperativa' };
@@ -9583,7 +9634,7 @@ function renderAjuda() {
       <div class="px-3 pb-3 text-xs text-slate-700 space-y-1">
         <p>${escapeHtml(f.resposta)}</p>
         ${f.onde_clicar ? `<p class="text-slate-500"><b>Onde clicar:</b> ${escapeHtml(f.onde_clicar)}</p>` : ''}
-        ${f.video_url ? `<a href="${escapeHtml(f.video_url)}" target="_blank" rel="noopener" class="font-semibold text-blue-700">▶ Ver vídeo</a>` : ''}
+        ${linkVideoAjuda(f.video_url, f.pergunta)}
       </div></details>`).join('')
     : '<p class="rounded-lg bg-slate-50 p-4 text-center text-xs text-slate-500">Nenhuma pergunta encontrada. Use "Enviar minha dúvida ao setor".</p>';
 }
@@ -9595,7 +9646,8 @@ function renderAjudaGuia(perfil) {
   box.innerHTML = `<div class="flex items-center justify-between"><b class="text-sm">${AJUDA_PERFIL_LABEL[perfil]} — passo a passo</b><a href="assets/guia-rapido-${perfil}.pdf" target="_blank" rel="noopener" class="text-xs font-semibold text-blue-700">⬇ PDF</a></div>
     <ol class="mt-2 list-decimal space-y-1 pl-4 text-xs text-slate-700">${g.passos.map((p) => `<li>${p}</li>`).join('')}</ol>
     <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800"><b>Prazos e regras:</b> ${g.prazos}</div>
-    ${g.aviso ? `<p class="mt-2 text-xs text-slate-500">${escapeHtml(dicaTexto('solicitacao_aviso'))}</p>` : ''}`;
+    ${g.aviso ? `<p class="mt-2 text-xs text-slate-500">${escapeHtml(dicaTexto('solicitacao_aviso'))}</p>` : ''}
+    ${(AJUDA_VIDEOS[perfil] || []).length ? `<div class="mt-3 rounded-lg border p-2"><b class="text-xs">🎬 Vídeos</b><ul class="mt-1 space-y-1 text-xs">${AJUDA_VIDEOS[perfil].map((v) => `<li><button type="button" data-video="assets/videos/${escapeHtml(v.arquivo)}" data-titulo="${escapeHtml(v.titulo)}" onclick="abrirVideoAjuda(this.dataset.video, this.dataset.titulo)" class="flex w-full justify-between gap-2 rounded px-1 py-0.5 text-left text-blue-700 hover:bg-slate-50"><span>▶ ${escapeHtml(v.titulo)}</span><span class="text-slate-400">${escapeHtml(v.duracao || '')}</span></button></li>`).join('')}</ul></div>` : ''}`;
 }
 
 function abrirFormDuvidaAjuda() {
