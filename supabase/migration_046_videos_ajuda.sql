@@ -12,6 +12,7 @@ update public.ajuda_faq f
     ('Quando envio a listagem de passageiros?',   'assets/videos/E4_preencher_enviar_listagem.mp4'),
     ('Preciso corrigir a listagem já enviada.',   'assets/videos/E4_preencher_enviar_listagem.mp4'),
     ('Até quando posso cancelar?',                'assets/videos/E5_cancelar_viagem.mp4'),
+    ('O que preencho para aluno PCD?',            'assets/videos/E6_pedir_transporte_pcd.mp4'),
     ('Onde vejo o que analisar?',                 'assets/videos/P1_encontrar_abrir_proposta.mp4'),
     ('O documento não abre.',                     'assets/videos/P1_encontrar_abrir_proposta.mp4'),
     ('Por que não consigo aceitar?',              'assets/videos/P2_dar_parecer.mp4'),
