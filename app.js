@@ -607,7 +607,7 @@ async function initLoginPage() {
   }
 
   if (!sb) {
-    document.getElementById('demoNotice').classList.remove('hidden');
+    if (!emModoTreino()) document.getElementById('demoNotice').classList.remove('hidden');
     // Se já existia uma sessão demo ativa (ex: usuário voltou pro index.html sem sair),
     // pula direto pra página do sistema em vez de pedir login de novo.
     if (sessionStorage.getItem('demoUser')) {
@@ -688,7 +688,28 @@ async function initAppPage() {
 }
 
 // ============ SUPABASE ============
+// Modo treinamento: dados fictícios só nesta aba do navegador; nada é gravado na base.
+function emModoTreino() {
+  try {
+    if (new URLSearchParams(window.location.search).get('treino') === '1') sessionStorage.setItem('bora_treino', '1');
+    return sessionStorage.getItem('bora_treino') === '1';
+  } catch (err) { return false; }
+}
+function entrarTreino(perfil) {
+  try { sessionStorage.setItem('bora_treino', '1'); sessionStorage.removeItem('demoUser'); sessionStorage.removeItem('demoData'); } catch (err) { /* segue */ }
+  sb = null;
+  const emails = { escola: 'escola@teste.com', pedagogia: 'pedagogia@teste.com', cooperativa: 'coop@teste.com' };
+  document.getElementById('loginEmail').value = emails[perfil] || emails.escola;
+  document.getElementById('loginPassword').value = 'treino';
+  handleLogin({ preventDefault() {} });
+}
+function sairTreino() {
+  try { ['bora_treino', 'demoUser', 'demoData'].forEach((k) => sessionStorage.removeItem(k)); } catch (err) { /* segue */ }
+  window.location.href = 'index.html';
+}
+
 function initSupabase() {
+  if (emModoTreino()) { sb = null; console.log('🎓 Modo treinamento - dados fictícios, nada é gravado'); return; }
   const url = localStorage.getItem('sb_url') || DEFAULT_SUPABASE_URL;
   const key = localStorage.getItem('sb_key') || DEFAULT_SUPABASE_ANON_KEY;
 
@@ -859,6 +880,7 @@ async function enterApp() {
   if (driverHeaderName) driverHeaderName.textContent = `Motorista: ${nomeUsuario}`;
 
   applyRoleUI(currentUser.role);
+  document.getElementById('faixaTreino')?.classList.toggle('hidden', !emModoTreino());
 
   // P2: setores/públicos já no login (trava de setor e encaminhamento valem em qualquer tela).
   await Promise.all([loadSchools(), loadVehicles(), loadDrivers(), loadProfiles(), loadCooperativas(), loadAppSettings(), loadValidationConfig(), carregarAjuda().catch(() => {})]);
@@ -973,6 +995,7 @@ async function logout() {
   }
   currentUser = null;
   sessionStorage.removeItem('demoUser');
+  if (emModoTreino()) { sairTreino(); return; }
   // Volta pra página de login separada (URL diferente, não é só trocar de div).
   window.location.href = 'index.html';
 }
@@ -3490,20 +3513,19 @@ function renderAgenda() {
       // A escola cancela até 2 h antes da saída (o Admin não tem essa trava).
       const viagemIniciada = a.status === 'in_transit' || foraPrazoCancelamento(a);
       const podeCancelar = a.situacao !== 'cancelada' && a.situacao !== 'reprovada' && a.status !== 'completed'
-        && (role === 'admin' || (role === 'escola' && a.school_id === currentUser.schoolId && !viagemIniciada));
+        && (isAgendaEditor || (role === 'escola' && a.school_id === currentUser.schoolId && !viagemIniciada));
 
-      let acoes = '<span class="text-slate-300 text-xs">—</span>';
+      // Marca de "sem ações" comparada por igualdade (os selos cinza de PCD/ATF não podem apagar os botões).
+      const SEM_ACOES_AGENDA = '<span class="text-slate-300 text-xs">—</span>';
+      let acoes = SEM_ACOES_AGENDA;
       if (role === 'escola' && a.school_id === currentUser.schoolId && (a.status === 'in_transit' || foraPrazoCancelamento(a)) && (a.trip_date || '') >= fmtDate(new Date()) && !['cancelada', 'reprovada'].includes(a.situacao) && a.status !== 'completed') {
         acoes = '<span class="text-xs italic text-slate-400">Cancelamento permitido até 2 h antes da saída.</span>';
       }
       // A atribuição é uma etapa operacional independente da decisão. Ela fica
       // disponível em qualquer solicitação ativa e só é publicada após aprovar.
       if (isAgendaEditor && a.situacao !== 'cancelada') {
-        const decisao = a.admin_decision === 'aprovada'
-          ? '<span class="text-xs font-semibold text-emerald-700 mr-2">✓ Aprovada</span>'
-          : `<button onclick="adminApprove('${a.id}')" class="text-emerald-600 hover:text-emerald-800 text-xs font-medium mr-3">✓ Aprovar</button>`;
-        acoes = `${decisao}<button onclick="openRejectModal('${a.id}')" class="text-red-600 hover:text-red-800 text-xs font-medium">Reprovar</button>`;
-        acoes += ` <button onclick="openAssignModal('${a.id}')" class="text-indigo-600 hover:text-indigo-800 text-xs font-medium ml-2">Atribuir motorista(s)</button>`;
+        // Destaques (Aprovar, Reprovar, Motorista(s)) como botões coloridos.
+        acoes = `<div class="mb-1 flex flex-wrap gap-1"><button onclick="adminApprove('${a.id}')" class="rounded bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-700">✓ Aprovar</button><button onclick="openRejectModal('${a.id}')" class="rounded bg-rose-600 px-2 py-1 text-xs font-semibold text-white hover:bg-rose-700">Reprovar</button><button onclick="openAssignModal('${a.id}')" class="rounded bg-blue-600 px-2 py-1 text-xs font-semibold text-white hover:bg-blue-700">Motorista(s)</button></div>`;
       } else if (a.status === 'pending' && role === 'pedagogia') {
         acoes = `<span class="text-xs text-blue-600" title="O parecer agora é dado na tela Validações">📋 Ver em Validações</span>`;
       } else if (a.status === 'pedagogy_approved' && isAgendaEditor) {
@@ -3520,10 +3542,10 @@ function renderAgenda() {
       }
       if (isAgendaEditor && (a.situacao === 'cancelada' || a.admin_decision === 'reprovada' || a.status === 'rejected')) {
         const reativar = `<button onclick="reactivateExcursion('${a.id}')" class="ml-2 rounded bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-200">↻ Reativar</button>`;
-        acoes = acoes.includes('text-slate-300') ? reativar : acoes + reativar;
+        acoes = acoes === SEM_ACOES_AGENDA ? reativar : acoes + reativar;
       }
       if (podeCancelar) {
-        let cancelBtn = `<button onclick="openCancelModal('${a.id}')" class="text-orange-600 hover:text-orange-800 text-xs font-medium ml-2">Cancelar</button>`;
+        let cancelBtn = `<button onclick="openCancelModal('${a.id}')" class="ml-2 rounded bg-orange-50 px-1.5 py-0.5 text-xs font-semibold text-orange-700 ring-1 ring-orange-300 hover:bg-orange-100">🚫 Cancelar</button>`;
         // Escola: "Confirmar" (azul) acima de "Cancelar"; só ativo após a aprovação do
         // Admin. Depois de confirmada, resta apenas cancelar. Não bloqueia o Admin.
         if (role === 'escola') {
@@ -3536,7 +3558,7 @@ function renderAgenda() {
             : '';
           cancelBtn = `<div class="inline-flex flex-col items-start gap-1 align-top">${confirmBtn}<span><button onclick="openCancelModal('${a.id}')" class="bg-transparent px-0 py-0.5 text-xs font-semibold text-red-700 hover:text-red-900">🚫 Cancelar</button>${dicaHtml('cancelamento')}</span></div>`;
         }
-        acoes = acoes.includes('text-slate-300') ? cancelBtn : acoes + cancelBtn;
+        acoes = acoes === SEM_ACOES_AGENDA ? cancelBtn : acoes + cancelBtn;
       }
 
       // A listagem só é cobrada depois que a viagem passou pelas duas validações (pedagogia
@@ -3552,10 +3574,10 @@ function renderAgenda() {
         if (a.requester_email) {
           const extLabel = a.passenger_access_status === 'aberto' ? '🔗 Reenviar link' : (a.passenger_access_status === 'enviado' ? '👥 Revisar passageiros' : '🔗 Cadastro externo');
           const extBtn = `<button onclick="prepararLinkPassageiros('${a.id}')" class="text-indigo-600 hover:text-indigo-800 text-xs font-medium ml-2" title="${a.passenger_access_notified_at ? `Último envio: ${new Date(a.passenger_access_notified_at).toLocaleString('pt-BR')}` : 'Enviar link para a entidade cadastrar passageiros'}">${extLabel}</button>`;
-          acoes = acoes.includes('text-slate-300') ? extBtn : acoes + extBtn;
+          acoes = acoes === SEM_ACOES_AGENDA ? extBtn : acoes + extBtn;
         }
         const verListaBtn = `<button onclick="openPassengerModal('${a.id}')" class="text-slate-600 hover:text-slate-800 text-xs font-medium ml-2" title="Visualizar cadastro de passageiros">👥 Passageiros</button>`;
-        acoes = acoes.includes('text-slate-300') ? verListaBtn : acoes + verListaBtn;
+        acoes = acoes === SEM_ACOES_AGENDA ? verListaBtn : acoes + verListaBtn;
       }
       // Escola: com ATF "Não Precisa" não há ação de listagem na Agenda.
       const escolaSemListagem = role === 'escola' && a.atf_status === 'nao_precisa';
@@ -3579,11 +3601,11 @@ function renderAgenda() {
           const listaBtn = role === 'escola' && prazoExpirado && ['nao_enviada', 'rejeitada'].includes(statusListagem)
             ? `<span class="text-xs font-medium text-red-600 ml-2" title="Prazo encerrado em ${prazoListagemTexto(a)} — contate o Admin">📋 Prazo expirado</span>`
             : `<button onclick="openListagemVeiculoModal('${a.id}')" class="text-slate-500 hover:text-slate-700 text-xs font-medium ml-2" title="Listagem de passageiros por veículo (nome + documento)">${listaLabel}</button>`;
-          acoes = acoes.includes('text-slate-300') ? listaBtn : acoes + listaBtn;
+          acoes = acoes === SEM_ACOES_AGENDA ? listaBtn : acoes + listaBtn;
         } else {
           // Dentro de Nova Lima não há ATF nem lista de passageiros comum.
           const listaInfo = `<span class="text-xs text-slate-300 ml-2">📋 Sem lista ATF</span>`;
-          acoes = acoes.includes('text-slate-300') ? listaInfo : acoes + listaInfo;
+          acoes = acoes === SEM_ACOES_AGENDA ? listaInfo : acoes + listaInfo;
         }
       }
       if (isAgendaEditor) {
@@ -3594,18 +3616,18 @@ function renderAgenda() {
         const atfView = precisaListagemComNomesDocumentos(a)
           ? `<button onclick="openListagemVeiculoModal('${a.id}')" class="text-amber-600 hover:text-amber-800 text-xs font-medium ml-2">📋 Ver ATF</button>`
           : `<span class="ml-2 text-xs text-slate-300">📋 ATF</span>`;
-        acoes = acoes.includes('text-slate-300') ? propostaBtn + pcdView + atfView : acoes + propostaBtn + pcdView + atfView;
+        acoes = acoes === SEM_ACOES_AGENDA ? propostaBtn + pcdView + atfView : acoes + propostaBtn + pcdView + atfView;
       }
 
       if (isAgendaEditor && a.doc_status === 'nao_enviado' && a.situacao !== 'cancelada' && a.status !== 'rejected') {
         const propostaBtn = `<button onclick="solicitarPropostaPedagogica('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-medium ml-2" title="Tornar o envio da proposta uma pendência da unidade">📄 Solicitar proposta</button>`;
-        acoes = acoes.includes('text-slate-300') ? propostaBtn : acoes + propostaBtn;
+        acoes = acoes === SEM_ACOES_AGENDA ? propostaBtn : acoes + propostaBtn;
       }
 
       if (isAgendaEditor) {
         const editBtn = `<button onclick="openExcursionEditor('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-medium ml-2" title="Editar todos os dados da viagem">✏️ Editar</button>`;
         const delBtn = `<button onclick="openDeleteExcursionModal('${a.id}')" class="text-red-600 hover:text-red-800 text-xs font-medium ml-2" title="Excluir permanentemente (diferente de Cancelar)">🗑️ Excluir</button>`;
-        acoes = acoes.includes('text-slate-300') ? editBtn + delBtn : acoes + editBtn + delBtn;
+        acoes = acoes === SEM_ACOES_AGENDA ? editBtn + delBtn : acoes + editBtn + delBtn;
         // Admin: "Ver listagem" depois de Editar/Excluir quando a unidade já enviou a listagem.
         if (['enviada', 'aceita'].includes(a.listagem_status) || (a.listagem_status === 'rejeitada' && lvTemControle(a))) {
           acoes += `<button onclick="openListagemVeiculoModal('${a.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-bold ml-2" title="Abrir a listagem enviada para verificação">👁️ Ver listagem</button>`;
@@ -3619,7 +3641,7 @@ function renderAgenda() {
       }
       if (role === 'escola' && a.school_id === currentUser.schoolId && a.recurrence_group_id && a.situacao !== 'cancelada' && a.status !== 'rejected') {
         const addDateBtn = '';
-        acoes = acoes.includes('text-slate-300') ? addDateBtn : acoes + addDateBtn;
+        acoes = acoes === SEM_ACOES_AGENDA ? addDateBtn : acoes + addDateBtn;
       }
 
       // Admin: listagem ATF já enviada à cooperativa aparece como "Envio Coop" no Status.
@@ -3733,7 +3755,7 @@ function renderAgenda() {
       if (role === 'escola' && a.situacao === 'reprovada') {
         acoes = `<span class="text-xs font-medium text-red-700 whitespace-normal">Motivo: ${escapeHtml(a.rejection_reason || a.admin_decision_reason || 'não informado')}</span>`;
       }
-      const temAcoes = !acoes.includes('text-slate-300');
+      const temAcoes = acoes !== SEM_ACOES_AGENDA;
       const exibeMotoristas = isAgendaEditor || a.admin_decision === 'aprovada';
       const motoristasCell = exibeMotoristas ? driversLabelHtml(a.driver_ids) : (role === 'escola' && a.situacao === 'reprovada' ? '' : '<span class="text-slate-400">Aguardando aprovação</span>');
       const motoristaVinculado = ehMotorista && (a.driver_ids || []).includes(currentUser.driverId);
@@ -4690,10 +4712,10 @@ function pendenciaCard(a, { badge, tone = 'amber', detail = '', action = '' } = 
   </article>`;
 }
 
-function pendenciaBloco(titulo, subtitulo, cards, icon, tone) {
+function pendenciaBloco(titulo, subtitulo, cards, icon, tone, extraCabecalho = '') {
   const colors = { emerald: 'text-emerald-700 bg-emerald-50 border-emerald-100', amber: 'text-amber-700 bg-amber-50 border-amber-100', blue: 'text-blue-700 bg-blue-50 border-blue-100', red: 'text-red-700 bg-red-50 border-red-100' };
   return `<section class="screen-panel p-4">
-    <div class="mb-3 flex items-center justify-between gap-3"><div class="flex items-start gap-3"><span class="grid h-10 w-10 place-items-center rounded-xl border text-lg ${colors[tone] || colors.amber}">${icon}</span><div><h2 class="font-bold text-slate-800">${titulo}</h2><p class="text-xs text-slate-500 mt-0.5">${subtitulo}</p></div></div><span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">${cards.length}</span></div>
+    <div class="mb-3 flex items-center justify-between gap-3"><div class="flex items-start gap-3"><span class="grid h-10 w-10 place-items-center rounded-xl border text-lg ${colors[tone] || colors.amber}">${icon}</span><div><h2 class="font-bold text-slate-800">${titulo}</h2><p class="text-xs text-slate-500 mt-0.5">${subtitulo}</p></div></div><div class="flex items-center gap-2">${extraCabecalho}<span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">${cards.length}</span></div></div>
     <div class="space-y-3">${cards.length ? cards.join('') : '<p class="rounded-lg bg-slate-50 px-3 py-4 text-center text-sm text-slate-400">Nenhum item nesta fila.</p>'}</div>
   </section>`;
 }
@@ -4896,7 +4918,8 @@ function renderPendencias() {
       ['proposta', pendenciaBloco('Proposta pedagógica não enviada', 'Solicitações criadas sem o envio da proposta.', naoEnviadas.map((a) => pendenciaCard(a, { badge: 'Proposta não enviada', tone: 'red', detail: seloSerieHtml(a), action: botaoProposta(a) })), '📄', 'red')],
       ['proposta', pendenciaBloco('Proposta pedagógica rejeitada', 'Envie uma nova proposta para continuar.', rejeitadas.map((a) => pendenciaCard(a, { badge: 'Proposta rejeitada', tone: 'red', detail: escapeHtml('Motivo: ' + (a.doc_parecer_comentario || 'não informado.')) + dicaHtml('proposta_rejeitada'), action: botaoProposta(a) })), '❌', 'red')],
       ['proposta', pendenciaBloco('Proposta pedagógica', 'Envie ou reenvie o arquivo solicitado pelo fluxo administrativo/pedagógico.', propostas.map((a) => pendenciaCard(a, { badge: a.doc_status === 'correcoes' ? 'Correções solicitadas' : 'Proposta solicitada', tone: 'blue', detail: escapeHtml(a.doc_parecer_comentario || 'Envie a proposta pedagógica para a continuidade do fluxo.') + (a.doc_status === 'correcoes' ? dicaHtml('proposta_correcoes') : ''), action: botaoProposta(a) })), '📄', 'blue')],
-      ['confirmacao', pendenciaBloco('Confirmar viagem', 'Viagens aprovadas aguardando a confirmação da unidade.', aConfirmar.map((a) => pendenciaCard(a, { badge: 'Aguardando confirmação', tone: 'blue', action: `<button onclick="confirmarViagemEscola('${a.id}')" class="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700">Confirmar</button>` })), '✅', 'blue')],
+      ['confirmacao', pendenciaBloco('Confirmar viagem', 'Viagens aprovadas aguardando a confirmação da unidade.', aConfirmar.map((a) => pendenciaCard(a, { badge: 'Aguardando confirmação', tone: 'blue', action: `<div class="grid gap-2"><button onclick="confirmarViagemEscola('${a.id}')" class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700">Confirmar</button>${foraPrazoCancelamento(a) ? '<span class="text-center text-xs italic text-slate-400">Cancelamento permitido até 2 h antes da saída.</span>' : `<span class="flex items-center gap-1"><button onclick="openCancelModal('${a.id}')" class="flex-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-100">🚫 Cancelar</button>${dicaHtml('cancelamento')}</span>`}</div>` })), '✅', 'blue',
+        dataFiltro && aConfirmar.length > 1 ? `<button onclick="confirmarTodasDaData('${dataFiltro}')" class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white shadow hover:bg-blue-700">✅ Confirmar todas de ${new Date(dataFiltro + 'T00:00').toLocaleDateString('pt-BR')} (${aConfirmar.length})</button>` : '')],
       ['listagem', pendenciaBloco('Listagem de passageiros', 'Viagens aprovadas que exigem lista por ATF e/ou PCD.', listagens.flatMap((a) => {
         const recusados = a.listagem_status === 'rejeitada' && lvTemControle(a) ? (a.driver_ids || []).filter((did) => lvStatus(a, did) === 'rejeitada') : [];
         const expirado = prazoListagemExpirado(a);
@@ -5078,6 +5101,27 @@ async function confirmReject() {
   closeRejectModal();
 }
 
+// Escola: confirma de uma vez as viagens aprovadas e ainda não confirmadas da data filtrada.
+async function confirmarTodasDaData(data) {
+  if (currentUser?.role !== 'escola') return;
+  const lista = agenda.filter((a) => a.school_id === currentUser.schoolId && a.trip_date === data && a.admin_decision === 'aprovada'
+    && !a.escola_confirmada_em && !['cancelada', 'reprovada'].includes(a.situacao) && !['rejected', 'completed', 'in_transit'].includes(a.status))
+    .sort((x, y) => String(x.departure_time || '').localeCompare(String(y.departure_time || '')));
+  if (lista.length < 2) return;
+  const dataTxt = new Date(data + 'T00:00').toLocaleDateString('pt-BR');
+  const ok = await confirmarRespostaCoop({ titulo: `Confirmar ${lista.length} viagens de ${dataTxt}?`, tom: 'blue', botao: 'Confirmar todas',
+    info: lista.map((a) => `${horaComH(a.departure_time)} → ${horaComH(a.return_time)} · ${a.destination || '-'}`).join(' | '),
+    texto: 'Depois de confirmadas, só será possível cancelar (até 2 h antes da saída).' });
+  if (!ok) return;
+  const agora = new Date().toISOString();
+  const falhas = [];
+  for (const a of lista) {
+    if (!await updateExcursion(a.id, { escola_confirmada_em: agora, escola_confirmada_por: currentUser.id })) falhas.push(`${horaComH(a.departure_time)} ${a.destination || ''}`);
+  }
+  await loadAgenda(); renderPendencias(); renderAgenda();
+  toast(falhas.length ? `⚠️ ${lista.length - falhas.length} confirmada(s). Não confirmadas: ${falhas.join(', ')}` : `✅ ${lista.length} viagens confirmadas.`, !!falhas.length);
+}
+
 async function confirmarViagemEscola(id) {
   const trip = agenda.find((a) => a.id === id);
   if (!trip || currentUser?.role !== 'escola' || trip.school_id !== currentUser.schoolId) return;
@@ -5119,7 +5163,9 @@ async function confirmCancel() {
       const data = trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
       await notifyAssignedDrivers(trip, 'CANCELADA!', `${data} - ${originName(trip)} - ${hhmm(trip.departure_time)}H → ${hhmm(trip.return_time)}H`);
     }
-    await loadAgenda(); await loadNotifications(); renderAgenda(); renderDashboard(); if (currentUser?.role === 'escola') renderValidacoesEscola(); toast('🚫 Viagem cancelada.');
+    await loadAgenda(); await loadNotifications(); renderAgenda(); renderDashboard(); if (currentUser?.role === 'escola') renderValidacoesEscola();
+    if (document.getElementById('screen-pendencias')?.classList.contains('active-screen')) renderPendencias();
+    toast('🚫 Viagem cancelada.');
   }
   closeCancelModal();
 }
@@ -5238,6 +5284,15 @@ function limparFiltrosValidacoesEscola() {
   renderValidacoesEscola();
 }
 
+// Escola › Validações › Ações: só o resultado do que foi feito na Agenda/Pendências.
+function resultadoAgendaEscola(a) {
+  const quando = (v) => v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+  if (a.situacao === 'cancelada') return `<div class="text-xs font-semibold text-red-700">🚫 Cancelada${a.cancelled_at ? ' em ' + quando(a.cancelled_at) : ''}</div>${a.cancel_reason ? `<div class="text-xs text-slate-500">Motivo: ${escapeHtml(a.cancel_reason)}</div>` : ''}`;
+  if (a.escola_confirmada_em) return `<div class="text-xs font-semibold text-blue-700">✅ Confirmada em ${quando(a.escola_confirmada_em)}</div>`;
+  if (a.admin_decision === 'aprovada' && a.situacao !== 'reprovada') return '<span class="text-xs text-slate-500">Aguardando confirmação</span>';
+  return '<span class="text-slate-300 text-xs">—</span>';
+}
+
 function renderValidacoesEscola() {
   populateValidacaoStatusEscolaFilter();
   const tbody = document.getElementById('validacoesEscolaTable');
@@ -5298,14 +5353,10 @@ function renderValidacoesEscola() {
       <td class="px-4 py-3 text-sm">
         <span style="${DOC_STATUS_COLORS[a.doc_status] || ''}" class="px-2 py-1 rounded text-xs font-medium">${DOC_STATUS_LABELS[a.doc_status] || a.doc_status}</span>
         ${a.doc_filename ? `<div class="text-xs text-slate-400 mt-1">${a.doc_filename}</div>` : ''}
+        ${podeEnviar ? `<div class="mt-1"><button onclick="openDocUploadModal('${a.id}')" class="text-xs font-semibold text-emerald-600 hover:text-emerald-800">${btnLabel}</button></div>` : ''}
       </td>
       <td class="px-4 py-3">${parecerCell}</td>
-      <td class="px-4 py-3 text-sm">
-        ${podeEnviar ? `<button onclick="openDocUploadModal('${a.id}')" class="text-xs text-emerald-600 hover:text-emerald-800">${btnLabel}</button>` : ''}
-        ${a.status === 'approved' && (a.driver_ids || []).length && precisaListagemComNomesDocumentos(a) ? `<button onclick="openListagemVeiculoModal('${a.id}')" class="ml-2 text-xs text-indigo-600 hover:text-indigo-800">📋 ${a.listagem_status === 'rejeitada' ? 'Corrigir listagem' : 'Passageiros'}</button>` : ''}
-        ${podeCancelarValidada ? `<button onclick="openCancelModal('${a.id}')" class="ml-2 text-xs text-orange-600 hover:text-orange-800">🚫 Cancelar</button>${dicaHtml('cancelamento')}` : ''}
-        ${!podeEnviar && !podeCancelarValidada && !(a.status === 'approved' && (a.driver_ids || []).length && precisaListagemComNomesDocumentos(a)) ? '<span class="text-slate-300 text-xs">—</span>' : ''}
-      </td>
+      <td class="px-4 py-3 text-sm">${resultadoAgendaEscola(a)}</td>
       <td class="px-4 py-3">${a.situacao === 'reprovada' ? '' : (a.escola_confirmada_em ? '<span class="text-xs font-bold text-blue-600">Confirmada</span>' : '<span class="text-xs font-bold text-black">Pendente</span>')}</td>
       <td class="px-4 py-3"><span style="${SITUACAO_COLORS[a.situacao] || ''}" class="px-2 py-1 rounded text-xs font-medium whitespace-nowrap">${SITUACAO_LABELS[a.situacao] || a.situacao || '-'}</span></td>
     </tr>`;

@@ -51,6 +51,15 @@
         <button type="button" id="forgotPasswordBtn" class="w-full text-sm text-emerald-700 hover:underline">Esqueci minha senha</button>
       </form>
 
+      <div class="mt-5 rounded-lg border border-dashed border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+        <strong>Modo treinamento</strong> — pratique com dados fictícios. Nada é gravado.
+        <div class="mt-2 flex flex-wrap gap-2">
+          <button type="button" onclick="entrarTreino('escola')" class="rounded border border-amber-300 bg-white px-3 py-1.5 font-semibold hover:bg-amber-100">Escola</button>
+          <button type="button" onclick="entrarTreino('pedagogia')" class="rounded border border-amber-300 bg-white px-3 py-1.5 font-semibold hover:bg-amber-100">Pedagogia</button>
+          <button type="button" onclick="entrarTreino('cooperativa')" class="rounded border border-amber-300 bg-white px-3 py-1.5 font-semibold hover:bg-amber-100">Cooperativa</button>
+        </div>
+      </div>
+
       <div id="demoNotice" class="mt-5 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-3 hidden">
         <strong>Modo demonstração</strong> (Supabase ainda não configurado): use qualquer senha e um
         e-mail contendo <code>admin</code>, <code>escola</code>, <code>pedagogia</code> ou <code>motorista</code>
@@ -64,6 +73,6 @@
     <span id="toastMsg" class="text-sm font-medium"></span>
   </div>
 
-  <script src="app.js?v=agenda-core-20260920-02"></script>
+  <script src="app.js?v=escola-acoes-treino-20261016-002"></script>
 </body>
 </html>
