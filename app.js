@@ -4624,6 +4624,9 @@ async function saveExcursionEditor() {
 }
 
 async function updateSituacao(id, value) {
+  // Cancelar pelo Status também pede o motivo (mesma janela do botão Cancelar) e avisa os motoristas.
+  const atual = agenda.find((a) => a.id === id);
+  if (value === 'cancelada' && atual?.situacao !== 'cancelada') { renderAgenda(); openCancelModal(id); return; }
   const ok = await updateExcursion(id, { situacao: value });
   if (ok) { await loadAgenda(); renderAgenda(); renderDashboard(); }
 }
@@ -5287,7 +5290,11 @@ function limparFiltrosValidacoesEscola() {
 // Escola › Validações › Ações: só o resultado do que foi feito na Agenda/Pendências.
 function resultadoAgendaEscola(a) {
   const quando = (v) => v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
-  if (a.situacao === 'cancelada') return `<div class="text-xs font-semibold text-red-700">🚫 Cancelada${a.cancelled_at ? ' em ' + quando(a.cancelled_at) : ''}</div>${a.cancel_reason ? `<div class="text-xs text-slate-500">Motivo: ${escapeHtml(a.cancel_reason)}</div>` : ''}`;
+  if (a.situacao === 'cancelada') {
+    const pelaUnidade = a.cancelled_by && (a.cancelled_by === a.created_by || a.cancelled_by === currentUser?.id);
+    const quem = a.cancelled_by ? (pelaUnidade ? ' pela unidade' : ' pela SEMED') : '';
+    return `<div class="text-xs font-semibold text-red-700">🚫 Cancelada${quem}${a.cancelled_at ? ' em ' + quando(a.cancelled_at) : ''}</div><div class="text-xs text-slate-600">Motivo: ${escapeHtml(a.cancel_reason || 'não informado')}</div>`;
+  }
   if (a.escola_confirmada_em) return `<div class="text-xs font-semibold text-blue-700">✅ Confirmada em ${quando(a.escola_confirmada_em)}</div>`;
   if (a.admin_decision === 'aprovada' && a.situacao !== 'reprovada') return '<span class="text-xs text-slate-500">Aguardando confirmação</span>';
   return '<span class="text-slate-300 text-xs">—</span>';
