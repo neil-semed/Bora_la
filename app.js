@@ -9469,8 +9469,16 @@ const AJUDA_VIDEOS = {
     { arquivo: 'E4_preencher_enviar_listagem.mp4', titulo: 'Preencher e enviar a listagem', duracao: '0:58' },
     { arquivo: 'E5_cancelar_viagem.mp4', titulo: 'Cancelar uma viagem', duracao: '0:33' },
   ],
-  pedagogia: [],
-  cooperativa: [],
+  pedagogia: [
+    { arquivo: 'P1_encontrar_abrir_proposta.mp4', titulo: 'Encontrar e abrir a proposta', duracao: '0:33' },
+    { arquivo: 'P2_dar_parecer.mp4', titulo: 'Dar o parecer', duracao: '0:44' },
+    { arquivo: 'P3_encaminhar_outro_setor.mp4', titulo: 'Encaminhar para outro setor', duracao: '0:31' },
+  ],
+  cooperativa: [
+    { arquivo: 'C1_listagem_emitir_atf.mp4', titulo: 'Baixar a listagem e emitir a ATF', duracao: '0:46' },
+    { arquivo: 'C2_recusar_com_motivo.mp4', titulo: 'Recusar com motivo', duracao: '0:26' },
+    { arquivo: 'C3_confirmar_transporte_pcd.mp4', titulo: 'Confirmar transporte PCD', duracao: '0:29' },
+  ],
 };
 // Pergunta do FAQ padrão → vídeo (o Admin pode trocar ou remover o link no editor do FAQ).
 const AJUDA_VIDEO_DA_PERGUNTA = {
@@ -9482,6 +9490,16 @@ const AJUDA_VIDEO_DA_PERGUNTA = {
   'Quando envio a listagem de passageiros?': 'E4_preencher_enviar_listagem.mp4',
   'Preciso corrigir a listagem já enviada.': 'E4_preencher_enviar_listagem.mp4',
   'Até quando posso cancelar?': 'E5_cancelar_viagem.mp4',
+  'Onde vejo o que analisar?': 'P1_encontrar_abrir_proposta.mp4',
+  'O documento não abre.': 'P1_encontrar_abrir_proposta.mp4',
+  'Por que não consigo aceitar?': 'P2_dar_parecer.mp4',
+  'Correções ou rejeitar?': 'P2_dar_parecer.mp4',
+  'A solicitação caiu no setor errado.': 'P3_encaminhar_outro_setor.mp4',
+  'O que é "Sem setor responsável"?': 'P3_encaminhar_outro_setor.mp4',
+  'Como emito a ATF?': 'C1_listagem_emitir_atf.mp4',
+  'Como baixo a listagem?': 'C1_listagem_emitir_atf.mp4',
+  'Como recuso um pedido?': 'C2_recusar_com_motivo.mp4',
+  'Por que recebi pedido PCD?': 'C3_confirmar_transporte_pcd.mp4',
 };
 AJUDA_FAQ_PADRAO.forEach((f) => { const v = AJUDA_VIDEO_DA_PERGUNTA[f.pergunta]; if (v && !f.video_url) f.video_url = 'assets/videos/' + v; });
 function videoAjudaInfo(url) {
