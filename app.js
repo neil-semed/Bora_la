@@ -9142,7 +9142,8 @@ function renderNotificarViagensModal(inicializarOrigens = true) {
   const titulo = tituloNotificacaoViagens(data);
   const assunto = document.getElementById('notificarViagensAssunto'); if (assunto) assunto.value = titulo;
   const mensagem = document.getElementById('notificarViagensMensagemPreview');
-  if (mensagem) mensagem.innerHTML = buildNotificacaoViagensHtml(selecionadas);
+  // Prévia na tela sem o <style> do e-mail: ele valia para a página inteira e desativava os links das abas.
+  if (mensagem) mensagem.innerHTML = buildNotificacaoViagensHtml(selecionadas).replace(/<style>[\s\S]*?<\/style>/g, '');
   const destinoEl = document.getElementById('notificarViagensDestinatarios');
   if (destinoEl) destinoEl.innerHTML = destinatarios.length ? `${destinatarios.map(escapeHtml).join('<br>')}${semEmail.length ? `<p class="mt-2 text-xs text-red-600">Sem e-mail: ${semEmail.map(escapeHtml).join(', ')}</p>` : ''}` : 'Nenhuma unidade selecionada';
   const enviar = document.getElementById('btnEnviarNotificacaoViagens'); if (enviar) enviar.disabled = !selecionadas.length || !destinatarios.length;
