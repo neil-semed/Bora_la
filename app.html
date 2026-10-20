@@ -2178,9 +2178,9 @@
   <!-- AJUDA: cadastro de pergunta (Admin / Co_Admin) -->
   <!-- VÍDEO DE TREINAMENTO (painel "?") -->
   <div id="videoAjudaModal" style="z-index:65;background:rgba(0,0,0,.7)" class="hidden fixed inset-0 flex items-center justify-center p-4" onclick="if (event.target === this) fecharVideoAjuda()">
-    <div class="w-full max-w-4xl rounded-2xl bg-white p-3 shadow-2xl">
+    <div class="rounded-2xl bg-white p-3 shadow-2xl" style="width:min(1165px, 96vw, calc((96vh - 70px) * 1.5686 + 24px))">
       <div class="mb-2 flex items-center justify-between gap-2"><b id="videoAjudaTitulo" class="text-sm text-slate-800"></b><button onclick="fecharVideoAjuda()" class="rounded px-2 text-lg leading-none text-slate-500 hover:text-slate-800" title="Fechar (Esc)">✕</button></div>
-      <video id="videoAjudaPlayer" controls playsinline preload="metadata" class="w-full rounded-lg bg-black"></video>
+      <video id="videoAjudaPlayer" controls playsinline preload="metadata" class="w-full rounded-lg bg-black" style="display:block;max-height:calc(96vh - 70px)"></video>
     </div>
   </div>
   <div id="faqModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
@@ -2315,7 +2315,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=notificar-preview-20261019-001"></script>
+  <script src="app.js?v=videos-ajuda-20261020-001"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */

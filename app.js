@@ -9464,10 +9464,13 @@ const AJUDA_DICAS_PADRAO = {"listagem_prazo": {"titulo": "Prazo da listagem (car
 // Vídeos de treinamento (arquivos em assets/videos). Para incluir um vídeo novo, acrescente-o aqui.
 const AJUDA_VIDEOS = {
   escola: [
-    { arquivo: 'E1_fazer_pedido_de_viagem.mp4', titulo: 'Fazer um pedido de viagem', duracao: '1:31' },
-    { arquivo: 'E2_enviar_proposta_pedagogica.mp4', titulo: 'Enviar a proposta pedagógica', duracao: '0:42' },
-    { arquivo: 'E3_confirmar_viagens.mp4', titulo: 'Confirmar viagens', duracao: '0:46' },
-    { arquivo: 'E4_preencher_enviar_listagem.mp4', titulo: 'Preencher e enviar a listagem', duracao: '0:58' },
+    { arquivo: 'E1_fazer_pedido_de_viagem.mp4', titulo: 'Fazer um pedido de viagem', duracao: '1:32' },
+    { arquivo: 'E2_enviar_proposta_pedagogica.mp4', titulo: 'Enviar a proposta pedagógica', duracao: '0:37' },
+    { arquivo: 'E7_proposta_rejeitada.mp4', titulo: 'Proposta rejeitada: enviar nova', duracao: '0:34' },
+    { arquivo: 'E8_correcoes_na_proposta.mp4', titulo: 'Correções pedidas pela Pedagogia', duracao: '0:32' },
+    { arquivo: 'E3_confirmar_viagens.mp4', titulo: 'Confirmar viagens', duracao: '0:45' },
+    { arquivo: 'E4_preencher_enviar_listagem.mp4', titulo: 'Preencher e enviar a listagem', duracao: '0:54' },
+    { arquivo: 'E9_corrigir_listagem_enviada.mp4', titulo: 'Corrigir a listagem já enviada', duracao: '0:41' },
     { arquivo: 'E5_cancelar_viagem.mp4', titulo: 'Cancelar uma viagem', duracao: '0:33' },
     { arquivo: 'E6_pedir_transporte_pcd.mp4', titulo: 'Pedir transporte PCD', duracao: '1:06' },
   ],
@@ -9477,7 +9480,8 @@ const AJUDA_VIDEOS = {
     { arquivo: 'P3_encaminhar_outro_setor.mp4', titulo: 'Encaminhar para outro setor', duracao: '0:31' },
   ],
   cooperativa: [
-    { arquivo: 'C1_listagem_emitir_atf.mp4', titulo: 'Baixar a listagem e emitir a ATF', duracao: '0:46' },
+    { arquivo: 'C1_listagem_emitir_atf.mp4', titulo: 'Emitir a ATF', duracao: '0:46' },
+    { arquivo: 'C4_baixar_listagem.mp4', titulo: 'Baixar a listagem', duracao: '0:41' },
     { arquivo: 'C2_recusar_com_motivo.mp4', titulo: 'Recusar com motivo', duracao: '0:26' },
     { arquivo: 'C3_confirmar_transporte_pcd.mp4', titulo: 'Confirmar transporte PCD', duracao: '0:29' },
   ],
@@ -9486,11 +9490,11 @@ const AJUDA_VIDEOS = {
 const AJUDA_VIDEO_DA_PERGUNTA = {
   'Como faço um pedido de viagem?': 'E1_fazer_pedido_de_viagem.mp4',
   'Como envio a proposta pedagógica?': 'E2_enviar_proposta_pedagogica.mp4',
-  'Minha proposta foi rejeitada. E agora?': 'E2_enviar_proposta_pedagogica.mp4',
-  'A Pedagogia pediu correções. O que faço?': 'E2_enviar_proposta_pedagogica.mp4',
+  'Minha proposta foi rejeitada. E agora?': 'E7_proposta_rejeitada.mp4',
+  'A Pedagogia pediu correções. O que faço?': 'E8_correcoes_na_proposta.mp4',
   'Como confirmo a viagem?': 'E3_confirmar_viagens.mp4',
   'Quando envio a listagem de passageiros?': 'E4_preencher_enviar_listagem.mp4',
-  'Preciso corrigir a listagem já enviada.': 'E4_preencher_enviar_listagem.mp4',
+  'Preciso corrigir a listagem já enviada.': 'E9_corrigir_listagem_enviada.mp4',
   'Até quando posso cancelar?': 'E5_cancelar_viagem.mp4',
   'O que preencho para aluno PCD?': 'E6_pedir_transporte_pcd.mp4',
   'Onde vejo o que analisar?': 'P1_encontrar_abrir_proposta.mp4',
@@ -9500,7 +9504,7 @@ const AJUDA_VIDEO_DA_PERGUNTA = {
   'A solicitação caiu no setor errado.': 'P3_encaminhar_outro_setor.mp4',
   'O que é "Sem setor responsável"?': 'P3_encaminhar_outro_setor.mp4',
   'Como emito a ATF?': 'C1_listagem_emitir_atf.mp4',
-  'Como baixo a listagem?': 'C1_listagem_emitir_atf.mp4',
+  'Como baixo a listagem?': 'C4_baixar_listagem.mp4',
   'Como recuso um pedido?': 'C2_recusar_com_motivo.mp4',
   'Por que recebi pedido PCD?': 'C3_confirmar_transporte_pcd.mp4',
 };
