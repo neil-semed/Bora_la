@@ -3595,9 +3595,71 @@ let agendaLinhaSelecionada = null;
 function selecionarLinhaAgenda(id) {
   agendaLinhaSelecionada = id;
   document.querySelectorAll('tr[data-agenda-id]').forEach((tr) => tr.classList.toggle('agenda-linha-sel', tr.dataset.agendaId === id));
+  atualizarBotaoEmailUnidade();
+}
+// Admin › Agenda: e-mail livre para a unidade da linha selecionada.
+function atualizarBotaoEmailUnidade() {
+  const btn = document.getElementById('btnEmailUnidadeAgenda');
+  if (!btn) return;
+  btn.classList.toggle('hidden', !ehAgendaAdmin());
+  const ok = !!agenda.find((a) => a.id === agendaLinhaSelecionada);
+  btn.disabled = !ok;
+  btn.title = ok ? 'Enviar e-mail à unidade da viagem selecionada' : 'Clique em uma viagem da agenda para escolher a unidade';
+}
+function emailUnidadeViagemTexto(t) {
+  const data = t.trip_date ? new Date(t.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
+  return { data, linha: `${originName(t) || '-'} → ${t.destination || '-'}` };
+}
+function openEmailUnidadeModal() {
+  if (!ehAgendaAdmin()) return;
+  const t = agenda.find((a) => a.id === agendaLinhaSelecionada);
+  if (!t) { toast('⚠️ Clique em uma viagem da agenda para escolher a unidade.', true); return; }
+  const { data } = emailUnidadeViagemTexto(t);
+  const para = emailUnidadeDaViagem(t);
+  document.getElementById('emailUnidadeViagem').textContent = `${originName(t) || '-'} · ${data} · ${hhmm(t.departure_time)}h → ${t.destination || '-'}`;
+  const paraEl = document.getElementById('emailUnidadePara');
+  paraEl.value = para; paraEl.readOnly = !!para; paraEl.classList.toggle('bg-slate-50', !!para);
+  paraEl.placeholder = para ? '' : 'Unidade sem e-mail cadastrado - digite o e-mail';
+  document.getElementById('emailUnidadeCopia').value = appSettings.email_copia_setor || appSettings.remetente_email || '';
+  document.getElementById('emailUnidadeAssunto').value = `Bora Lá - ${originName(t) || 'Unidade'} - viagem de ${data}`;
+  document.getElementById('emailUnidadeMensagem').value = '';
+  document.getElementById('emailUnidadeIncluirViagem').checked = true;
+  renderEmailUnidadePreview();
+  document.getElementById('emailUnidadeModal').classList.remove('hidden');
+}
+function closeEmailUnidadeModal() { document.getElementById('emailUnidadeModal')?.classList.add('hidden'); }
+function buildEmailUnidade() {
+  const t = agenda.find((a) => a.id === agendaLinhaSelecionada);
+  const msg = (document.getElementById('emailUnidadeMensagem')?.value || '').trim();
+  const incluir = document.getElementById('emailUnidadeIncluirViagem')?.checked && t;
+  const { data, linha } = t ? emailUnidadeViagemTexto(t) : { data: '-', linha: '-' };
+  const msgHtml = msg ? msg.split(/\n{2,}/).map((b) => `<p style="margin:0 0 12px">${escapeHtml(b).replace(/\n/g, '<br>')}</p>`).join('') : '<p style="margin:0 0 12px;color:#94a3b8">(escreva a mensagem)</p>';
+  const viagemHtml = incluir ? `<p style="margin:0 0 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px"><strong>Viagem:</strong> ${escapeHtml(linha)}<br><strong>Data:</strong> ${escapeHtml(data)} · <strong>Saída:</strong> ${escapeHtml(hhmm(t.departure_time))}h - <strong>Retorno:</strong> ${escapeHtml(hhmm(t.return_time))}h</p>` : '';
+  const texto = `${saudacaoEmailBrasilia()}\n\n${msg}${incluir ? `\n\nViagem: ${linha}\nData: ${data} · Saída: ${hhmm(t.departure_time)}h - Retorno: ${hhmm(t.return_time)}h` : ''}\n\nBora Lá - Excursões / Semed Nova Lima`;
+  return { msg, texto, html: emailPadraoHtml('Mensagem do setor', msgHtml + viagemHtml) };
+}
+function renderEmailUnidadePreview() {
+  const el = document.getElementById('emailUnidadePreview');
+  if (el) el.innerHTML = buildEmailUnidade().html + '<p style="margin:16px 0 0;padding:8px 12px;background:#f1f5f9;border-radius:6px;font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#334155">Esta mensagem é automática. Não responda a este e-mail.</p>';
+}
+async function sendEmailUnidade() {
+  if (!ehAgendaAdmin()) return;
+  const para = (document.getElementById('emailUnidadePara').value || '').trim();
+  const copia = (document.getElementById('emailUnidadeCopia').value || '').trim();
+  const assunto = (document.getElementById('emailUnidadeAssunto').value || '').trim();
+  const { msg, texto, html } = buildEmailUnidade();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(para)) { toast('⚠️ Informe um e-mail válido da unidade.', true); return; }
+  if (!assunto || !msg) { toast('⚠️ Preencha o assunto e a mensagem.', true); return; }
+  if (!sb) { closeEmailUnidadeModal(); toast('✉️ E-mail enviado à unidade (modo demo).'); return; }
+  const btn = document.getElementById('btnEnviarEmailUnidade'); if (btn) btn.disabled = true;
+  const ok = await tentarEnviarEmailAutomatico(para, assunto, texto, copia && copia.toLowerCase() !== para.toLowerCase() ? copia : '', html);
+  if (btn) btn.disabled = false;
+  if (ok) { closeEmailUnidadeModal(); toast('✉️ E-mail enviado à unidade.'); return; }
+  toast(`❌ Não foi possível enviar. ${ultimoErroEnvioAutomatico || ''}`, true);
 }
 
 function renderAgenda() {
+  atualizarBotaoEmailUnidade();
   const roleVeUnidade = currentUser && (currentUser.role === 'admin' || currentUser.role === 'pedagogia' || (currentUser.role === 'operacional' && canViewScreen('agenda')));
   const filtroUnidadeWrap = document.getElementById('filtroUnidadeWrap');
   if (filtroUnidadeWrap) filtroUnidadeWrap.classList.toggle('hidden', !roleVeUnidade);
@@ -6082,8 +6144,15 @@ async function prepararLinkPassageiros(id) {
   await loadAgenda();
   const url = passageiroPortalUrl(token);
   const assunto = `Cadastro de passageiros - ${trip.destination} - ${new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR')}`;
-  const corpo = `Olá!\n\nSua solicitação de transporte foi aprovada e o cadastro de passageiros deve ser preenchido pelo link abaixo:\n\n${url}\n\nQuantidade máxima: conforme a capacidade dos veículos atribuídos. Não é obrigatório preencher toda a capacidade.\n\nPreencha nome completo, tipo e número do documento de cada passageiro.\n\nAtenciosamente,\nBora Lá – Excursões`;
-  const enviado = await tentarEnviarEmailAutomatico(trip.requester_email, assunto, corpo);
+  const dataAprov = trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
+  const corpo = `${saudacaoEmailBrasilia()}\n\nSua solicitação de transporte foi aprovada.\n\nDestino: ${trip.destination || '-'}\nData: ${dataAprov}\nSaída: ${hhmm(trip.departure_time)}h - Retorno: ${hhmm(trip.return_time)}h\n\nPreencha o cadastro de passageiros pelo link abaixo (nome completo, tipo e número do documento):\n${url}\n\nQuantidade máxima: conforme a capacidade dos veículos atribuídos. Não é obrigatório preencher toda a capacidade.\n\nBora Lá - Excursões / Semed Nova Lima`;
+  const pa = (t) => `<p style="margin:0 0 12px">${t}</p>`;
+  const htmlAprov = emailPadraoHtml('Solicitação aprovada',
+    pa('Sua solicitação de transporte foi aprovada.')
+    + pa(`<strong>Destino:</strong> ${escapeHtml(trip.destination || '-')}<br><strong>Data:</strong> ${escapeHtml(dataAprov)}<br><strong>Saída:</strong> ${escapeHtml(hhmm(trip.departure_time))}h - <strong>Retorno:</strong> ${escapeHtml(hhmm(trip.return_time))}h`)
+    + pa(`Preencha o cadastro de passageiros pelo link abaixo (nome completo, tipo e número do documento):<br><a href="${escapeHtml(url)}">${escapeHtml(url)}</a>`)
+    + pa('Quantidade máxima: conforme a capacidade dos veículos atribuídos. Não é obrigatório preencher toda a capacidade.'));
+  const enviado = await tentarEnviarEmailAutomatico(trip.requester_email, assunto, corpo, '', htmlAprov);
   if (enviado) {
     await updateExcursion(id, { passenger_access_notified_at: new Date().toISOString() });
     await loadAgenda();
@@ -7294,6 +7363,10 @@ async function onEmailTipoChange() {
 }
 
 // Cabeçalho com a logo (mesmo modelo do e-mail "Confirmação de viagens").
+// Padrão visual dos e-mails (logo, título, linha verde, saudação e assinatura).
+function emailPadraoHtml(titulo, corpoHtml) {
+  return `<div style="max-width:720px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.5;font-size:14px"><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | ${escapeHtml(titulo)}</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:3px;background:#16a34a;margin:3px 0 16px"></div><p style="margin:0 0 12px">${saudacaoEmailBrasilia()}</p>${corpoHtml}<p style="margin:18px 0 0">Bora Lá - Excursões / Semed Nova Lima</p></div>`;
+}
 function coopEmailComCabecalho(titulo, corpoHtml) {
   return `<div style="max-width:820px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.45"><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | ${escapeHtml(titulo)}</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:3px;background:#16a34a;margin:3px 0 14px"></div>${corpoHtml}</div>`;
 }
@@ -7412,7 +7485,7 @@ async function sendCooperativaEmail(somenteAbrirEmail = false) {
   const corpo = document.getElementById('emailCorpo').value;
   const copiaSetor = appSettings.email_copia_setor || appSettings.remetente_email || '';
   // "Abrir e-mail" só abre o programa de e-mail; "Enviar pela aplicação" tenta o envio automático.
-  const enviou = somenteAbrirEmail ? false : await tentarEnviarEmailAutomatico(coop.email, assunto, corpo, copiaSetor, emailHtmlBody, { permitirResposta: true });
+  const enviou = somenteAbrirEmail ? false : await tentarEnviarEmailAutomatico(coop.email, assunto, corpo, copiaSetor, emailHtmlBody, { permitirResposta: document.getElementById('emailTipo')?.value !== 'pcd' });
   if (!enviou) {
     const mailto = `mailto:${encodeURIComponent(coop.email)}?cc=${encodeURIComponent(copiaSetor)}&subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
     window.open(mailto, '_blank');
@@ -9202,7 +9275,7 @@ function confirmacaoEscolaLabel(a) { return a?.escola_confirmada_em ? 'Confirmad
 function buildNotificacaoViagensText(rows) {
   const mostrarConfirmacao = rows.some((a) => !a.escola_confirmada_em);
   const linhas = rows.map((a, index) => `${index + 1}. ${TURNO_LABELS[a.turno || turnoFromHora(a.departure_time)] || '-'} | ${horaComH(a.departure_time)} às ${horaComH(a.return_time)} — ${originName(a)} → ${a.destination || '-'}\nPassageiros: ${totalPassengers(a)}${mostrarConfirmacao ? ` | Confirmação: ${confirmacaoEscolaLabel(a)}` : ''}`).join('\n\n');
-  return `${saudacaoEmailBrasilia()} equipe!\n\nEstá tudo pronto para a(s) viagem(ns) abaixo. Para liberarmos o(s) veículo(s), pedimos que a unidade confirme a viagem no Bora Lá. Aproveite para conferir com atenção os horários e a quantidade de passageiros.\n\nCaso haja pendência de confirmação, acesse o Bora Lá, vá ao menu Agenda, localize as viagens abaixo e clique em "Confirmar" na coluna Ações.\n\n${linhas}\n\nLembramos que o cuidado com o(s) veículo(s) durante a viagem é responsabilidade da unidade solicitante. Contamos com a colaboração de todos!\n\nObrigado e boa viagem!\nBora Lá - Excursões / Semed Nova Lima\n\n(Essa mensagem foi gerada automaticamente)`;
+  return `${saudacaoEmailBrasilia()} equipe!\n\nEstá tudo pronto para a(s) viagem(ns) abaixo. Para liberarmos o(s) veículo(s), pedimos que a unidade confirme a viagem no Bora Lá. Aproveite para conferir com atenção os horários e a quantidade de passageiros.\n\nCaso haja pendência de confirmação, acesse o Bora Lá, vá ao menu Agenda, localize as viagens abaixo e clique em "Confirmar" na coluna Ações.\n\n${linhas}\n\nLembramos que o cuidado com o(s) veículo(s) durante a viagem é responsabilidade da unidade solicitante. Contamos com a colaboração de todos!\n\nObrigado e boa viagem!\nBora Lá - Excursões / Semed Nova Lima`;
 }
 
 // Impede que os clientes de e-mail transformem automaticamente nomes e endereços em links.
@@ -9249,7 +9322,7 @@ function buildNotificacaoViagensHtml(rows, somenteQuadro = false) {
     ? `<table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;table-layout:fixed;font-family:Arial,sans-serif;font-size:13px"><thead><tr style="background:#e5e7eb;color:#111827"><th style="width:${w[0]};border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">TURNO</th><th style="width:${w[1]};border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">SAÍDA</th><th style="width:${w[2]};border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">RETORNO</th><th style="width:${w[3]};border:1px solid #cbd5e1;padding:9px 6px;font-size:11px;text-align:center">ORIGEM</th><th style="width:${w[4]};border:1px solid #cbd5e1;padding:9px 6px;font-size:11px;text-align:center">DESTINO</th><th style="width:${w[5]};border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">PASS</th>${mostrarConfirmacao ? `<th style="width:${w[6]};border:1px solid #cbd5e1;padding:9px 5px;font-size:11px;text-align:center">CONFIRMAÇÃO</th>` : ''}</tr></thead><tbody>${rows.map((a, index) => { const origem = `${originName(a)}${a.origin_acronym ? ` (${a.origin_acronym})` : ''}`; const destinoDaMesmaUnidade = String(a.destination || '').trim().toLocaleLowerCase('pt-BR') === String(originName(a) || '').trim().toLocaleLowerCase('pt-BR'); const enderecoDestino = destinoDaMesmaUnidade ? '' : [a.destination_address, a.city].filter(Boolean).filter((valor, posicao, lista) => !posicao || String(valor).trim().toLocaleLowerCase('pt-BR') !== String(lista[0]).trim().toLocaleLowerCase('pt-BR')).join(' · '); return `<tr style="background:${index % 2 ? '#f8fafc' : '#ffffff'}"><td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;vertical-align:middle">${escapeHtml(TURNO_LABELS[a.turno || turnoFromHora(a.departure_time)] || '-')}</td><td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;vertical-align:middle">${escapeHtml(horaComH(a.departure_time))}</td><td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;vertical-align:middle">${escapeHtml(horaComH(a.return_time))}</td><td style="border:1px solid #dbe2ea;padding:10px 6px;vertical-align:middle;word-break:break-word"><strong style="font-size:11px">${escapeHtml(textoEmailSemHiperlink(origem))}</strong></td><td style="border:1px solid #dbe2ea;padding:10px 6px;vertical-align:middle;word-break:break-word"><strong style="font-size:11px">${escapeHtml(textoEmailSemHiperlink(a.destination || '-'))}</strong>${enderecoDestino ? `<br><span style="color:#64748b;font-size:10px">${escapeHtml(textoEmailSemHiperlink(enderecoDestino))}</span>` : ''}</td><td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;vertical-align:middle">${totalPassengers(a)}</td>${mostrarConfirmacao ? `<td style="border:1px solid #dbe2ea;padding:10px 5px;text-align:center;font-weight:700;font-size:11px;vertical-align:middle;color:${a.escola_confirmada_em ? '#2563eb' : '#000000'}">${confirmacaoEscolaLabel(a)}</td>` : ''}</tr>`; }).join('')}</tbody></table>`
     : '<p style="padding:16px">Selecione ao menos uma origem com viagem escalada.</p>';
   if (somenteQuadro) return table;
-  return `<div style="max-width:820px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.45"><style>a{color:inherit!important;text-decoration:none!important;pointer-events:none!important}</style><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | Confirmação de viagens</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:3px;background:#16a34a;margin:3px 0 14px"></div><p style="margin:0 0 8px"><strong>Data:</strong> ${escapeHtml(dataLabel || '-')} &nbsp;·&nbsp; <strong>Viagens:</strong> ${rows.length}</p><p style="margin:0 0 14px">${saudacaoEmailBrasilia()} equipe!<br>Está tudo pronto para a(s) viagem(ns) abaixo. Para liberarmos o(s) veículo(s), pedimos que a unidade <strong>confirme a viagem no Bora Lá</strong>. Aproveite para conferir com atenção os horários e a quantidade de passageiros.</p><div style="margin:0 0 14px;padding:11px 13px;border:1px solid #a7f3d0;background:#ecfdf5;border-radius:8px;font-size:13px;color:#065f46">Caso haja pendência de confirmação, acesse o Bora Lá, vá ao menu <strong>Agenda</strong>, localize as viagens abaixo e clique em <strong>✅ Confirmar</strong> na coluna <strong>Ações</strong>.</div>${table}<p style="border-left:4px solid #f59e0b;background:#fffbeb;color:#78350f;margin:18px 0 0;padding:11px 13px;font-size:13px">Lembramos que o cuidado com o(s) veículo(s) durante a viagem é responsabilidade da unidade solicitante. Contamos com a colaboração de todos!</p><p style="margin:18px 0 0">Obrigado e boa viagem!<br><strong>Bora Lá - Excursões / Semed Nova Lima</strong></p><p style="border-top:1px solid #e2e8f0;color:#475569;font-size:11px;margin-top:28px;padding-top:10px">(Essa mensagem foi gerada automaticamente)</p></div>`;
+  return `<div style="max-width:820px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.45"><style>a{color:inherit!important;text-decoration:none!important;pointer-events:none!important}</style><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | Confirmação de viagens</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:3px;background:#16a34a;margin:3px 0 14px"></div><p style="margin:0 0 8px"><strong>Data:</strong> ${escapeHtml(dataLabel || '-')} &nbsp;·&nbsp; <strong>Viagens:</strong> ${rows.length}</p><p style="margin:0 0 14px">${saudacaoEmailBrasilia()} equipe!<br>Está tudo pronto para a(s) viagem(ns) abaixo. Para liberarmos o(s) veículo(s), pedimos que a unidade <strong>confirme a viagem no Bora Lá</strong>. Aproveite para conferir com atenção os horários e a quantidade de passageiros.</p><div style="margin:0 0 14px;padding:11px 13px;border:1px solid #a7f3d0;background:#ecfdf5;border-radius:8px;font-size:13px;color:#065f46">Caso haja pendência de confirmação, acesse o Bora Lá, vá ao menu <strong>Agenda</strong>, localize as viagens abaixo e clique em <strong>✅ Confirmar</strong> na coluna <strong>Ações</strong>.</div>${table}<p style="border-left:4px solid #f59e0b;background:#fffbeb;color:#78350f;margin:18px 0 0;padding:11px 13px;font-size:13px">Lembramos que o cuidado com o(s) veículo(s) durante a viagem é responsabilidade da unidade solicitante. Contamos com a colaboração de todos!</p><p style="margin:18px 0 0">Obrigado e boa viagem!<br><strong>Bora Lá - Excursões / Semed Nova Lima</strong></p></div>`;
 }
 
 function openNotificarViagensModal() {
@@ -9926,8 +9999,14 @@ async function enviarDuvidaAjuda() {
   // E-mail ao setor: Escola e Cooperativa (a Pedagogia não envia e-mail).
   const setor = appSettings.email_copia_setor || appSettings.remetente_email || '';
   if (setor && ['escola', 'agente_externo'].includes(currentUser?.role)) {
+    const pq = (t) => `<p style="margin:0 0 12px">${t}</p>`;
+    const htmlDuvida = emailPadraoHtml('Nova dúvida na Ajuda',
+      pq('Uma dúvida foi enviada pela Ajuda do Bora Lá.')
+      + pq(`<strong>De:</strong> ${escapeHtml(quem)}${unidade ? ' (' + escapeHtml(unidade) + ')' : ''}<br><strong>Perfil:</strong> ${escapeHtml(AJUDA_PERFIL_LABEL[perfil] || perfil)}<br><strong>Tela:</strong> ${escapeHtml(AJUDA_TELAS[tela] || tela)}`)
+      + `<p style="margin:0 0 12px;border-left:4px solid #0ea5e9;background:#f0f9ff;padding:10px 12px;white-space:pre-wrap">${escapeHtml(texto)}</p>`
+      + pq('Responda pela tela Ajuda do Bora Lá.'));
     tentarEnviarEmailAutomatico(setor, `Bora Lá - dúvida de ${AJUDA_PERFIL_LABEL[perfil] || perfil}${unidade ? ' - ' + unidade : ''}`,
-      `${saudacaoEmailBrasilia()}\n\nDúvida enviada pela Ajuda do Bora Lá.\n\nDe: ${quem}${unidade ? ' (' + unidade + ')' : ''}\nTela: ${AJUDA_TELAS[tela] || tela}\n\n${texto}\n\nResponda pela tela Ajuda do Bora Lá.`).catch(() => {});
+      `${saudacaoEmailBrasilia()}\n\nUma dúvida foi enviada pela Ajuda do Bora Lá.\n\nDe: ${quem}${unidade ? ' (' + unidade + ')' : ''}\nPerfil: ${AJUDA_PERFIL_LABEL[perfil] || perfil}\nTela: ${AJUDA_TELAS[tela] || tela}\n\n${texto}\n\nResponda pela tela Ajuda do Bora Lá.\n\nBora Lá - Excursões / Semed Nova Lima`, '', htmlDuvida).catch(() => {});
   }
   document.getElementById('ajudaFormDuvida')?.classList.add('hidden');
   toast('✅ Dúvida enviada ao setor. A resposta chegará no sino.');

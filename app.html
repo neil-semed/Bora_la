@@ -623,6 +623,7 @@
                   </select>
                 </div>
                 <button onclick="document.getElementById('filtroData').value='';document.getElementById('filtroPeriodo').value='dia';document.getElementById('filtroSituacao').value='';document.getElementById('filtroUnidade').value='';filtrarAgenda();" class="px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Limpar filtros</button>
+                <button id="btnEmailUnidadeAgenda" type="button" onclick="openEmailUnidadeModal()" disabled title="Clique em uma viagem da agenda para escolher a unidade" class="hidden px-3 py-2 rounded-lg bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed">✉️ Enviar e-mail</button>
               </div>
               <!-- No celular a tabela vira "cartões" empilhados (mesma informação, sem
                    precisar arrastar a tela pros lados); a partir do tablet/desktop (md:)
@@ -2268,6 +2269,18 @@
   </div>
 
   <!-- MODAL: NOTIFICAR UNIDADES SOBRE AS VIAGENS -->
+  <div id="emailUnidadeModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div class="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+      <div class="flex items-start justify-between gap-4"><h3 class="text-lg font-bold text-slate-900">✉️ Enviar e-mail à unidade</h3><button onclick="closeEmailUnidadeModal()" class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Fechar">✕</button></div>
+      <div class="mt-4"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Viagem selecionada</label><div id="emailUnidadeViagem" class="rounded-lg border bg-slate-50 px-3 py-2 text-sm"></div></div>
+      <div class="mt-3 grid gap-3 md:grid-cols-2"><div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Para</label><input id="emailUnidadePara" type="email" class="w-full rounded-lg border px-3 py-2 text-sm"></div><div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Cópia</label><input id="emailUnidadeCopia" type="email" class="w-full rounded-lg border px-3 py-2 text-sm"></div></div>
+      <div class="mt-3"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Assunto</label><input id="emailUnidadeAssunto" class="w-full rounded-lg border px-3 py-2 text-sm"></div>
+      <div class="mt-3"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Mensagem</label><textarea id="emailUnidadeMensagem" rows="5" oninput="renderEmailUnidadePreview()" class="w-full rounded-lg border px-3 py-2 text-sm" placeholder="Escreva a mensagem para a unidade"></textarea></div>
+      <label class="mt-2 flex items-center gap-2 text-sm text-slate-700"><input id="emailUnidadeIncluirViagem" type="checkbox" checked onchange="renderEmailUnidadePreview()"> Incluir os dados da viagem no e-mail</label>
+      <div class="mt-4"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Prévia</label><div id="emailUnidadePreview" class="overflow-x-auto rounded-xl border bg-white p-4"></div></div>
+      <div class="mt-5 flex justify-end gap-2"><button onclick="closeEmailUnidadeModal()" class="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">Cancelar</button><button id="btnEnviarEmailUnidade" onclick="sendEmailUnidade()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Enviar e-mail</button></div>
+    </div>
+  </div>
   <div id="notificarViagensModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
     <div class="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
       <div class="flex items-start justify-between gap-4"><div><h3 class="text-lg font-bold text-slate-900">✉️ Confirmar viagens</h3><p class="mt-1 text-sm text-slate-500">O envio é feito somente para o e-mail cadastrado da unidade solicitante.</p></div><button onclick="closeNotificarViagensModal()" class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Fechar">✕</button></div>
@@ -2319,7 +2332,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=coop-atfpcd-20261024-001"></script>
+  <script src="app.js?v=email-unidade-20261024-001"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */
