@@ -3974,7 +3974,7 @@ function renderAgenda() {
       const enderecoOrigemTxt = role === 'escola' ? comCidade(originAddress(a), originCity(a)) : originAddress(a);
       const nomeUnidadeLogada = role === 'escola' ? String(schoolName(currentUser.schoolId) || '').trim().toLocaleLowerCase('pt-BR') : '';
       const destinoEhUnidadeLogada = !!nomeUnidadeLogada && String(a.destination || '').trim().toLocaleLowerCase('pt-BR') === nomeUnidadeLogada;
-      const enderecoDestinoTxt = role === 'escola' && !destinoEhUnidadeLogada ? comCidade(a.destination_address, a.city) : (a.destination_address || a.city);
+      const enderecoDestinoTxt = !destinoEhUnidadeLogada ? comCidade(a.destination_address, a.city) : (a.destination_address || a.city);
       const enderecoOrigemTabela = ocultarEnderecoDaOrigem
         ? ''
         : `<div class="text-xs text-slate-500">${enderecoOrigemTxt || '-'}</div>`;
