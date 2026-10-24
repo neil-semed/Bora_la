@@ -21,8 +21,8 @@ create trigger trg_excursions_situacao_em
   before insert or update of situacao on public.excursions
   for each row execute function public.excursions_situacao_em();
 
-insert into public.ajuda_faq (perfis, tela, pergunta, resposta, onde_clicar, ordem)
-select * from (values
+insert into public.ajuda_faq (perfis, tela, pergunta, resposta, onde_clicar, ordem, video_url)
+select v.*, case v.tela when 'atfpcdcoop' then 'https://neil-semed.github.io/Bora_la/apresentacoes/apresentacao_coop_atf_pcd.html' when 'solicitacoescoop' then 'https://neil-semed.github.io/Bora_la/apresentacoes/apresentacao_coop_solicitacoes.html' when 'financeiro' then 'https://neil-semed.github.io/Bora_la/apresentacoes/simulacao_financeiro.html' end from (values
   (array['cooperativa'], 'atfpcdcoop', 'Onde vejo todos os pedidos de ATF e PCD?', 'Na tela ATF e PCD: pendentes, emitidos/confirmados e recusados, com filtros por data, unidade, motorista, tipo e situação.', 'Menu ATF e PCD', 31),
   (array['cooperativa'], 'atfpcdcoop', 'Como vejo e baixo a listagem?', 'No card, clique em Ver listagem (ou Ver lista PCD). Use PDF ou Excel para baixar; se a escola enviou arquivo, use Abrir arquivo.', 'ATF e PCD › card › Ver listagem', 32),
   (array['cooperativa'], 'atfpcdcoop', 'Posso emitir ou recusar a ATF por esta tela?', 'Sim. Nos pedidos aguardando: Aprovar e emitir ATF ou Reprovar (com motivo). No PCD: Confirmar atendimento ou Recusar.', 'ATF e PCD › card pendente', 33),
@@ -35,3 +35,10 @@ select * from (values
   (array['financeiro'], 'financeiro', 'E se eu indeferir?', 'Informe o motivo. A excursão segue normalmente, sem alteração.', 'Pendências financeiras › Indeferir', 40)
 ) as v(perfis, tela, pergunta, resposta, onde_clicar, ordem)
 where not exists (select 1 from public.ajuda_faq f where f.pergunta = v.pergunta);
+
+-- Vídeos (apresentações narradas) das novas perguntas, caso a migração já tenha sido aplicada antes.
+update public.ajuda_faq set video_url = case tela
+    when 'atfpcdcoop' then 'https://neil-semed.github.io/Bora_la/apresentacoes/apresentacao_coop_atf_pcd.html'
+    when 'solicitacoescoop' then 'https://neil-semed.github.io/Bora_la/apresentacoes/apresentacao_coop_solicitacoes.html'
+    when 'financeiro' then 'https://neil-semed.github.io/Bora_la/apresentacoes/simulacao_financeiro.html' end
+  where tela in ('atfpcdcoop', 'solicitacoescoop', 'financeiro') and (video_url is null or video_url = '');
