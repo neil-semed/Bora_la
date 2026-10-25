@@ -1291,7 +1291,11 @@ async function openAvisoViagemModal() {
     : 'A unidade solicitante não possui usuário no sistema (use o Enviar e-mail).';
   const mot = document.getElementById('avisoViagemMotoristas');
   mot.innerHTML = motoristas.length
-    ? motoristas.map((p) => `<label class="mr-3 inline-flex items-center gap-1.5 text-sm"><input type="checkbox" class="aviso-viagem-mot h-4 w-4 accent-emerald-600" value="${p.id}">${escapeHtml(drivers.find((d) => d.id === p.driver_id)?.name || p.full_name || p.email)}</label>`).join('')
+    // Um item por motorista da viagem: o aviso vai para todas as contas ligadas a ele.
+    ? [...new Set(motoristas.map((p) => p.driver_id))].map((did) => {
+      const contas = motoristas.filter((p) => p.driver_id === did);
+      return `<label class="mr-3 inline-flex items-center gap-1.5 text-sm"><input type="checkbox" class="aviso-viagem-mot h-4 w-4 accent-emerald-600" value="${contas.map((p) => p.id).join(',')}">${escapeHtml(drivers.find((d) => d.id === did)?.name || contas[0].full_name || contas[0].email)}${contas.length > 1 ? ` <span class="text-xs text-slate-400">(${contas.length} contas)</span>` : ''}</label>`;
+    }).join('')
     : '<span class="text-xs text-slate-500">Nenhum motorista com acesso ao sistema nesta viagem.</span>';
   document.getElementById('avisoViagemTitulo').value = `Viagem de ${data} - ${t.destination || ''}`.trim();
   document.getElementById('avisoViagemPrioridade').value = 'normal';
@@ -1307,7 +1311,7 @@ function idsAvisoViagem() {
   if (!t) return [];
   const ids = [];
   if (document.getElementById('avisoViagemUnidade')?.checked) ids.push(...avisoViagemDestinatarios(t).unidade.map((p) => p.id));
-  document.querySelectorAll('.aviso-viagem-mot:checked').forEach((el) => ids.push(el.value));
+  document.querySelectorAll('.aviso-viagem-mot:checked').forEach((el) => ids.push(...el.value.split(',').filter(Boolean)));
   return [...new Set(ids)];
 }
 function atualizarContagemAvisoViagem() {
@@ -1332,7 +1336,7 @@ async function sendAvisoViagem() {
     prioridade: document.getElementById('avisoViagemPrioridade').value === 'importante' ? 'importante' : 'normal',
     sobreTela: document.getElementById('avisoViagemSobreTela').checked,
     emailsExtras: extras,
-    emailUserIds: [...document.querySelectorAll('.aviso-viagem-mot:checked')].map((el) => el.value),
+    emailUserIds: [...document.querySelectorAll('.aviso-viagem-mot:checked')].flatMap((el) => el.value.split(',').filter(Boolean)),
   });
   if (btn) btn.disabled = false;
   if (!r.ok) { toast(`❌ Não foi possível enviar: ${r.erro}`, true); return; }
