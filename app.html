@@ -1146,17 +1146,19 @@
                   <button type="button" onclick="atalhoAvisoDestinatarios('escolas')" class="rounded-full border px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-emerald-50">Todas as escolas</button>
                   <button type="button" onclick="atalhoAvisoDestinatarios('entidades')" class="rounded-full border px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-emerald-50">Todas as entidades</button>
                   <button type="button" onclick="atalhoAvisoDestinatarios('cooperativas')" class="rounded-full border px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-emerald-50">Todas as cooperativas</button>
+                  <button type="button" onclick="atalhoAvisoDestinatarios('pedagogia')" class="rounded-full border px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-emerald-50">Toda a Pedagogia</button>
                 </div></div>
                 <div class="mt-3 grid gap-3 sm:grid-cols-2">
                   <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Perfil</label><select id="avisoGrupo" onchange="onAvisoFiltroChange()" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="">Todos</option><option value="escola">Escola</option><option value="pedagogia">Pedagogia</option><option value="agente_externo">Cooperativa</option><option value="motorista">Motorista</option><option value="financeiro">Financeiro</option><option value="operacional">Administrativo / Co_Admin</option><option value="admin">Admin</option></select></div>
                   <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Tipo de unidade</label><select id="avisoTipoUnidade" onchange="onAvisoFiltroChange()" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="">Todos</option><option value="escola">Escola</option><option value="entidade">Entidade</option></select></div>
                   <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Unidade</label><select id="avisoUnidade" onchange="renderAvisoRecipients()" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="">Todas</option></select></div>
                   <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Cooperativa</label><select id="avisoCooperativa" onchange="renderAvisoRecipients()" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="">Todas</option></select></div>
-                  <div class="sm:col-span-2"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Buscar</label><input id="avisoPesquisa" oninput="renderAvisoRecipients()" placeholder="Nome ou e-mail" class="w-full rounded-lg border px-3 py-2 text-sm"></div>
+                  <div id="avisoSetorWrap"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Setor pedagógico</label><select id="avisoSetor" onchange="renderAvisoRecipients()" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="">Todos</option></select></div>
+                  <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Buscar</label><input id="avisoPesquisa" oninput="renderAvisoRecipients()" placeholder="Nome ou e-mail" class="w-full rounded-lg border px-3 py-2 text-sm"></div>
                 </div>
                 <div class="mt-3 mb-2 flex flex-wrap items-center gap-2"><span id="avisoRecipientCount" class="text-xs text-slate-600">0 selecionado(s)</span><span class="flex-1"></span><button type="button" onclick="selectAllAvisoRecipients()" class="rounded-lg border px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Selecionar todos</button><button type="button" onclick="clearAvisoRecipients()" class="rounded-lg border px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50">Limpar</button></div>
                 <div id="avisoRecipients" class="max-h-80 overflow-y-auto rounded-lg border"></div>
-                <p class="mt-2 text-xs text-slate-500">Unidade e Tipo de unidade filtram usuários do perfil Escola; Cooperativa filtra motoristas e agentes da cooperativa.</p>
+                <p class="mt-2 text-xs text-slate-500">Unidade e Tipo de unidade filtram usuários do perfil Escola; Cooperativa filtra motoristas e agentes da cooperativa; Setor pedagógico filtra os validadores do setor.</p>
               </div>
               <div id="avisoFormWrap" class="rounded-xl border bg-white p-4 shadow-sm">
                 <h3 class="font-semibold text-slate-900">Novo aviso</h3>
@@ -2325,6 +2327,7 @@
       <div class="mt-3"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Enviar para</label>
         <label class="mb-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-sm"><input id="avisoViagemUnidade" type="checkbox" onchange="atualizarContagemAvisoViagem()" class="mt-0.5 h-4 w-4 accent-emerald-600"><span><b>Unidade solicitante</b><small id="avisoViagemUnidadeInfo" class="block text-xs text-slate-500"></small></span></label>
         <div class="rounded-lg border px-3 py-2 text-sm" onchange="atualizarContagemAvisoViagem()"><b>Motorista(s) da viagem</b><div id="avisoViagemMotoristas" class="mt-1"></div></div>
+        <label class="mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-sm"><input id="avisoViagemPedagogia" type="checkbox" onchange="atualizarContagemAvisoViagem()" class="mt-0.5 h-4 w-4 accent-emerald-600"><span><b>Pedagogia: setor responsável pela viagem</b><small id="avisoViagemPedagogiaInfo" class="block text-xs text-slate-500"></small></span></label>
       </div>
       <div class="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_160px]"><div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Título</label><input id="avisoViagemTitulo" maxlength="120" class="w-full rounded-lg border px-3 py-2 text-sm"></div><div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Prioridade</label><select id="avisoViagemPrioridade" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="normal">Normal</option><option value="importante">Importante</option></select></div></div>
       <div class="mt-3"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Mensagem</label><textarea id="avisoViagemMensagem" rows="4" maxlength="2000" class="w-full rounded-lg border px-3 py-2 text-sm" placeholder="Escreva o aviso"></textarea></div>
@@ -2333,7 +2336,7 @@
       <div class="mt-5 flex justify-end gap-2"><button onclick="closeAvisoViagemModal()" class="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">Cancelar</button><button id="btnEnviarAvisoViagem" onclick="sendAvisoViagem()" class="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Enviar aviso</button></div>
     </div>
   </div>
-  <div id="adminAlertOverlay" role="dialog" aria-modal="true" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/55 p-4">
+  <div id="adminAlertOverlay" role="dialog" aria-modal="true" class="hidden fixed inset-0 flex items-center justify-center p-4" style="z-index:100;background:rgba(15,23,42,.55)">
     <div class="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
       <div class="flex items-center gap-3 border-b bg-gradient-to-b from-emerald-50 to-white p-4"><div class="text-3xl" aria-hidden="true">📣</div><div class="min-w-0"><span id="adminAlertOverlayPriority" class="inline-flex rounded-full bg-blue-100 px-3 py-1 text-[11px] font-extrabold tracking-wide text-blue-800">AVISO ADMINISTRATIVO</span><div id="adminAlertOverlayTitle" class="mt-1 break-words text-base font-extrabold text-slate-900"></div></div></div>
       <div class="p-4"><div id="adminAlertOverlayMessage" class="max-h-[50vh] overflow-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-800"></div>
@@ -2404,7 +2407,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=avisos-20261025-002"></script>
+  <script src="app.js?v=avisos-pedagogia-20261025-002"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */

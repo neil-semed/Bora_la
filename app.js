@@ -1071,6 +1071,10 @@ function perfilAvisoVinculo(p) {
   }
   if (p.role === 'agente_externo') return cooperativaById(profileCooperativaId(p))?.name || 'Cooperativa não definida';
   if (p.role === 'operacional') return accessProfiles.find((ap) => ap.id === p.access_profile_id)?.name || 'Administrativo';
+  if (p.role === 'pedagogia') {
+    const setores = validatorSectorAssignments.filter((v) => v.profile_id === p.id).map((v) => validationSectors.find((x) => x.id === v.sector_id)?.name).filter(Boolean);
+    return setores.length ? setores.join(', ') : (SETOR_PEDAGOGICO_LABELS[p.setor_pedagogico] || 'Pedagogia');
+  }
   return ROLE_LABELS[p.role] || p.role || 'Usuário';
 }
 function perfilAvisoRotulo(p) {
@@ -1091,6 +1095,15 @@ function populateAvisoFilters() {
   const unidades = schools.filter((s) => s.active !== false && (!tipo || (tipo === 'entidade' ? s.tipo === 'entidade' : s.tipo !== 'entidade')));
   school.innerHTML = '<option value="">Todas</option>' + unidades.map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
   coop.value = [...coop.options].some((o) => o.value === coopValue) ? coopValue : '';
+  const setor = document.getElementById('avisoSetor');
+  if (setor) {
+    const v = setor.value;
+    setor.innerHTML = '<option value="">Todos</option>' + validationSectors.filter((x) => x.active !== false).map((x) => `<option value="${x.id}">${escapeHtml(x.name)}</option>`).join('');
+    setor.value = [...setor.options].some((o) => o.value === v) ? v : '';
+    const grupo = document.getElementById('avisoGrupo')?.value || '';
+    document.getElementById('avisoSetorWrap')?.classList.toggle('hidden', !!grupo && grupo !== 'pedagogia');
+    if (grupo && grupo !== 'pedagogia') setor.value = '';
+  }
   school.value = [...school.options].some((o) => o.value === schoolValue) ? schoolValue : '';
 }
 
@@ -1100,7 +1113,10 @@ function filteredAvisoRecipients() {
   const cooperativaId = document.getElementById('avisoCooperativa')?.value || '';
   const schoolId = document.getElementById('avisoUnidade')?.value || '';
   const query = (document.getElementById('avisoPesquisa')?.value || '').trim().toLocaleLowerCase('pt-BR');
+  const setorId = document.getElementById('avisoSetor')?.value || '';
+  const noSetor = setorId ? new Set(validatorSectorAssignments.filter((v) => v.sector_id === setorId).map((v) => v.profile_id)) : null;
   return allProfiles.filter((p) => p.active !== false && p.id !== currentUser?.id && (!group || p.role === group))
+    .filter((p) => !noSetor || (p.role === 'pedagogia' && noSetor.has(p.id)))
     .filter((p) => !tipo || (p.role === 'escola' && tipoUnidadeDoPerfil(p) === tipo))
     .filter((p) => !schoolId || (p.role === 'escola' && p.school_id === schoolId))
     .filter((p) => !cooperativaId || (['motorista', 'agente_externo'].includes(p.role) && profileCooperativaId(p) === cooperativaId))
@@ -1131,15 +1147,15 @@ function selectAllAvisoRecipients() {
 
 function clearAvisoRecipients() {
   avisoRecipientIds.clear();
-  ['avisoGrupo', 'avisoTipoUnidade', 'avisoUnidade', 'avisoCooperativa', 'avisoPesquisa'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['avisoGrupo', 'avisoTipoUnidade', 'avisoUnidade', 'avisoCooperativa', 'avisoSetor', 'avisoPesquisa'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
   populateAvisoFilters();
   renderAvisoRecipients();
 }
 
 // Atalhos: ajustam os filtros e marcam todos os usuários encontrados.
 function atalhoAvisoDestinatarios(tipo) {
-  ['avisoGrupo', 'avisoTipoUnidade', 'avisoUnidade', 'avisoCooperativa', 'avisoPesquisa'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
-  const cfg = { motoristas: ['motorista', ''], escolas: ['escola', 'escola'], entidades: ['escola', 'entidade'], cooperativas: ['agente_externo', ''] }[tipo];
+  ['avisoGrupo', 'avisoTipoUnidade', 'avisoUnidade', 'avisoCooperativa', 'avisoSetor', 'avisoPesquisa'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const cfg = { motoristas: ['motorista', ''], escolas: ['escola', 'escola'], entidades: ['escola', 'entidade'], cooperativas: ['agente_externo', ''], pedagogia: ['pedagogia', ''] }[tipo];
   if (!cfg) return;
   document.getElementById('avisoGrupo').value = cfg[0];
   document.getElementById('avisoTipoUnidade').value = cfg[1];
@@ -1149,7 +1165,7 @@ function atalhoAvisoDestinatarios(tipo) {
 
 async function openAvisosScreen() {
   if (!(currentUser?.role === 'admin' || (currentUser?.role === 'operacional' && canViewScreen('avisos')))) return;
-  await Promise.all([loadAllProfiles(), loadSchools(), loadDrivers(), loadCooperativas()]);
+  await Promise.all([loadAllProfiles(), loadSchools(), loadDrivers(), loadCooperativas(), loadValidationConfig()]);
   document.getElementById('avisoFormWrap')?.classList.toggle('hidden', !podeEnviarAvisos());
   populateAvisoFilters();
   renderAvisoRecipients();
@@ -1274,15 +1290,28 @@ function limparFiltrosAvisosEnviados() {
 function avisoViagemDestinatarios(t) {
   const unidade = allProfiles.filter((p) => p.role === 'escola' && p.active !== false && t.school_id && p.school_id === t.school_id);
   const motoristas = allProfiles.filter((p) => p.role === 'motorista' && p.active !== false && (t.driver_ids || []).includes(p.driver_id));
-  return { unidade, motoristas };
+  // Pedagogia: validadores do setor responsável pela viagem.
+  const noSetor = t.validation_sector_id
+    ? new Set(validatorSectorAssignments.filter((v) => v.sector_id === t.validation_sector_id).map((v) => v.profile_id))
+    : null;
+  const pedagogia = allProfiles.filter((p) => p.role === 'pedagogia' && p.active !== false
+    && (noSetor ? noSetor.has(p.id) : (!!t.setor_pedagogico_atual && p.setor_pedagogico === t.setor_pedagogico_atual)));
+  const setorNome = validationSectors.find((x) => x.id === t.validation_sector_id)?.name || SETOR_PEDAGOGICO_LABELS[t.setor_pedagogico_atual] || '';
+  return { unidade, motoristas, pedagogia, setorNome };
 }
 async function openAvisoViagemModal() {
   if (!podeEnviarAvisos()) return;
   const t = agenda.find((a) => a.id === agendaLinhaSelecionada);
   if (!t) { toast('⚠️ Clique em uma viagem da agenda para escolher a unidade.', true); return; }
   if (!allProfiles.length) await loadAllProfiles();
+  if (!validatorSectorAssignments.length) await loadValidationConfig();
   const { data } = emailUnidadeViagemTexto(t);
-  const { unidade, motoristas } = avisoViagemDestinatarios(t);
+  const { unidade, motoristas, pedagogia, setorNome } = avisoViagemDestinatarios(t);
+  const ped = document.getElementById('avisoViagemPedagogia');
+  ped.checked = false; ped.disabled = !pedagogia.length;
+  document.getElementById('avisoViagemPedagogiaInfo').textContent = pedagogia.length
+    ? `${setorNome || 'Setor responsável'}: ${pedagogia.length} validador(es) do setor`
+    : (setorNome ? `${setorNome}: nenhum validador ativo no setor.` : 'Viagem sem setor pedagógico responsável.');
   document.getElementById('avisoViagemInfo').textContent = `${originName(t) || '-'} · ${data} · ${hhmm(t.departure_time)}h → ${t.destination || '-'}${t.city ? ' (' + t.city + ')' : ''}`;
   const uni = document.getElementById('avisoViagemUnidade');
   uni.checked = unidade.length > 0; uni.disabled = !unidade.length;
@@ -1312,6 +1341,7 @@ function idsAvisoViagem() {
   const ids = [];
   if (document.getElementById('avisoViagemUnidade')?.checked) ids.push(...avisoViagemDestinatarios(t).unidade.map((p) => p.id));
   document.querySelectorAll('.aviso-viagem-mot:checked').forEach((el) => ids.push(...el.value.split(',').filter(Boolean)));
+  if (document.getElementById('avisoViagemPedagogia')?.checked) ids.push(...avisoViagemDestinatarios(t).pedagogia.map((p) => p.id));
   return [...new Set(ids)];
 }
 function atualizarContagemAvisoViagem() {
@@ -1325,7 +1355,7 @@ async function sendAvisoViagem() {
   const titulo = document.getElementById('avisoViagemTitulo').value.trim();
   const mensagem = document.getElementById('avisoViagemMensagem').value.trim();
   if (!t) return;
-  if (!ids.length) { toast('⚠️ Marque a unidade e/ou ao menos um motorista.', true); return; }
+  if (!ids.length) { toast('⚠️ Marque a unidade, a Pedagogia e/ou ao menos um motorista.', true); return; }
   if (!titulo || !mensagem) { toast('⚠️ Informe o título e a mensagem.', true); return; }
   const comEmail = document.getElementById('avisoViagemComEmail').checked;
   const extras = comEmail && document.getElementById('avisoViagemUnidade').checked ? [emailUnidadeDaViagem(t)].filter(Boolean) : [];
@@ -1336,7 +1366,8 @@ async function sendAvisoViagem() {
     prioridade: document.getElementById('avisoViagemPrioridade').value === 'importante' ? 'importante' : 'normal',
     sobreTela: document.getElementById('avisoViagemSobreTela').checked,
     emailsExtras: extras,
-    emailUserIds: [...document.querySelectorAll('.aviso-viagem-mot:checked')].flatMap((el) => el.value.split(',').filter(Boolean)),
+    emailUserIds: [...document.querySelectorAll('.aviso-viagem-mot:checked')].flatMap((el) => el.value.split(',').filter(Boolean))
+      .concat(document.getElementById('avisoViagemPedagogia').checked ? avisoViagemDestinatarios(t).pedagogia.map((p) => p.id) : []),
   });
   if (btn) btn.disabled = false;
   if (!r.ok) { toast(`❌ Não foi possível enviar: ${r.erro}`, true); return; }
