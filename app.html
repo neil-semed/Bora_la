@@ -338,6 +338,9 @@
           <a data-screen="ajuda" data-roles="admin" onclick="showScreen('ajuda', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
             ❓ Ajuda
           </a>
+          <a data-screen="avisos" data-roles="admin" onclick="showScreen('avisos', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+            📣 Avisos
+          </a>
           <a data-screen="veiculos" data-roles="admin" onclick="showScreen('veiculos', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
             🚌 Veículos
           </a>
@@ -426,6 +429,7 @@
           <a data-screen="perfisacesso" data-roles="admin" onclick="showScreen('perfisacesso',this)" class="top-nav-link"><i data-lucide="shield-check" class="w-4 h-4 mr-1.5 text-fuchsia-600"></i>Perfis de acesso</a>
           <a data-screen="validadores" data-roles="admin" onclick="showScreen('validadores',this)" class="top-nav-link"><i data-lucide="badge-check" class="w-4 h-4 mr-1.5 text-pink-600"></i>Validadores</a>
           <a data-screen="ajuda" data-roles="admin" onclick="showScreen('ajuda',this)" class="top-nav-link"><i data-lucide="circle-help" class="w-4 h-4 mr-1.5 text-emerald-600"></i>Ajuda</a>
+          <a data-screen="avisos" data-roles="admin" onclick="showScreen('avisos',this)" class="top-nav-link"><i data-lucide="megaphone" class="w-4 h-4 mr-1.5 text-blue-600"></i>Avisos</a>
           <a data-screen="cooperativas" data-roles="admin" onclick="showScreen('cooperativas',this)" class="top-nav-link"><i data-lucide="send" class="w-4 h-4 mr-1.5 text-cyan-700"></i>Cooperativas</a>
           <a data-screen="pendenciascoop" data-roles="agente_externo" onclick="showScreen('pendenciascoop',this)" class="top-nav-link"><i data-lucide="file-warning" class="w-4 h-4 mr-1.5 text-amber-600"></i>Pendências</a>
           <a data-screen="solicitacoescoop" data-roles="agente_externo" onclick="showScreen('solicitacoescoop',this)" class="top-nav-link"><i data-lucide="bus-front" class="w-4 h-4 mr-1.5 text-emerald-600"></i>Solicitações</a>
@@ -624,6 +628,7 @@
                 </div>
                 <button onclick="document.getElementById('filtroData').value='';document.getElementById('filtroPeriodo').value='dia';document.getElementById('filtroSituacao').value='';document.getElementById('filtroUnidade').value='';filtrarAgenda();" class="px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Limpar filtros</button>
                 <button id="btnEmailUnidadeAgenda" type="button" onclick="openEmailUnidadeModal()" disabled title="Clique em uma viagem da agenda para escolher a unidade" class="hidden px-3 py-2 rounded-lg bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed">✉️ Enviar e-mail</button>
+                <button id="btnAvisoViagemAgenda" type="button" onclick="openAvisoViagemModal()" disabled title="Clique em uma viagem da agenda para escolher a unidade" class="hidden px-3 py-2 rounded-lg bg-blue-700 text-sm font-semibold text-white hover:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed">🔔 Enviar aviso</button>
               </div>
               <!-- No celular a tabela vira "cartões" empilhados (mesma informação, sem
                    precisar arrastar a tela pros lados); a partir do tablet/desktop (md:)
@@ -1132,6 +1137,50 @@
 
           <!-- CONFIGURAÇÃO DE VALIDADORES (Admin) -->
           <!-- AJUDA (Admin / Co_Admin) -->
+          <section id="screen-avisos" class="hidden-screen">
+            <div class="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+              <div class="rounded-xl border bg-white p-4 shadow-sm">
+                <h3 class="font-semibold text-slate-900">Destinatários</h3>
+                <div class="mt-3"><span class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Atalhos</span><div class="flex flex-wrap gap-2">
+                  <button type="button" onclick="atalhoAvisoDestinatarios('motoristas')" class="rounded-full border px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-emerald-50">Todos os motoristas</button>
+                  <button type="button" onclick="atalhoAvisoDestinatarios('escolas')" class="rounded-full border px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-emerald-50">Todas as escolas</button>
+                  <button type="button" onclick="atalhoAvisoDestinatarios('entidades')" class="rounded-full border px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-emerald-50">Todas as entidades</button>
+                  <button type="button" onclick="atalhoAvisoDestinatarios('cooperativas')" class="rounded-full border px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-emerald-50">Todas as cooperativas</button>
+                </div></div>
+                <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Perfil</label><select id="avisoGrupo" onchange="onAvisoFiltroChange()" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="">Todos</option><option value="escola">Escola</option><option value="pedagogia">Pedagogia</option><option value="agente_externo">Cooperativa</option><option value="motorista">Motorista</option><option value="financeiro">Financeiro</option><option value="operacional">Administrativo / Co_Admin</option><option value="admin">Admin</option></select></div>
+                  <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Tipo de unidade</label><select id="avisoTipoUnidade" onchange="onAvisoFiltroChange()" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="">Todos</option><option value="escola">Escola</option><option value="entidade">Entidade</option></select></div>
+                  <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Unidade</label><select id="avisoUnidade" onchange="renderAvisoRecipients()" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="">Todas</option></select></div>
+                  <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Cooperativa</label><select id="avisoCooperativa" onchange="renderAvisoRecipients()" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="">Todas</option></select></div>
+                  <div class="sm:col-span-2"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Buscar</label><input id="avisoPesquisa" oninput="renderAvisoRecipients()" placeholder="Nome ou e-mail" class="w-full rounded-lg border px-3 py-2 text-sm"></div>
+                </div>
+                <div class="mt-3 mb-2 flex flex-wrap items-center gap-2"><span id="avisoRecipientCount" class="text-xs text-slate-600">0 selecionado(s)</span><span class="flex-1"></span><button type="button" onclick="selectAllAvisoRecipients()" class="rounded-lg border px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Selecionar todos</button><button type="button" onclick="clearAvisoRecipients()" class="rounded-lg border px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50">Limpar</button></div>
+                <div id="avisoRecipients" class="max-h-80 overflow-y-auto rounded-lg border"></div>
+                <p class="mt-2 text-xs text-slate-500">Unidade e Tipo de unidade filtram usuários do perfil Escola; Cooperativa filtra motoristas e agentes da cooperativa.</p>
+              </div>
+              <div id="avisoFormWrap" class="rounded-xl border bg-white p-4 shadow-sm">
+                <h3 class="font-semibold text-slate-900">Novo aviso</h3>
+                <div class="mt-3"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Título *</label><input id="avisoTitulo" maxlength="120" class="w-full rounded-lg border px-3 py-2 text-sm"></div>
+                <div class="mt-3"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Prioridade</label><select id="avisoPrioridade" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="normal">Normal</option><option value="importante">Importante</option></select></div>
+                <div class="mt-3"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Mensagem *</label><textarea id="avisoMensagem" rows="6" maxlength="2000" class="w-full rounded-lg border px-3 py-2 text-sm"></textarea></div>
+                <label class="mt-3 flex items-center gap-2 text-sm text-slate-700"><input id="avisoSobreTela" type="checkbox" checked class="h-4 w-4 accent-emerald-600"> Mostrar sobre a tela quando o usuário abrir o sistema</label>
+                <label class="mt-2 flex items-center gap-2 text-sm text-slate-700"><input id="avisoComEmail" type="checkbox" class="h-4 w-4 accent-emerald-600"> Enviar também por e-mail</label>
+                <button id="btnEnviarAviso" type="button" onclick="sendAdministrativeAlert()" class="mt-4 w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700">Enviar aviso</button>
+              </div>
+            </div>
+            <div class="mt-4 rounded-xl border bg-white p-4 shadow-sm">
+              <div class="mb-3 flex flex-wrap items-end gap-3">
+                <h3 class="mr-2 font-semibold text-slate-900">Avisos enviados</h3>
+                <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Mês</label><select id="avenvMes" onchange="renderAvisosEnviados()" class="rounded-lg border px-3 py-2 text-sm"><option value="">Todos</option><option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option><option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option><option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option><option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option></select></div>
+                <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Ano</label><select id="avenvAno" onchange="renderAvisosEnviados()" class="rounded-lg border px-3 py-2 text-sm"><option value="">Todos</option></select></div>
+                <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Perfil</label><select id="avenvPerfil" onchange="renderAvisosEnviados()" class="rounded-lg border px-3 py-2 text-sm"><option value="">Todos</option><option value="escola">Escola</option><option value="pedagogia">Pedagogia</option><option value="agente_externo">Cooperativa</option><option value="motorista">Motorista</option><option value="financeiro">Financeiro</option><option value="operacional">Administrativo / Co_Admin</option><option value="admin">Admin</option></select></div>
+                <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Destinatário</label><select id="avenvDest" onchange="renderAvisosEnviados()" class="rounded-lg border px-3 py-2 text-sm"><option value="">Todos os destinatários</option></select></div>
+                <button type="button" onclick="limparFiltrosAvisosEnviados()" class="px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Limpar filtros</button>
+                <button type="button" onclick="carregarAvisosEnviados()" class="px-3 py-2 rounded-lg bg-slate-100 text-sm hover:bg-slate-200">🔄 Atualizar</button>
+              </div>
+              <div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="bg-slate-50 text-left text-xs uppercase text-slate-500"><th class="px-3 py-2">Enviado em</th><th class="px-3 py-2">Título</th><th class="px-3 py-2">Prioridade</th><th class="px-3 py-2">Destinatário</th><th class="px-3 py-2">Unidade / Cooperativa</th><th class="px-3 py-2">Perfil</th><th class="px-3 py-2">Enviado por</th><th class="px-3 py-2">Situação</th></tr></thead><tbody id="avisosEnviadosTabela"><tr><td colspan="8" class="px-3 py-6 text-center text-sm text-slate-500">Carregando...</td></tr></tbody></table></div>
+            </div>
+          </section>
           <section id="screen-ajuda" class="hidden-screen">
             <div class="bg-white rounded-xl border shadow-sm p-5">
               <div class="mb-4 flex flex-wrap border-b text-sm font-semibold">
@@ -2269,6 +2318,29 @@
   </div>
 
   <!-- MODAL: NOTIFICAR UNIDADES SOBRE AS VIAGENS -->
+  <div id="avisoViagemModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div class="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+      <div class="flex items-start justify-between gap-4"><h3 class="text-lg font-bold text-slate-900">🔔 Enviar aviso da viagem</h3><button onclick="closeAvisoViagemModal()" class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Fechar">✕</button></div>
+      <div class="mt-4"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Viagem selecionada</label><div id="avisoViagemInfo" class="rounded-lg border bg-slate-50 px-3 py-2 text-sm"></div></div>
+      <div class="mt-3"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Enviar para</label>
+        <label class="mb-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-sm"><input id="avisoViagemUnidade" type="checkbox" onchange="atualizarContagemAvisoViagem()" class="mt-0.5 h-4 w-4 accent-emerald-600"><span><b>Unidade solicitante</b><small id="avisoViagemUnidadeInfo" class="block text-xs text-slate-500"></small></span></label>
+        <div class="rounded-lg border px-3 py-2 text-sm" onchange="atualizarContagemAvisoViagem()"><b>Motorista(s) da viagem</b><div id="avisoViagemMotoristas" class="mt-1"></div></div>
+      </div>
+      <div class="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_160px]"><div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Título</label><input id="avisoViagemTitulo" maxlength="120" class="w-full rounded-lg border px-3 py-2 text-sm"></div><div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Prioridade</label><select id="avisoViagemPrioridade" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="normal">Normal</option><option value="importante">Importante</option></select></div></div>
+      <div class="mt-3"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Mensagem</label><textarea id="avisoViagemMensagem" rows="4" maxlength="2000" class="w-full rounded-lg border px-3 py-2 text-sm" placeholder="Escreva o aviso"></textarea></div>
+      <label class="mt-2 flex items-center gap-2 text-sm text-slate-700"><input id="avisoViagemSobreTela" type="checkbox" checked class="h-4 w-4 accent-emerald-600"> Mostrar sobre a tela quando o destinatário abrir o sistema</label>
+      <label class="mt-1 flex items-center gap-2 text-sm text-slate-700"><input id="avisoViagemComEmail" type="checkbox" class="h-4 w-4 accent-emerald-600"> Enviar também por e-mail</label>
+      <div class="mt-5 flex justify-end gap-2"><button onclick="closeAvisoViagemModal()" class="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">Cancelar</button><button id="btnEnviarAvisoViagem" onclick="sendAvisoViagem()" class="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Enviar aviso</button></div>
+    </div>
+  </div>
+  <div id="adminAlertOverlay" role="dialog" aria-modal="true" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/55 p-4">
+    <div class="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+      <div class="flex items-center gap-3 border-b bg-gradient-to-b from-emerald-50 to-white p-4"><div class="text-3xl" aria-hidden="true">📣</div><div class="min-w-0"><span id="adminAlertOverlayPriority" class="inline-flex rounded-full bg-blue-100 px-3 py-1 text-[11px] font-extrabold tracking-wide text-blue-800">AVISO ADMINISTRATIVO</span><div id="adminAlertOverlayTitle" class="mt-1 break-words text-base font-extrabold text-slate-900"></div></div></div>
+      <div class="p-4"><div id="adminAlertOverlayMessage" class="max-h-[50vh] overflow-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-800"></div>
+        <p class="mb-3 mt-4 text-[11px] text-slate-400"><span id="adminAlertOverlayMeta"></span> O aviso continuará no sino de notificações até ser marcado como lido.</p>
+        <button type="button" onclick="closeAdministrativeAlert()" class="w-full rounded-lg bg-emerald-600 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Entendi</button></div>
+    </div>
+  </div>
   <div id="emailUnidadeModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
     <div class="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
       <div class="flex items-start justify-between gap-4"><h3 class="text-lg font-bold text-slate-900">✉️ Enviar e-mail à unidade</h3><button onclick="closeEmailUnidadeModal()" class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Fechar">✕</button></div>
@@ -2332,7 +2404,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=agenda-destino-cidade-20261024-001"></script>
+  <script src="app.js?v=avisos-20261025-001"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */

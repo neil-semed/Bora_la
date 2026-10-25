@@ -47,6 +47,7 @@ let notificationRealtimeChannel = null;
 // Evita que o mesmo aviso administrativo volte a abrir a cada atualização da tela.
 // Ele continua no sino até o usuário marcá-lo como lido.
 const administrativeAlertsSeenThisSession = new Set();
+let avisoOverlayAbertoId = null;
 let avisoRecipientIds = new Set();
 let allProfiles = []; // só carregada/usada de fato pelo admin, na tela "Usuários"
 let demoProfiles = []; // equivalente à tabela "profiles" em modo demonstração
@@ -79,6 +80,7 @@ const ACCESS_SCREEN_CATALOG = [
   { key: 'unidades', label: 'Unidades', editable: true, coAdminOnly: true },
   { key: 'validadores', label: 'Validadores', editable: true, coAdminOnly: true },
   { key: 'ajuda', label: 'Ajuda (FAQ, dicas e dúvidas)', editable: true, coAdminOnly: true },
+  { key: 'avisos', label: 'Avisos administrativos', editable: true, coAdminOnly: true },
 ];
 const CO_ADMIN_NAME = 'Co_Admin';
 // Agenda Mestra com "editar" (Admin ou perfil administrativo): mesmas edições do Admin.
@@ -1048,60 +1050,78 @@ function openUsuariosScreen() {
 }
 
 // ============ AVISOS ADMINISTRATIVOS ============
-function avisoRecipientGroupMatches(profile, group) {
-  if (group === 'todos' || group === 'usuario') return true;
-  return profile.role === group;
+// Admin e Co_Admin (permissão "avisos"). Cada aviso vira uma notificação por destinatário
+// (notification_type 'aviso_admin', mesmo aviso_id), enviada pela RPC enviar_aviso (migration_049).
+function podeEnviarAvisos() {
+  return currentUser?.role === 'admin' || (currentUser?.role === 'operacional' && canEditScreen('avisos'));
 }
-
 function profileCooperativaId(profile) {
   return profile.cooperativa_id || drivers.find((d) => d.id === profile.driver_id)?.cooperativa_id || '';
+}
+function tipoUnidadeDoPerfil(p) {
+  const s = schools.find((x) => x.id === p.school_id);
+  return s ? (s.tipo === 'entidade' ? 'entidade' : 'escola') : '';
+}
+function perfilAvisoVinculo(p) {
+  if (p.role === 'escola') return schoolName(p.school_id) || 'Unidade não definida';
+  if (p.role === 'motorista') {
+    const d = drivers.find((x) => x.id === p.driver_id);
+    const coop = cooperativaById(profileCooperativaId(p))?.name;
+    return [d?.name || 'Motorista não vinculado', coop].filter(Boolean).join(' · ');
+  }
+  if (p.role === 'agente_externo') return cooperativaById(profileCooperativaId(p))?.name || 'Cooperativa não definida';
+  if (p.role === 'operacional') return accessProfiles.find((ap) => ap.id === p.access_profile_id)?.name || 'Administrativo';
+  return ROLE_LABELS[p.role] || p.role || 'Usuário';
+}
+function perfilAvisoRotulo(p) {
+  if (!p) return '-';
+  if (p.role === 'operacional') return accessProfiles.find((ap) => ap.id === p.access_profile_id)?.name || 'Administrativo';
+  if (p.role === 'agente_externo') return 'Cooperativa';
+  return ROLE_LABELS[p.role] || p.role || '-';
 }
 
 function populateAvisoFilters() {
   const coop = document.getElementById('avisoCooperativa');
   const school = document.getElementById('avisoUnidade');
   if (!coop || !school) return;
+  const tipo = document.getElementById('avisoTipoUnidade')?.value || '';
   const coopValue = coop.value;
   const schoolValue = school.value;
-  coop.innerHTML = '<option value="">Todas as cooperativas</option>' + cooperativas.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
-  school.innerHTML = '<option value="">Todas as unidades</option>' + schools.filter((s) => s.tipo !== 'entidade').map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
-  coop.value = coopValue;
-  school.value = schoolValue;
+  coop.innerHTML = '<option value="">Todas</option>' + cooperativas.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  const unidades = schools.filter((s) => s.active !== false && (!tipo || (tipo === 'entidade' ? s.tipo === 'entidade' : s.tipo !== 'entidade')));
+  school.innerHTML = '<option value="">Todas</option>' + unidades.map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+  coop.value = [...coop.options].some((o) => o.value === coopValue) ? coopValue : '';
+  school.value = [...school.options].some((o) => o.value === schoolValue) ? schoolValue : '';
 }
 
 function filteredAvisoRecipients() {
-  const group = document.getElementById('avisoGrupo')?.value || 'todos';
+  const group = document.getElementById('avisoGrupo')?.value || '';
+  const tipo = document.getElementById('avisoTipoUnidade')?.value || '';
   const cooperativaId = document.getElementById('avisoCooperativa')?.value || '';
   const schoolId = document.getElementById('avisoUnidade')?.value || '';
   const query = (document.getElementById('avisoPesquisa')?.value || '').trim().toLocaleLowerCase('pt-BR');
-  return allProfiles.filter((p) => p.active !== false && avisoRecipientGroupMatches(p, group))
-    .filter((p) => !cooperativaId || profileCooperativaId(p) === cooperativaId)
-    .filter((p) => !schoolId || p.school_id === schoolId)
+  return allProfiles.filter((p) => p.active !== false && p.id !== currentUser?.id && (!group || p.role === group))
+    .filter((p) => !tipo || (p.role === 'escola' && tipoUnidadeDoPerfil(p) === tipo))
+    .filter((p) => !schoolId || (p.role === 'escola' && p.school_id === schoolId))
+    .filter((p) => !cooperativaId || (['motorista', 'agente_externo'].includes(p.role) && profileCooperativaId(p) === cooperativaId))
     .filter((p) => !query || `${p.full_name || ''} ${p.email || ''}`.toLocaleLowerCase('pt-BR').includes(query))
     .sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '', 'pt-BR'));
 }
 
-function perfilAvisoVinculo(p) {
-  if (p.role === 'escola') return schoolName(p.school_id) || 'Unidade não definida';
-  if (p.role === 'motorista') return drivers.find((d) => d.id === p.driver_id)?.name || 'Motorista não vinculado';
-  if (p.role === 'agente_externo') return cooperativaById(profileCooperativaId(p))?.name || 'Cooperativa não definida';
-  return ROLE_LABELS[p.role] || p.role || 'Usuário';
-}
+function onAvisoFiltroChange() { populateAvisoFilters(); renderAvisoRecipients(); }
 
 function renderAvisoRecipients() {
   const box = document.getElementById('avisoRecipients');
   const count = document.getElementById('avisoRecipientCount');
   if (!box || !count) return;
   const rows = filteredAvisoRecipients();
-  const validIds = new Set(rows.map((p) => p.id));
-  avisoRecipientIds = new Set([...avisoRecipientIds].filter((id) => validIds.has(id)));
   count.textContent = `${avisoRecipientIds.size} selecionado(s)`;
-  box.innerHTML = rows.length ? rows.map((p) => `<label class="flex cursor-pointer items-start gap-3 border-b border-slate-100 px-4 py-3 last:border-0 hover:bg-slate-50"><input type="checkbox" class="mt-1 h-4 w-4 accent-emerald-600" ${avisoRecipientIds.has(p.id) ? 'checked' : ''} onchange="toggleAvisoRecipient('${p.id}', this.checked)"><span class="min-w-0 flex-1"><strong class="block truncate text-sm text-slate-800">${escapeHtml(p.full_name || p.email || 'Usuário')}</strong><span class="block truncate text-xs text-slate-500">${escapeHtml(p.email || '')} · ${escapeHtml(perfilAvisoVinculo(p))}</span></span><span class="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase text-slate-600">${escapeHtml(ROLE_LABELS[p.role] || p.role)}</span></label>`).join('') : '<p class="p-5 text-center text-sm text-slate-500">Nenhum usuário encontrado para estes filtros.</p>';
+  box.innerHTML = rows.length ? rows.map((p) => `<label class="flex cursor-pointer items-start gap-3 border-b border-slate-100 px-3 py-2 last:border-0 hover:bg-slate-50"><input type="checkbox" class="mt-1 h-4 w-4 accent-emerald-600" ${avisoRecipientIds.has(p.id) ? 'checked' : ''} onchange="toggleAvisoRecipient('${p.id}', this.checked)"><span class="min-w-0 flex-1"><strong class="block truncate text-sm text-slate-800">${escapeHtml(p.full_name || p.email || 'Usuário')}</strong><span class="block truncate text-xs text-slate-500">${escapeHtml(perfilAvisoRotulo(p))} · ${escapeHtml(perfilAvisoVinculo(p))}</span></span></label>`).join('') : '<p class="p-5 text-center text-sm text-slate-500">Nenhum usuário encontrado para estes filtros.</p>';
 }
 
 function toggleAvisoRecipient(id, checked) {
   if (checked) avisoRecipientIds.add(id); else avisoRecipientIds.delete(id);
-  renderAvisoRecipients();
+  document.getElementById('avisoRecipientCount').textContent = `${avisoRecipientIds.size} selecionado(s)`;
 }
 
 function selectAllAvisoRecipients() {
@@ -1111,38 +1131,213 @@ function selectAllAvisoRecipients() {
 
 function clearAvisoRecipients() {
   avisoRecipientIds.clear();
-  renderAvisoRecipients();
-}
-
-async function openAvisosScreen() {
-  if (currentUser?.role !== 'admin') return;
-  await Promise.all([loadAllProfiles(), loadSchools(), loadDrivers(), loadCooperativas()]);
+  ['avisoGrupo', 'avisoTipoUnidade', 'avisoUnidade', 'avisoCooperativa', 'avisoPesquisa'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
   populateAvisoFilters();
   renderAvisoRecipients();
 }
 
+// Atalhos: ajustam os filtros e marcam todos os usuários encontrados.
+function atalhoAvisoDestinatarios(tipo) {
+  ['avisoGrupo', 'avisoTipoUnidade', 'avisoUnidade', 'avisoCooperativa', 'avisoPesquisa'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const cfg = { motoristas: ['motorista', ''], escolas: ['escola', 'escola'], entidades: ['escola', 'entidade'], cooperativas: ['agente_externo', ''] }[tipo];
+  if (!cfg) return;
+  document.getElementById('avisoGrupo').value = cfg[0];
+  document.getElementById('avisoTipoUnidade').value = cfg[1];
+  populateAvisoFilters();
+  selectAllAvisoRecipients();
+}
+
+async function openAvisosScreen() {
+  if (!(currentUser?.role === 'admin' || (currentUser?.role === 'operacional' && canViewScreen('avisos')))) return;
+  await Promise.all([loadAllProfiles(), loadSchools(), loadDrivers(), loadCooperativas()]);
+  document.getElementById('avisoFormWrap')?.classList.toggle('hidden', !podeEnviarAvisos());
+  populateAvisoFilters();
+  renderAvisoRecipients();
+  carregarAvisosEnviados();
+}
+
+// Envia o aviso (sino + janela) e, se marcado, o e-mail no padrão visual.
+async function enviarAvisoPara(userIds, { titulo, mensagem, prioridade, sobreTela, comEmail, excursionId = null, emailsExtras = [], emailUserIds = null }) {
+  if (!sb) return { ok: true, demo: true, emails: 0 };
+  const { error } = await sb.rpc('enviar_aviso', { p_user_ids: userIds, p_titulo: titulo, p_mensagem: mensagem, p_prioridade: prioridade, p_sobre_tela: sobreTela, p_excursion_id: excursionId });
+  if (error) {
+    const hint = /enviar_aviso|function|column/i.test(error.message || '') ? ' Execute a migration 049 no Supabase.' : '';
+    return { ok: false, erro: error.message + hint };
+  }
+  let emails = 0;
+  if (comEmail) {
+    const lista = [...new Set([...emailsExtras, ...(emailUserIds || userIds).map((id) => allProfiles.find((p) => p.id === id)?.email)].map((e) => String(e || '').trim().toLowerCase()).filter(Boolean))];
+    const imp = prioridade === 'importante';
+    const html = emailPadraoHtml(imp ? 'Aviso importante' : 'Aviso administrativo',
+      `<p style="margin:0 0 8px;font-size:16px;font-weight:700">${escapeHtml(titulo)}</p>`
+      + `<p style="margin:0 0 12px;white-space:pre-wrap">${escapeHtml(mensagem)}</p>`
+      + '<p style="margin:0 0 12px;font-size:12px;color:#475569">O aviso também está disponível no sino de notificações do Bora Lá.</p>');
+    const texto = `${saudacaoEmailBrasilia()}\n\n${titulo}\n\n${mensagem}\n\nO aviso também está disponível no sino de notificações do Bora Lá.\n\nBora Lá - Excursões / Semed Nova Lima`;
+    for (const email of lista) if (await tentarEnviarEmailAutomatico(email, `Bora Lá - ${imp ? 'Aviso importante' : 'Aviso'}: ${titulo}`, texto, '', html)) emails++;
+    return { ok: true, emails, totalEmails: lista.length };
+  }
+  return { ok: true, emails: 0 };
+}
+
 async function sendAdministrativeAlert() {
-  if (currentUser?.role !== 'admin' || !sb) return;
-  const title = document.getElementById('avisoTitulo')?.value.trim();
-  const message = document.getElementById('avisoMensagem')?.value.trim();
-  const priority = document.getElementById('avisoPrioridade')?.value === 'importante' ? 'importante' : 'normal';
-  const showOverlay = !!document.getElementById('avisoSobreTela')?.checked;
-  if (!title || !message) { toast('⚠️ Informe o título e a mensagem.', true); return; }
+  if (!podeEnviarAvisos()) return;
+  const titulo = document.getElementById('avisoTitulo')?.value.trim();
+  const mensagem = document.getElementById('avisoMensagem')?.value.trim();
+  const prioridade = document.getElementById('avisoPrioridade')?.value === 'importante' ? 'importante' : 'normal';
+  const sobreTela = !!document.getElementById('avisoSobreTela')?.checked;
+  const comEmail = !!document.getElementById('avisoComEmail')?.checked;
+  if (!titulo || !mensagem) { toast('⚠️ Informe o título e a mensagem.', true); return; }
   if (!avisoRecipientIds.size) { toast('⚠️ Selecione ao menos um destinatário.', true); return; }
+  if (!window.confirm(`Enviar este aviso para ${avisoRecipientIds.size} usuário(s)?`)) return;
   const btn = document.getElementById('btnEnviarAviso');
   if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
-  const rows = [...avisoRecipientIds].map((user_id) => ({ user_id, title, message, notification_type: 'aviso_admin', priority, show_overlay: showOverlay, sent_by: currentUser.id }));
-  const { error } = await sb.from('notifications').insert(rows);
+  const ids = [...avisoRecipientIds];
+  const r = await enviarAvisoPara(ids, { titulo, mensagem, prioridade, sobreTela, comEmail });
   if (btn) { btn.disabled = false; btn.textContent = 'Enviar aviso'; }
-  if (error) {
-    const hint = /column|notification_type|priority|show_overlay|sent_by/i.test(error.message || '') ? ' Execute a migration 041 antes de enviar.' : '';
-    toast(`❌ Não foi possível enviar: ${error.message}.${hint}`, true); return;
-  }
+  if (!r.ok) { toast(`❌ Não foi possível enviar: ${r.erro}`, true); return; }
   document.getElementById('avisoTitulo').value = '';
   document.getElementById('avisoMensagem').value = '';
+  document.getElementById('avisoPrioridade').value = 'normal';
+  document.getElementById('avisoSobreTela').checked = true;
+  document.getElementById('avisoComEmail').checked = false;
   avisoRecipientIds.clear();
   renderAvisoRecipients();
-  toast(`✅ Aviso enviado para ${rows.length} usuário(s).`);
+  carregarAvisosEnviados();
+  toast(`✅ Aviso enviado para ${ids.length} usuário(s)${comEmail ? ` · e-mails: ${r.emails}/${r.totalEmails}` : ''}${r.demo ? ' (modo demo)' : ''}.`);
+}
+
+// ---- Avisos enviados (uma linha por destinatário, como no MarkCarro) ----
+let avisosEnviadosCache = [];
+function avisoAnoMes(iso) {
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? ['', ''] : [String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0')];
+}
+async function carregarAvisosEnviados() {
+  const tb = document.getElementById('avisosEnviadosTabela');
+  if (!tb) return;
+  if (!sb) { avisosEnviadosCache = []; preencherFiltrosAvisosEnviados(); renderAvisosEnviados(); return; }
+  const { data, error } = await sb.from('notifications')
+    .select('id,aviso_id,user_id,title,priority,created_at,read_at,sent_by')
+    .eq('notification_type', 'aviso_admin').order('created_at', { ascending: false }).limit(5000);
+  if (error) { tb.innerHTML = `<tr><td colspan="8" class="px-3 py-6 text-center text-sm text-red-600">Erro ao carregar avisos enviados. ${escapeHtml(error.message)}</td></tr>`; return; }
+  avisosEnviadosCache = data || [];
+  preencherFiltrosAvisosEnviados();
+  renderAvisosEnviados();
+}
+function preencherFiltrosAvisosEnviados() {
+  const selAno = document.getElementById('avenvAno');
+  if (selAno) {
+    const atual = selAno.value;
+    const anos = [...new Set(avisosEnviadosCache.map((r) => avisoAnoMes(r.created_at)[0]).filter(Boolean))].sort().reverse();
+    selAno.innerHTML = '<option value="">Todos</option>' + anos.map((a) => `<option value="${a}">${a}</option>`).join('');
+    if (anos.includes(atual)) selAno.value = atual;
+  }
+  const selDest = document.getElementById('avenvDest');
+  if (selDest) {
+    const atual = selDest.value;
+    const ids = [...new Set(avisosEnviadosCache.map((r) => r.user_id))];
+    const lista = ids.map((id) => { const p = allProfiles.find((x) => x.id === id); return [id, p ? (p.full_name || p.email) : 'Usuário']; }).sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'pt-BR'));
+    selDest.innerHTML = '<option value="">Todos os destinatários</option>' + lista.map(([id, nome]) => `<option value="${id}">${escapeHtml(nome)}</option>`).join('');
+    if (ids.includes(atual)) selDest.value = atual;
+  }
+}
+function renderAvisosEnviados() {
+  const tb = document.getElementById('avisosEnviadosTabela');
+  if (!tb) return;
+  const mes = document.getElementById('avenvMes')?.value || '';
+  const ano = document.getElementById('avenvAno')?.value || '';
+  const perfil = document.getElementById('avenvPerfil')?.value || '';
+  const dest = document.getElementById('avenvDest')?.value || '';
+  const anoEf = ano || (mes ? String(new Date().getFullYear()) : '');
+  const rows = avisosEnviadosCache.filter((r) => {
+    const [ra, rm] = avisoAnoMes(r.created_at);
+    if (anoEf && ra !== anoEf) return false;
+    if (mes && rm !== mes) return false;
+    if (dest && r.user_id !== dest) return false;
+    if (perfil) { const p = allProfiles.find((x) => x.id === r.user_id); if (!p || p.role !== perfil) return false; }
+    return true;
+  });
+  if (!rows.length) { tb.innerHTML = `<tr><td colspan="8" class="px-3 py-6 text-center text-sm text-slate-500">${avisosEnviadosCache.length ? 'Nenhum aviso encontrado com esses filtros.' : 'Nenhum aviso enviado.'}</td></tr>`; return; }
+  tb.innerHTML = rows.map((r) => {
+    const p = allProfiles.find((x) => x.id === r.user_id);
+    const por = allProfiles.find((x) => x.id === r.sent_by);
+    const imp = r.priority === 'importante';
+    return `<tr class="border-b border-slate-100"><td class="px-3 py-2 whitespace-nowrap">${r.created_at ? new Date(r.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</td><td class="px-3 py-2">${escapeHtml(r.title || '-')}</td><td class="px-3 py-2"><span class="rounded-full px-2 py-0.5 text-[10px] font-extrabold ${imp ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}">${imp ? 'IMPORTANTE' : 'NORMAL'}</span></td><td class="px-3 py-2">${escapeHtml(p ? (p.full_name || p.email) : '-')}</td><td class="px-3 py-2">${escapeHtml(p ? perfilAvisoVinculo(p) : '-')}</td><td class="px-3 py-2">${escapeHtml(perfilAvisoRotulo(p))}</td><td class="px-3 py-2">${escapeHtml(por ? (por.full_name || por.email) : '-')}</td><td class="px-3 py-2 whitespace-nowrap">${r.read_at ? '✅ Lido' : 'Não lido'}</td></tr>`;
+  }).join('');
+}
+function limparFiltrosAvisosEnviados() {
+  ['avenvMes', 'avenvAno', 'avenvPerfil', 'avenvDest'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+  renderAvisosEnviados();
+}
+
+// ---- Agenda: aviso da viagem selecionada (unidade solicitante e/ou motoristas) ----
+function avisoViagemDestinatarios(t) {
+  const unidade = allProfiles.filter((p) => p.role === 'escola' && p.active !== false && t.school_id && p.school_id === t.school_id);
+  const motoristas = allProfiles.filter((p) => p.role === 'motorista' && p.active !== false && (t.driver_ids || []).includes(p.driver_id));
+  return { unidade, motoristas };
+}
+async function openAvisoViagemModal() {
+  if (!podeEnviarAvisos()) return;
+  const t = agenda.find((a) => a.id === agendaLinhaSelecionada);
+  if (!t) { toast('⚠️ Clique em uma viagem da agenda para escolher a unidade.', true); return; }
+  if (!allProfiles.length) await loadAllProfiles();
+  const { data } = emailUnidadeViagemTexto(t);
+  const { unidade, motoristas } = avisoViagemDestinatarios(t);
+  document.getElementById('avisoViagemInfo').textContent = `${originName(t) || '-'} · ${data} · ${hhmm(t.departure_time)}h → ${t.destination || '-'}${t.city ? ' (' + t.city + ')' : ''}`;
+  const uni = document.getElementById('avisoViagemUnidade');
+  uni.checked = unidade.length > 0; uni.disabled = !unidade.length;
+  document.getElementById('avisoViagemUnidadeInfo').textContent = unidade.length
+    ? `${originName(t)}: ${unidade.length} usuário(s) do perfil Escola da unidade`
+    : 'A unidade solicitante não possui usuário no sistema (use o Enviar e-mail).';
+  const mot = document.getElementById('avisoViagemMotoristas');
+  mot.innerHTML = motoristas.length
+    ? motoristas.map((p) => `<label class="mr-3 inline-flex items-center gap-1.5 text-sm"><input type="checkbox" class="aviso-viagem-mot h-4 w-4 accent-emerald-600" value="${p.id}">${escapeHtml(drivers.find((d) => d.id === p.driver_id)?.name || p.full_name || p.email)}</label>`).join('')
+    : '<span class="text-xs text-slate-500">Nenhum motorista com acesso ao sistema nesta viagem.</span>';
+  document.getElementById('avisoViagemTitulo').value = `Viagem de ${data} - ${t.destination || ''}`.trim();
+  document.getElementById('avisoViagemPrioridade').value = 'normal';
+  document.getElementById('avisoViagemMensagem').value = '';
+  document.getElementById('avisoViagemSobreTela').checked = true;
+  document.getElementById('avisoViagemComEmail').checked = false;
+  atualizarContagemAvisoViagem();
+  document.getElementById('avisoViagemModal').classList.remove('hidden');
+}
+function closeAvisoViagemModal() { document.getElementById('avisoViagemModal')?.classList.add('hidden'); }
+function idsAvisoViagem() {
+  const t = agenda.find((a) => a.id === agendaLinhaSelecionada);
+  if (!t) return [];
+  const ids = [];
+  if (document.getElementById('avisoViagemUnidade')?.checked) ids.push(...avisoViagemDestinatarios(t).unidade.map((p) => p.id));
+  document.querySelectorAll('.aviso-viagem-mot:checked').forEach((el) => ids.push(el.value));
+  return [...new Set(ids)];
+}
+function atualizarContagemAvisoViagem() {
+  const btn = document.getElementById('btnEnviarAvisoViagem');
+  if (btn) btn.textContent = `Enviar aviso (${idsAvisoViagem().length} destinatário(s))`;
+}
+async function sendAvisoViagem() {
+  if (!podeEnviarAvisos()) return;
+  const t = agenda.find((a) => a.id === agendaLinhaSelecionada);
+  const ids = idsAvisoViagem();
+  const titulo = document.getElementById('avisoViagemTitulo').value.trim();
+  const mensagem = document.getElementById('avisoViagemMensagem').value.trim();
+  if (!t) return;
+  if (!ids.length) { toast('⚠️ Marque a unidade e/ou ao menos um motorista.', true); return; }
+  if (!titulo || !mensagem) { toast('⚠️ Informe o título e a mensagem.', true); return; }
+  const comEmail = document.getElementById('avisoViagemComEmail').checked;
+  const extras = comEmail && document.getElementById('avisoViagemUnidade').checked ? [emailUnidadeDaViagem(t)].filter(Boolean) : [];
+  const btn = document.getElementById('btnEnviarAvisoViagem'); if (btn) btn.disabled = true;
+  // Unidade: e-mail cadastrado da unidade (como no Enviar e-mail); motoristas: e-mail do usuário.
+  const r = await enviarAvisoPara(ids, {
+    titulo, mensagem, excursionId: t.id, comEmail,
+    prioridade: document.getElementById('avisoViagemPrioridade').value === 'importante' ? 'importante' : 'normal',
+    sobreTela: document.getElementById('avisoViagemSobreTela').checked,
+    emailsExtras: extras,
+    emailUserIds: [...document.querySelectorAll('.aviso-viagem-mot:checked')].map((el) => el.value),
+  });
+  if (btn) btn.disabled = false;
+  if (!r.ok) { toast(`❌ Não foi possível enviar: ${r.erro}`, true); return; }
+  closeAvisoViagemModal();
+  toast(`✅ Aviso enviado para ${ids.length} destinatário(s)${comEmail ? ` · e-mails: ${r.emails}/${r.totalEmails}` : ''}${r.demo ? ' (modo demo)' : ''}.`);
 }
 
 function renderUsuarios() {
@@ -1563,22 +1758,33 @@ function unsubscribeNotificationsRealtime() {
 }
 
 function maybeShowAdministrativeAlert() {
-  const notice = notifications.find((n) => n.notification_type === 'aviso_admin' && n.show_overlay && !n.read_at && !administrativeAlertsSeenThisSession.has(n.id));
+  if (avisoOverlayAbertoId) return true;
+  const notice = notifications.slice().reverse().find((n) => n.notification_type === 'aviso_admin' && n.show_overlay && !n.read_at && !administrativeAlertsSeenThisSession.has(n.id));
   if (!notice) return false;
-  administrativeAlertsSeenThisSession.add(notice.id);
   const overlay = document.getElementById('adminAlertOverlay');
   if (!overlay) return false;
-  document.getElementById('adminAlertOverlayPriority').textContent = notice.priority === 'importante' ? 'AVISO IMPORTANTE' : 'AVISO ADMINISTRATIVO';
-  document.getElementById('adminAlertOverlayPriority').className = `inline-flex rounded-full px-3 py-1 text-[11px] font-extrabold tracking-wide ${notice.priority === 'importante' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`;
+  administrativeAlertsSeenThisSession.add(notice.id);
+  avisoOverlayAbertoId = notice.id;
+  const imp = notice.priority === 'importante';
+  const badge = document.getElementById('adminAlertOverlayPriority');
+  badge.textContent = imp ? 'AVISO IMPORTANTE' : 'AVISO ADMINISTRATIVO';
+  badge.className = `inline-flex rounded-full px-3 py-1 text-[11px] font-extrabold tracking-wide ${imp ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`;
   document.getElementById('adminAlertOverlayTitle').textContent = notice.title || 'Aviso administrativo';
   document.getElementById('adminAlertOverlayMessage').textContent = notice.message || '';
+  const quando = notice.created_at ? new Date(notice.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+  document.getElementById('adminAlertOverlayMeta').textContent = `Enviado por SEMED - Setor de Transporte${quando ? ' · ' + quando : ''}.`;
   overlay.classList.remove('hidden');
   playNotificationSound();
   return true;
 }
 
-function closeAdministrativeAlert() {
+// "Entendi": marca o aviso como lido e mostra o próximo, se houver.
+async function closeAdministrativeAlert() {
+  const id = avisoOverlayAbertoId;
+  avisoOverlayAbertoId = null;
   document.getElementById('adminAlertOverlay')?.classList.add('hidden');
+  if (id) await markNotificationRead(id);
+  maybeShowAdministrativeAlert();
 }
 
 async function loadValidationConfig() {
@@ -3605,6 +3811,12 @@ function atualizarBotaoEmailUnidade() {
   const ok = !!agenda.find((a) => a.id === agendaLinhaSelecionada);
   btn.disabled = !ok;
   btn.title = ok ? 'Enviar e-mail à unidade da viagem selecionada' : 'Clique em uma viagem da agenda para escolher a unidade';
+  const av = document.getElementById('btnAvisoViagemAgenda');
+  if (av) {
+    av.classList.toggle('hidden', !podeEnviarAvisos());
+    av.disabled = !ok;
+    av.title = ok ? 'Enviar aviso à unidade solicitante e/ou aos motoristas da viagem selecionada' : 'Clique em uma viagem da agenda para escolher a unidade';
+  }
 }
 function emailUnidadeViagemTexto(t) {
   const data = t.trip_date ? new Date(t.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
