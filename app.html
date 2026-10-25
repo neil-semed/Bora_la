@@ -1138,6 +1138,11 @@
           <!-- CONFIGURAÇÃO DE VALIDADORES (Admin) -->
           <!-- AJUDA (Admin / Co_Admin) -->
           <section id="screen-avisos" class="hidden-screen">
+            <div class="mb-4 flex border-b bg-white rounded-t-xl px-2 text-sm font-semibold">
+              <button type="button" data-avisos-aba="sistema" onclick="trocarAbaAvisos('sistema')" class="border-b-2 px-4 py-3">🔔 Avisos no sistema</button>
+              <button type="button" data-avisos-aba="emails" onclick="trocarAbaAvisos('emails')" class="border-b-2 px-4 py-3">✉️ E-mails</button>
+            </div>
+            <div id="avisosAbaSistema">
             <div class="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
               <div class="rounded-xl border bg-white p-4 shadow-sm">
                 <h3 class="font-semibold text-slate-900">Destinatários</h3>
@@ -1181,6 +1186,51 @@
                 <button type="button" onclick="carregarAvisosEnviados()" class="px-3 py-2 rounded-lg bg-slate-100 text-sm hover:bg-slate-200">🔄 Atualizar</button>
               </div>
               <div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="bg-slate-50 text-left text-xs uppercase text-slate-500"><th class="px-3 py-2">Enviado em</th><th class="px-3 py-2">Título</th><th class="px-3 py-2">Prioridade</th><th class="px-3 py-2">Destinatário</th><th class="px-3 py-2">Unidade / Cooperativa</th><th class="px-3 py-2">Perfil</th><th class="px-3 py-2">Enviado por</th><th class="px-3 py-2">Situação</th></tr></thead><tbody id="avisosEnviadosTabela"><tr><td colspan="8" class="px-3 py-6 text-center text-sm text-slate-500">Carregando...</td></tr></tbody></table></div>
+            </div>
+            </div>
+            <div id="avisosAbaEmails" class="hidden">
+              <div class="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+                <div class="rounded-xl border bg-white p-4 shadow-sm">
+                  <h3 class="font-semibold text-slate-900">Destinatários</h3>
+                  <span class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500 mt-3">Modalidade</span>
+                  <div class="grid grid-cols-3 gap-2">
+                    <button type="button" data-email-modo="um" onclick="setModoEmailMassa('um')" class="rounded-lg border px-3 py-2 text-left text-xs"><b class="block text-sm">1 para 1</b>Uma unidade ou cooperativa</button>
+                    <button type="button" data-email-modo="varios" onclick="setModoEmailMassa('varios')" class="rounded-lg border px-3 py-2 text-left text-xs"><b class="block text-sm">1 para N</b>Várias, marcadas na lista</button>
+                    <button type="button" data-email-modo="todas" onclick="setModoEmailMassa('todas')" class="rounded-lg border px-3 py-2 text-left text-xs"><b class="block text-sm">1 para todas</b>Todas as unidades e cooperativas</button>
+                  </div>
+                  <span class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500 mt-3">Tipo</span>
+                  <div id="emailMassaTipos" class="flex flex-wrap gap-2">
+                    <button type="button" data-email-tipo="" onclick="setTipoEmailMassa('')" class="rounded-full border px-3 py-1 text-xs font-semibold">Todos</button>
+                    <button type="button" data-email-tipo="escola" onclick="setTipoEmailMassa('escola')" class="rounded-full border px-3 py-1 text-xs font-semibold">Escolas</button>
+                    <button type="button" data-email-tipo="entidade" onclick="setTipoEmailMassa('entidade')" class="rounded-full border px-3 py-1 text-xs font-semibold">Entidades</button>
+                    <button type="button" data-email-tipo="cooperativa" onclick="setTipoEmailMassa('cooperativa')" class="rounded-full border px-3 py-1 text-xs font-semibold">Cooperativas</button>
+                  </div>
+                  <div class="mt-3"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Buscar</label><input id="emailMassaBusca" oninput="renderEmailMassaLista()" placeholder="Nome ou e-mail" class="w-full rounded-lg border px-3 py-2 text-sm"></div>
+                  <div class="mt-3 mb-2 flex flex-wrap items-center gap-2"><span id="emailMassaContagem" class="text-xs text-slate-600"></span><span class="flex-1"></span><button id="emailMassaMarcarTodas" type="button" onclick="marcarTodasEmailMassa()" class="rounded-lg border px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Marcar todas da lista</button><button type="button" onclick="limparEmailMassa()" class="rounded-lg border px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50">Limpar</button></div>
+                  <div id="emailMassaLista" class="max-h-80 overflow-y-auto rounded-lg border"></div>
+                  <p id="emailMassaDica" class="mt-2 text-xs text-slate-500"></p>
+                </div>
+                <div id="emailMassaFormWrap" class="rounded-xl border bg-white p-4 shadow-sm">
+                  <h3 class="font-semibold text-slate-900">Novo e-mail</h3>
+                  <div class="mt-3"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Assunto *</label><input id="emailMassaAssunto" maxlength="150" class="w-full rounded-lg border px-3 py-2 text-sm"></div>
+                  <div class="mt-3"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Mensagem *</label><textarea id="emailMassaMensagem" rows="6" oninput="renderEmailMassaPreview()" class="w-full rounded-lg border px-3 py-2 text-sm"></textarea></div>
+                  <div class="mt-3"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Envio</label><div id="emailMassaEnvio" class="rounded-lg border bg-slate-50 px-3 py-2 text-xs text-slate-700"></div></div>
+                  <div class="mt-3"><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Prévia</label><div id="emailMassaPreview" class="overflow-x-auto rounded-xl border bg-white p-4"></div></div>
+                  <button id="btnEnviarEmailMassa" type="button" onclick="enviarEmailMassa()" class="mt-4 w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-slate-300">Enviar e-mail</button>
+                </div>
+              </div>
+              <div class="mt-4 rounded-xl border bg-white p-4 shadow-sm">
+                <div class="mb-3 flex flex-wrap items-end gap-3">
+                  <h3 class="mr-2 font-semibold text-slate-900">E-mails enviados</h3>
+                  <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Mês</label><select id="emenvMes" onchange="renderEmailsEnviados()" class="rounded-lg border px-3 py-2 text-sm"><option value="">Todos</option><option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option><option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option><option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option><option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option></select></div>
+                  <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Ano</label><select id="emenvAno" onchange="renderEmailsEnviados()" class="rounded-lg border px-3 py-2 text-sm"><option value="">Todos</option></select></div>
+                  <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Modalidade</label><select id="emenvModo" onchange="renderEmailsEnviados()" class="rounded-lg border px-3 py-2 text-sm"><option value="">Todas</option><option value="um">1 para 1</option><option value="varios">1 para N</option><option value="todas">1 para todas</option></select></div>
+                  <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Destinatário</label><select id="emenvDest" onchange="renderEmailsEnviados()" class="rounded-lg border px-3 py-2 text-sm"><option value="">Todos</option></select></div>
+                  <button type="button" onclick="['emenvMes','emenvAno','emenvModo','emenvDest'].forEach(i=>document.getElementById(i).value='');renderEmailsEnviados()" class="px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Limpar filtros</button>
+                  <button type="button" onclick="carregarEmailsEnviados()" class="px-3 py-2 rounded-lg bg-slate-100 text-sm hover:bg-slate-200">🔄 Atualizar</button>
+                </div>
+                <div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="bg-slate-50 text-left text-xs uppercase text-slate-500"><th class="px-3 py-2">Enviado em</th><th class="px-3 py-2">Assunto</th><th class="px-3 py-2">Modalidade</th><th class="px-3 py-2">Destinatários</th><th class="px-3 py-2">Enviado por</th><th class="px-3 py-2">Situação</th></tr></thead><tbody id="emailsEnviadosTabela"><tr><td colspan="6" class="px-3 py-6 text-center text-sm text-slate-500">Carregando...</td></tr></tbody></table></div>
+              </div>
             </div>
           </section>
           <section id="screen-ajuda" class="hidden-screen">
@@ -2407,7 +2457,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=avisos-pedagogia-20261025-002"></script>
+  <script src="app.js?v=avisos-emails-20261025-001"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */

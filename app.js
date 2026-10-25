@@ -1170,6 +1170,7 @@ async function openAvisosScreen() {
   populateAvisoFilters();
   renderAvisoRecipients();
   carregarAvisosEnviados();
+  trocarAbaAvisos(document.getElementById('avisosAbaEmails')?.classList.contains('hidden') === false ? 'emails' : 'sistema');
 }
 
 // Envia o aviso (sino + janela) e, se marcado, o e-mail no padrão visual.
@@ -1284,6 +1285,176 @@ function renderAvisosEnviados() {
 function limparFiltrosAvisosEnviados() {
   ['avenvMes', 'avenvAno', 'avenvPerfil', 'avenvDest'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
   renderAvisosEnviados();
+}
+
+// ---- Avisos › aba E-mails: 1 e-mail por envio (1 para 1, 1 para N, 1 para todas) ----
+// 1 para 1: "Para" = destinatário, cópia ao setor. 1 para N / todas: "Para" = setor e os
+// destinatários em cópia oculta (lotes de até 50). Cada envio fica em email_envios (migration_050).
+let emailMassaModo = 'varios';
+let emailMassaTipo = '';
+let emailMassaSel = new Set();
+let emailsEnviadosCache = [];
+const EMAIL_MASSA_MODO_LABEL = { um: '1 para 1', varios: '1 para N', todas: '1 para todas' };
+function trocarAbaAvisos(aba) {
+  document.getElementById('avisosAbaSistema')?.classList.toggle('hidden', aba !== 'sistema');
+  document.getElementById('avisosAbaEmails')?.classList.toggle('hidden', aba !== 'emails');
+  document.querySelectorAll('[data-avisos-aba]').forEach((b) => {
+    const on = b.dataset.avisosAba === aba;
+    b.classList.toggle('border-emerald-600', on); b.classList.toggle('text-emerald-800', on);
+    b.classList.toggle('border-transparent', !on); b.classList.toggle('text-slate-500', !on);
+  });
+  if (aba === 'emails') { document.getElementById('emailMassaFormWrap')?.classList.toggle('hidden', !podeEnviarAvisos()); renderEmailMassa(); carregarEmailsEnviados(); }
+}
+function emailMassaCandidatos() {
+  const un = schools.filter((s) => s.active !== false).map((s) => ({ tipo: s.tipo === 'entidade' ? 'entidade' : 'escola', id: s.id, nome: s.name, email: String(s.email || '').trim() }));
+  const co = cooperativas.filter((c) => c.active !== false).map((c) => ({ tipo: 'cooperativa', id: c.id, nome: c.name, email: String(c.email || '').trim() }));
+  return [...un, ...co].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+}
+const EMAIL_TIPO_LABEL = { escola: 'Escola', entidade: 'Entidade', cooperativa: 'Cooperativa' };
+const emailMassaChave = (d) => `${d.tipo}:${d.id}`;
+function emailMassaFiltrados() {
+  const q = (document.getElementById('emailMassaBusca')?.value || '').trim().toLocaleLowerCase('pt-BR');
+  return emailMassaCandidatos().filter((d) => (emailMassaModo === 'todas' || !emailMassaTipo || d.tipo === emailMassaTipo)
+    && (!q || `${d.nome} ${d.email}`.toLocaleLowerCase('pt-BR').includes(q)));
+}
+function emailMassaDestinatarios() {
+  const todos = emailMassaCandidatos().filter((d) => d.email);
+  return emailMassaModo === 'todas' ? todos : todos.filter((d) => emailMassaSel.has(emailMassaChave(d)));
+}
+function setModoEmailMassa(m) { emailMassaModo = m; if (m === 'um' && emailMassaSel.size > 1) emailMassaSel = new Set([...emailMassaSel].slice(0, 1)); renderEmailMassa(); }
+function setTipoEmailMassa(t) { emailMassaTipo = t; renderEmailMassa(); }
+function toggleEmailMassa(chave, on) {
+  if (emailMassaModo === 'um') emailMassaSel = new Set(on ? [chave] : []);
+  else if (on) emailMassaSel.add(chave); else emailMassaSel.delete(chave);
+  renderEmailMassa();
+}
+function marcarTodasEmailMassa() { emailMassaFiltrados().filter((d) => d.email).forEach((d) => emailMassaSel.add(emailMassaChave(d))); renderEmailMassa(); }
+function limparEmailMassa() { emailMassaSel.clear(); const b = document.getElementById('emailMassaBusca'); if (b) b.value = ''; renderEmailMassa(); }
+function renderEmailMassa() {
+  document.querySelectorAll('[data-email-modo]').forEach((b) => { const on = b.dataset.emailModo === emailMassaModo; b.classList.toggle('bg-emerald-50', on); b.classList.toggle('border-emerald-400', on); });
+  document.querySelectorAll('[data-email-tipo]').forEach((b) => { const on = b.dataset.emailTipo === emailMassaTipo; b.classList.toggle('bg-emerald-50', on); b.classList.toggle('border-emerald-400', on); b.classList.toggle('text-emerald-800', on); b.disabled = emailMassaModo === 'todas'; b.classList.toggle('opacity-50', emailMassaModo === 'todas'); });
+  document.getElementById('emailMassaMarcarTodas')?.classList.toggle('hidden', emailMassaModo !== 'varios');
+  document.getElementById('emailMassaDica').textContent = emailMassaModo === 'um' ? 'Escolha uma unidade ou cooperativa.'
+    : emailMassaModo === 'todas' ? 'Todas as unidades e cooperativas com e-mail cadastrado recebem o e-mail.' : 'Marque as unidades e/ou cooperativas que vão receber.';
+  renderEmailMassaLista();
+}
+function renderEmailMassaLista() {
+  const box = document.getElementById('emailMassaLista');
+  if (!box) return;
+  const lista = emailMassaFiltrados();
+  const tipoInput = emailMassaModo === 'um' ? 'radio' : 'checkbox';
+  box.innerHTML = lista.length ? lista.map((d) => {
+    const k = emailMassaChave(d);
+    const marcado = emailMassaModo === 'todas' ? !!d.email : emailMassaSel.has(k);
+    return `<label class="flex items-center gap-3 border-b border-slate-100 px-3 py-2 last:border-0 ${d.email ? 'cursor-pointer hover:bg-slate-50' : 'opacity-70'}"><input type="${tipoInput}" name="emailMassaUm" class="h-4 w-4 accent-emerald-600" ${marcado ? 'checked' : ''} ${!d.email || emailMassaModo === 'todas' ? 'disabled' : ''} onchange="toggleEmailMassa('${k}', this.checked)"><span class="min-w-0 flex-1"><strong class="block truncate text-sm text-slate-800">${escapeHtml(d.nome)}</strong><span class="block truncate text-xs ${d.email ? 'text-slate-500' : 'text-red-600'}">${EMAIL_TIPO_LABEL[d.tipo]} · ${d.email ? escapeHtml(d.email) : 'sem e-mail cadastrado'}</span></span></label>`;
+  }).join('') : '<p class="p-5 text-center text-sm text-slate-500">Nenhuma unidade ou cooperativa encontrada.</p>';
+  const dest = emailMassaDestinatarios();
+  const semEmail = (emailMassaModo === 'todas' ? emailMassaCandidatos() : lista).filter((d) => !d.email).length;
+  document.getElementById('emailMassaContagem').textContent = `${dest.length} destinatário(s)${semEmail ? ` · ${semEmail} sem e-mail (fica de fora)` : ''}`;
+  renderEmailMassaPreview();
+}
+function emailMassaSetor() { return String(appSettings.email_copia_setor || appSettings.remetente_email || '').trim(); }
+function buildEmailMassa(mensagem) {
+  const corpo = mensagem ? mensagem.split(/\n{2,}/).map((b) => `<p style="margin:0 0 12px">${escapeHtml(b).replace(/\n/g, '<br>')}</p>`).join('') : '<p style="margin:0 0 12px;color:#94a3b8">(escreva a mensagem)</p>';
+  return { html: emailPadraoHtml('Mensagem do setor', corpo), texto: `${saudacaoEmailBrasilia()}\n\n${mensagem}\n\nBora Lá - Excursões / Semed Nova Lima` };
+}
+function renderEmailMassaPreview() {
+  const dest = emailMassaDestinatarios();
+  const setor = emailMassaSetor();
+  const env = document.getElementById('emailMassaEnvio');
+  if (env) env.innerHTML = !dest.length ? 'Nenhum destinatário escolhido.'
+    : emailMassaModo === 'um' ? `<b>Para:</b> ${escapeHtml(dest[0].email)}${setor ? `<br><b>Cópia:</b> ${escapeHtml(setor)}` : ''}`
+    : `<b>Para:</b> ${escapeHtml(setor || '(e-mail do setor não configurado)')}<br><b>Cópia oculta (Cco):</b> ${dest.length} destinatário(s). Um não vê o e-mail do outro.`;
+  const prev = document.getElementById('emailMassaPreview');
+  if (prev) prev.innerHTML = buildEmailMassa((document.getElementById('emailMassaMensagem')?.value || '').trim()).html + '<p style="margin:16px 0 0;padding:8px 12px;background:#f1f5f9;border-radius:6px;font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#334155">Esta mensagem é automática. Não responda a este e-mail.</p>';
+  const btn = document.getElementById('btnEnviarEmailMassa');
+  if (btn) { btn.textContent = dest.length ? `Enviar 1 e-mail para ${dest.length} destinatário(s)` : 'Enviar e-mail'; btn.disabled = !dest.length; }
+}
+// Dispara o envio; devolve '' se deu certo ou a mensagem de erro.
+async function dispararEmailMassa(modalidade, dest, assunto, mensagem) {
+  const { html, texto } = buildEmailMassa(mensagem);
+  const setor = emailMassaSetor();
+  if (modalidade === 'um') return (await tentarEnviarEmailAutomatico(dest[0].email, assunto, texto, setor && setor.toLowerCase() !== dest[0].email.toLowerCase() ? setor : '', html)) ? '' : (ultimoErroEnvioAutomatico || 'Falha no envio.');
+  if (!setor) return 'Configure o e-mail do setor (Configurações) para envios em cópia oculta.';
+  const emails = [...new Set(dest.map((d) => d.email.toLowerCase()))];
+  for (let i = 0; i < emails.length; i += 50) {
+    if (!(await tentarEnviarEmailAutomatico(setor, assunto, texto, '', html, { bcc: emails.slice(i, i + 50).join(',') }))) return `${ultimoErroEnvioAutomatico || 'Falha no envio.'}${i ? ` (${i} de ${emails.length} já enviados)` : ''}`;
+  }
+  return '';
+}
+async function enviarEmailMassa() {
+  if (!podeEnviarAvisos()) return;
+  const assunto = (document.getElementById('emailMassaAssunto')?.value || '').trim();
+  const mensagem = (document.getElementById('emailMassaMensagem')?.value || '').trim();
+  const dest = emailMassaDestinatarios();
+  if (!dest.length) { toast('⚠️ Escolha ao menos um destinatário com e-mail.', true); return; }
+  if (!assunto || !mensagem) { toast('⚠️ Informe o assunto e a mensagem.', true); return; }
+  if (!window.confirm(`Enviar 1 e-mail (${EMAIL_MASSA_MODO_LABEL[emailMassaModo]}) para ${dest.length} destinatário(s)?`)) return;
+  const btn = document.getElementById('btnEnviarEmailMassa'); if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  const erro = sb ? await dispararEmailMassa(emailMassaModo, dest, assunto, mensagem) : '';
+  const reg = { sent_by: currentUser.id, assunto, mensagem, modalidade: emailMassaModo, destinatarios: dest, status: erro ? 'falhou' : 'enviado', erro: erro || null };
+  if (sb) { const { error } = await sb.from('email_envios').insert([reg]); if (error) toast('⚠️ E-mail processado, mas o histórico não foi gravado: ' + error.message + ' (execute a migration 050).', true); }
+  else emailsEnviadosCache.unshift({ ...reg, id: 'demo-' + Date.now(), created_at: new Date().toISOString(), ultimo_envio_em: new Date().toISOString(), tentativas: 1 });
+  renderEmailMassaPreview();
+  if (erro) { toast('❌ Não foi possível enviar: ' + erro, true); }
+  else {
+    toast(`✉️ E-mail enviado para ${dest.length} destinatário(s)${sb ? '' : ' (modo demo)'}.`);
+    document.getElementById('emailMassaAssunto').value = ''; document.getElementById('emailMassaMensagem').value = '';
+    emailMassaSel.clear(); renderEmailMassa();
+  }
+  carregarEmailsEnviados();
+}
+async function carregarEmailsEnviados() {
+  if (sb) {
+    const { data, error } = await sb.from('email_envios').select('*').order('created_at', { ascending: false }).limit(1000);
+    if (error) { const tb = document.getElementById('emailsEnviadosTabela'); if (tb) tb.innerHTML = `<tr><td colspan="6" class="px-3 py-6 text-center text-sm text-red-600">Erro ao carregar. ${escapeHtml(error.message)}</td></tr>`; return; }
+    emailsEnviadosCache = data || [];
+  }
+  const selAno = document.getElementById('emenvAno');
+  if (selAno) { const v = selAno.value; const anos = [...new Set(emailsEnviadosCache.map((r) => avisoAnoMes(r.created_at)[0]).filter(Boolean))].sort().reverse(); selAno.innerHTML = '<option value="">Todos</option>' + anos.map((a) => `<option>${a}</option>`).join(''); if (anos.includes(v)) selAno.value = v; }
+  const selDest = document.getElementById('emenvDest');
+  if (selDest) {
+    const v = selDest.value; const mapa = new Map();
+    emailsEnviadosCache.forEach((r) => (r.destinatarios || []).forEach((d) => mapa.set(String(d.email).toLowerCase(), d.nome || d.email)));
+    const lista = [...mapa.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'pt-BR'));
+    selDest.innerHTML = '<option value="">Todos</option>' + lista.map(([e, n]) => `<option value="${escapeHtml(e)}">${escapeHtml(n)}</option>`).join('');
+    if (mapa.has(v)) selDest.value = v;
+  }
+  renderEmailsEnviados();
+}
+function renderEmailsEnviados() {
+  const tb = document.getElementById('emailsEnviadosTabela');
+  if (!tb) return;
+  const mes = document.getElementById('emenvMes')?.value || '', ano = document.getElementById('emenvAno')?.value || '';
+  const modo = document.getElementById('emenvModo')?.value || '', dest = document.getElementById('emenvDest')?.value || '';
+  const anoEf = ano || (mes ? String(new Date().getFullYear()) : '');
+  const rows = emailsEnviadosCache.filter((r) => {
+    const [ra, rm] = avisoAnoMes(r.created_at);
+    return (!anoEf || ra === anoEf) && (!mes || rm === mes) && (!modo || r.modalidade === modo)
+      && (!dest || (r.destinatarios || []).some((d) => String(d.email).toLowerCase() === dest));
+  });
+  if (!rows.length) { tb.innerHTML = `<tr><td colspan="6" class="px-3 py-6 text-center text-sm text-slate-500">${emailsEnviadosCache.length ? 'Nenhum e-mail encontrado com esses filtros.' : 'Nenhum e-mail enviado.'}</td></tr>`; return; }
+  tb.innerHTML = rows.map((r) => {
+    const ds = r.destinatarios || [];
+    const por = allProfiles.find((x) => x.id === r.sent_by);
+    const nomes = ds.map((d) => escapeHtml(d.nome || d.email)).join(', ');
+    const destHtml = ds.length === 1 ? escapeHtml(ds[0].nome || ds[0].email) : `<details><summary class="cursor-pointer text-blue-700">${ds.length} · ver lista</summary><div class="mt-1 text-xs text-slate-600">${nomes}</div></details>`;
+    const sit = r.status === 'enviado'
+      ? `<span class="font-semibold text-emerald-700">✅ Enviado</span>${r.tentativas > 1 ? `<div class="text-[11px] text-slate-400">reenviado em ${new Date(r.ultimo_envio_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</div>` : ''}`
+      : `<span class="font-semibold text-red-600">❌ Falhou</span><div class="text-[11px] text-slate-500">${escapeHtml(r.erro || '')}</div>${podeEnviarAvisos() ? `<button type="button" onclick="reenviarEmailMassa('${r.id}')" class="mt-1 rounded-md border border-red-200 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50">↻ Tentar de novo</button>` : ''}`;
+    return `<tr class="border-b border-slate-100 align-top"><td class="px-3 py-2 whitespace-nowrap">${new Date(r.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</td><td class="px-3 py-2">${escapeHtml(r.assunto)}</td><td class="px-3 py-2"><span class="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-extrabold text-indigo-800">${EMAIL_MASSA_MODO_LABEL[r.modalidade] || r.modalidade}</span></td><td class="px-3 py-2">${destHtml}</td><td class="px-3 py-2">${escapeHtml(por ? (por.full_name || por.email) : '-')}</td><td class="px-3 py-2">${sit}</td></tr>`;
+  }).join('');
+}
+async function reenviarEmailMassa(id) {
+  if (!podeEnviarAvisos()) return;
+  const r = emailsEnviadosCache.find((x) => x.id === id);
+  if (!r) return;
+  toast('↻ Reenviando…');
+  const erro = sb ? await dispararEmailMassa(r.modalidade, r.destinatarios || [], r.assunto, r.mensagem) : '';
+  const patch = { status: erro ? 'falhou' : 'enviado', erro: erro || null, tentativas: (r.tentativas || 1) + 1, ultimo_envio_em: new Date().toISOString() };
+  if (sb) await sb.from('email_envios').update(patch).eq('id', id); else Object.assign(r, patch);
+  toast(erro ? '❌ Ainda não foi possível enviar: ' + erro : '✉️ E-mail reenviado.', !!erro);
+  carregarEmailsEnviados();
 }
 
 // ---- Agenda: aviso da viagem selecionada (unidade solicitante e/ou motoristas) ----
@@ -7397,7 +7568,7 @@ async function tentarEnviarEmailAutomatico(to, subject, text, cc = '', html = ''
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session ? session.access_token : anonKey}`, apikey: anonKey },
       // permitirResposta: só nos e-mails às cooperativas (sem o aviso de "não responda").
-      body: JSON.stringify({ to, subject, text, cc: cc || undefined, html: html || undefined, permitirResposta: opcoes.permitirResposta === true || undefined }),
+      body: JSON.stringify({ to, subject, text, cc: cc || undefined, bcc: opcoes.bcc || undefined, html: html || undefined, permitirResposta: opcoes.permitirResposta === true || undefined }),
     });
     const json = await resp.json().catch(() => ({}));
     if (!resp.ok || json.error) ultimoErroEnvioAutomatico = json.error || `Falha no envio (HTTP ${resp.status}).`;
