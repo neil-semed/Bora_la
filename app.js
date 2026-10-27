@@ -5456,6 +5456,7 @@ function limparFiltrosPendencias() {
   const unidade = document.getElementById('pendenciasFiltroUnidade'); if (unidade) unidade.value = '';
   const tipo = document.getElementById('pendenciasFiltroTipo'); if (tipo) tipo.value = '';
   const publico = document.getElementById('pendenciasFiltroPublico'); if (publico) publico.value = '';
+  const ocultar = document.getElementById('pendenciasOcultarPassadas'); if (ocultar) ocultar.checked = true;
   renderPendencias();
 }
 
@@ -5489,8 +5490,13 @@ function renderPendencias() {
   const dataFiltro = document.getElementById('pendenciasFiltroData')?.value || '';
   const tipoFiltro = document.getElementById('pendenciasFiltroTipo')?.value || '';
   const publicoFiltro = document.getElementById('pendenciasFiltroPublico')?.value || '';
+  const veOcultar = ehEscola || currentUser.role === 'pedagogia';
+  document.getElementById('pendenciasOcultarPassadasWrap')?.classList.toggle('hidden', !veOcultar);
+  // Com uma data escolhida no filtro, a viagem aparece mesmo que já tenha passado.
+  const ocultarPassadas = veOcultar && !dataFiltro && document.getElementById('pendenciasOcultarPassadas')?.checked !== false;
   const recentes = agenda.slice()
     .filter((a) => (!unidadeFiltro || a.school_id === unidadeFiltro)
+      && (!ocultarPassadas || !viagemJaPassou(a))
       && (!dataFiltro || a.trip_date === dataFiltro)
       && publicoAlvoCorresponde(a, publicoFiltro))
     .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
@@ -5602,6 +5608,13 @@ function serieAtivas(a) {
   const serie = serieDaViagem(a);
   const ativas = serie.filter((x) => !['cancelada', 'reprovada'].includes(x.situacao));
   return ativas.length ? ativas : serie;
+}
+// "Ocultar passadas" (Escola/Pedagogia): viagem de hoje continua. Na série representada
+// pela 1ª data, ela só some quando todas as datas ativas já passaram.
+function viagemJaPassou(a) {
+  const hoje = fmtDate(new Date());
+  if (a?.recurrence_group_id && primeiraDaSerie(a)) return !serieAtivas(a).some((x) => (x.trip_date || '') >= hoje);
+  return !!a?.trip_date && a.trip_date < hoje;
 }
 function primeiraDaSerie(a) { return !a?.recurrence_group_id || serieAtivas(a)[0]?.id === a.id; }
 function seloSerieHtml(a) {
@@ -6041,6 +6054,7 @@ function destinoEhUnidade(a) {
 
 function limparFiltrosValidacoesPedagogia() {
   ['validacaoFiltroOrigem', 'validacaoFiltroSetor', 'validacaoFiltroPublico'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const ocultar = document.getElementById('validacaoOcultarPassadas'); if (ocultar) ocultar.checked = true;
   renderValidacoesPedagogia();
 }
 
@@ -6062,6 +6076,7 @@ function renderValidacoesPedagogia() {
   } else if (setorFiltro) lista = lista.filter((a) => a.setor_pedagogico_atual === setorFiltro);
   if (origemFiltro) lista = lista.filter((a) => origemFiltroId(a) === origemFiltro);
   if (publicoFiltro) lista = lista.filter((a) => publicoAlvoCorresponde(a, publicoFiltro));
+  if (document.getElementById('validacaoOcultarPassadas')?.checked !== false) lista = lista.filter((a) => !viagemJaPassou(a));
 
   if (lista.length === 0) {
     tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-500 text-sm">Nenhuma solicitação pendente de validação</td></tr>';

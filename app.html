@@ -574,6 +574,7 @@
                 <div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Data da viagem</label><input id="pendenciasFiltroData" type="date" onchange="renderPendencias()" class="px-3 py-2 border rounded-lg text-sm"></div>
                 <div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Tipo de pendência</label><select id="pendenciasFiltroTipo" onchange="renderPendencias()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todas</option><option value="novas">Novas solicitações</option><option value="validacao">Sem validação pedagógica</option><option value="proposta">Proposta aguardada</option><option value="semsetor">Sem setor responsável</option><option value="confirmacao">Confirmar viagem</option><option value="listagem">Listagens</option><option value="canceladas">Canceladas pela unidade</option><option value="financeiro">Aporte financeiro</option></select></div>
                 <div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Público-alvo</label><select id="pendenciasFiltroPublico" onchange="renderPendencias()" class="min-w-52 px-3 py-2 border rounded-lg text-sm"><option value="">Todos os públicos</option></select></div>
+                <label id="pendenciasOcultarPassadasWrap" class="hidden flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700"><input id="pendenciasOcultarPassadas" type="checkbox" checked onchange="renderPendencias()"> Ocultar pendências passadas</label>
                 <button onclick="limparFiltrosPendencias()" class="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Limpar seleção</button>
               </div>
               <div id="pendenciasFiltroUnidadeWrap" class="hidden screen-panel px-4 py-3">
@@ -1113,6 +1114,7 @@
                     <option value="administracao">Administração</option>
                   </select>
                 </div>
+                <label class="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700"><input id="validacaoOcultarPassadas" type="checkbox" checked onchange="renderValidacoesPedagogia()"> Ocultar validações passadas</label>
                 <button onclick="limparFiltrosValidacoesPedagogia()" class="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Limpar filtros</button>
               </div>
               <div class="overflow-x-auto">
@@ -2457,7 +2459,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=avisos-emails-20261025-001"></script>
+  <script src="app.js?v=ocultar-passadas-20261027-001"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */
