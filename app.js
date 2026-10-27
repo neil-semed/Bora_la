@@ -6058,6 +6058,12 @@ function limparFiltrosValidacoesPedagogia() {
   renderValidacoesPedagogia();
 }
 
+// Validações (Pedagogia): destaca a linha clicada (mesmo amarelo suave da Agenda); os botões seguem iguais.
+let validacaoLinhaSelecionada = null;
+function selecionarLinhaValidacao(id) {
+  validacaoLinhaSelecionada = id;
+  document.querySelectorAll('tr[data-val-id]').forEach((tr) => tr.classList.toggle('agenda-linha-sel', tr.dataset.valId === id));
+}
 function renderValidacoesPedagogia() {
   const tbody = document.getElementById('validacoesPedagogiaTable');
   if (!tbody) return;
@@ -6089,7 +6095,7 @@ function renderValidacoesPedagogia() {
     .map((a) => {
       const totalPax = (a.students_count || 0) + (a.companions_count || 0) + (a.pca_count || 0) + (a.apoio_count || 0);
       return `
-    <tr class="hover:bg-slate-50">
+    <tr data-val-id="${a.id}" onclick="selecionarLinhaValidacao('${a.id}')" class="hover:bg-slate-50${validacaoLinhaSelecionada === a.id ? ' agenda-linha-sel' : ''}">
       <td class="px-4 py-3 text-sm">${new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR')}${seloSerieHtml(a)}</td>
       <td class="px-4 py-3 text-sm">${originName(a)}${origemEhUnidade(a) ? '' : `<div class="text-xs text-slate-500">${originAddress(a) || '-'}</div>`}</td>
       <td class="px-4 py-3 text-sm">${a.destination}${destinoEhUnidade(a) ? '' : `<div class="text-xs text-slate-500">${a.destination_address || a.city || '-'}</div>`}</td>
