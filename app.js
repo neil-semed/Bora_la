@@ -3216,6 +3216,7 @@ function filtroCoopPassa(prefixo, a) {
 }
 function limparFiltrosCoop(prefixo, render) {
   ['FiltroData', 'FiltroUnidade', 'FiltroMotorista', 'FiltroTipo', 'FiltroSituacao'].forEach((k) => { const e = document.getElementById(prefixo + k); if (e) e.value = ''; });
+  const oc = document.getElementById(prefixo + 'OcultarPassadas'); if (oc) oc.checked = true;
   render();
 }
 const coopFmtData = (iso) => (iso ? new Date(String(iso).length <= 10 ? iso + 'T00:00' : iso).toLocaleDateString('pt-BR') : '');
@@ -3267,7 +3268,10 @@ function coopPcdTexto(a) {
 function renderSolicitacoesCoop() {
   const box = document.getElementById('solicitacoesCoopLista'); if (!box) return;
   popularFiltrosCoop('sc');
-  const rows = getVisibleAgenda().filter(viagemConfirmadaParaMotorista).filter((a) => filtroCoopPassa('sc', a)).sort((a, b) => `${a.trip_date}${a.departure_time}`.localeCompare(`${b.trip_date}${b.departure_time}`));
+  // Ocultar passadas: hoje continua; com data escolhida no filtro, a viagem aparece.
+  const ocultarSc = !document.getElementById('scFiltroData')?.value && document.getElementById('scOcultarPassadas')?.checked !== false;
+  const hojeSc = fmtDate(new Date());
+  const rows = getVisibleAgenda().filter(viagemConfirmadaParaMotorista).filter((a) => filtroCoopPassa('sc', a) && (!ocultarSc || String(a.trip_date || '') >= hojeSc)).sort((a, b) => `${a.trip_date}${a.departure_time}`.localeCompare(`${b.trip_date}${b.departure_time}`));
   box.innerHTML = rows.length ? rows.map((a) => {
     const escalados = cooperativeDriversForTrip(a).map((d) => `${escapeHtml(d.name)}${driverVehicle(d.id)?.plate ? ` · ${escapeHtml(driverVehicle(d.id).plate)}` : ''}`).join('<br>');
     const pcd = (a.pca_count || 0) > 0 ? `<p class="mt-1 text-xs text-slate-600"><b class="text-blue-700">PCD:</b> ${a.pca_count} estudante(s) + ${a.apoio_count || 0} apoio(s) · ${coopPcdTexto(a)}</p>` : '';
@@ -3435,7 +3439,7 @@ async function renderPendenciasCoop() {
       <p class="mt-1 text-sm font-semibold text-violet-700">Público-alvo: ${escapeHtml(publicoAlvoLabel(a.validation_target_id || a.publico_alvo))}</p>
       <div class="mt-1 text-sm"><b>Origem:</b> ${escapeHtml(originName(a))}${originAddress(a) ? ` <span class="text-xs text-slate-500">→ ${escapeHtml(originAddress(a))}</span>` : ''}</div>
       <div class="text-sm"><b>Destino:</b> ${escapeHtml(a.destination || '-')}${destinoEnd ? ` <span class="text-xs text-slate-500">→ ${escapeHtml(destinoEnd)}</span>` : ''}</div>
-      <div class="mt-1 text-xs font-medium text-slate-600">Motorista(s) escalado(s): ${motoristas || 'não informado'}</div>
+      <div class="mt-1 text-[12px] font-medium text-slate-600">Motorista(s) escalado(s): ${motoristas || 'não informado'}</div>
     </article><div class="-mt-3 rounded-b-xl border border-t-0 bg-white px-4 pb-4 pt-5 shadow-sm">${listaBtns ? `<div class="flex flex-wrap gap-2">${listaBtns}</div>` : ''}${acoes}</div>`;
   };
   box.innerHTML = `${pendenciaBloco('ATF para emissão', 'Solicitações que aguardam a confirmação de emissão pela cooperativa.', atf.map((a) => makeCard(a, 'atf')), '📄', 'amber')}${pendenciaBloco('Transporte e listagem PCD', 'Atendimentos adaptados encaminhados para confirmação.', pcd.map((a) => makeCard(a, 'pcd')), '♿', 'blue')}`;
@@ -4094,7 +4098,13 @@ function renderAgenda() {
   if (filtroSituacaoWrap) filtroSituacaoWrap.classList.toggle('hidden', ehMotorista);
   if (ehMotorista) { const fs = document.getElementById('filtroSituacao'); if (fs) fs.value = ''; }
 
-  const filtered = filterAgenda();
+  // Escola: "Ocultar viagens passadas" (hoje continua; um dia escolhido no filtro aparece).
+  const ehEscolaAg = currentUser?.role === 'escola';
+  document.getElementById('agendaOcultarPassadasWrap')?.classList.toggle('hidden', !ehEscolaAg);
+  const diaEscolhidoAg = document.getElementById('filtroPeriodo')?.value === 'dia' && !!document.getElementById('filtroData')?.value;
+  const ocultarAg = ehEscolaAg && !diaEscolhidoAg && document.getElementById('agendaOcultarPassadas')?.checked !== false;
+  const hojeAg = fmtDate(new Date());
+  const filtered = filterAgenda().filter((a) => !ocultarAg || String(a.trip_date || '') >= hojeAg);
   const tbody = document.getElementById('agendaTable');
   const cardsWrapVazio = document.getElementById('agendaCardsList');
 
@@ -6788,6 +6798,7 @@ function closeListagemVeiculoModal() {
   listagemUploadsByDriver = {};
   listagemFilesByDriver = {};
   listagemPasteText = '';
+  listagemAdminEditando = new Set();
 }
 
 // ===== Listagem / ATF por veículo (excursions.listagem_veiculos — migration_039) =====
@@ -6998,7 +7009,7 @@ function renderListagemVeiculoModal() {
   document.getElementById('listagemStatusBox').innerHTML = statusHtml;
 
   const driverIds = trip.driver_ids || [];
-  document.getElementById('listagemVeiculoBlocos').innerHTML = driverIds.map((did) => renderListagemVeiculoBloco(did, editable && lvEditavelEscola(trip, did))).join('')
+  document.getElementById('listagemVeiculoBlocos').innerHTML = driverIds.map((did) => renderListagemVeiculoBloco(did, (editable && lvEditavelEscola(trip, did)) || listagemAdminEditando.has(did))).join('')
     || '<p class="text-sm text-slate-500">Esta viagem ainda não tem motorista/veículo atribuído.</p>';
   const preview = document.getElementById('listagemArquivoPreview');
   if (preview) { preview.classList.add('hidden'); preview.innerHTML = ''; }
@@ -7053,7 +7064,8 @@ function renderListagemVeiculoBloco(did, editable) {
         : `<button onclick="addListagemRow('${did}')" class="mt-1 px-3 py-1 border rounded-lg text-xs">+ Adicionar linha</button>`)
     : '';
 
-  const escolhas = editable ? `<div class="grid gap-3 md:grid-cols-2 mb-4">
+  const adminEdita = listagemAdminEditando.has(did);
+  const escolhas = editable && !adminEdita ? `<div class="grid gap-3 md:grid-cols-2 mb-4">
     <section class="rounded-xl border p-3 ${metodo === 'manual' ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200'}"><strong class="text-sm text-emerald-900">Digitar no sistema</strong><p class="mt-1 text-xs text-slate-600">Preencha os passageiros diretamente nesta tela.</p><button onclick="selectListagemMethod('${did}','manual')" class="mt-3 rounded-lg px-3 py-2 text-xs font-bold ${metodo === 'manual' ? 'bg-emerald-600 text-white' : 'border border-emerald-300 text-emerald-800'}">${metodo === 'manual' ? 'Selecionado' : 'Usar digitação'}</button></section>
     <section class="rounded-xl border p-3 ${metodo === 'pdf' ? 'border-violet-400 bg-violet-50' : 'border-slate-200'}"><strong class="text-sm text-violet-900">Modelo Excel + envio de arquivo</strong><p class="mt-1 text-xs text-slate-600">Baixe o modelo com dados da viagem, preencha e envie o próprio Excel ou exporte-o em PDF.</p><div class="mt-3 flex flex-wrap gap-2"><button onclick="selectListagemMethod('${did}','pdf');downloadListagemModelo('${listagemVeiculoTargetId}','${did}')" class="rounded-lg border border-violet-300 bg-white px-3 py-2 text-xs font-bold text-violet-800">⬇ Baixar Excel</button><label class="cursor-pointer rounded-lg bg-violet-600 px-3 py-2 text-xs font-bold text-white">Enviar Excel ou PDF<input type="file" accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx" class="hidden" onchange="onListagemPdfSelected('${did}',this)"></label></div><p class="mt-2 text-xs ${arquivo ? 'text-emerald-700' : 'text-slate-500'}">${arquivo ? `📄 ${escapeHtml(arquivo.name || arquivo.filename)}` : 'Nenhum arquivo selecionado.'}</p></section>
   </div>` : '';
@@ -7069,8 +7081,128 @@ function renderListagemVeiculoBloco(did, editable) {
       ${addBtn}
       ${arquivoInfo}
       ${preenchidos ? `<button onclick="downloadListagemPdf('${listagemVeiculoTargetId}','${did}')" class="mt-3 rounded-lg border border-violet-300 bg-violet-50 px-3 py-2 text-xs font-bold text-violet-800">⬇ Gerar PDF para conferência</button>` : ''}
+      ${barraAdminListagemHtml(did, preenchidos, arquivo)}
       ${(() => { const t = agenda.find((a) => a.id === listagemVeiculoTargetId); return t && t.listagem_status !== 'nao_enviada' ? painelVeiculoListagemHtml(t, did) : ''; })()}
     </div>`;
+}
+
+// ===== Admin/Co_Admin: baixar Excel e preencher/corrigir a listagem do veículo =====
+// Excel: listagem preenchida quando houver nomes; modelo do veículo quando estiver vazia.
+// Ao salvar, o veículo volta para "Aguardando conferência" e a unidade recebe aviso.
+// Mesma regra da escola: depois da ATF emitida, não edita.
+let listagemAdminEditando = new Set();
+function barraAdminListagemHtml(did, preenchidos, arquivo) {
+  if (!ehAgendaAdmin()) return '';
+  const trip = agenda.find((a) => a.id === listagemVeiculoTargetId);
+  if (!trip) return '';
+  const id = trip.id;
+  if (listagemAdminEditando.has(did)) {
+    const ehXlsx = arquivo && /\.xlsx$/i.test(String(arquivo.filename || arquivo.name || ''));
+    return `<div class="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2"><span class="text-xs font-bold text-emerald-900">✍️ Preenchimento pelo Admin</span>${ehXlsx ? `<button onclick="importarArquivoListagemAdmin('${did}')" class="rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-xs font-bold text-blue-700">📥 Trazer nomes do arquivo enviado</button>` : ''}<span class="flex-1"></span><button onclick="cancelarListagemAdmin('${did}')" class="rounded-lg border bg-white px-3 py-1.5 text-xs font-semibold">Cancelar</button><button onclick="salvarListagemAdmin('${did}')" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white">💾 Salvar listagem do veículo</button></div>`;
+  }
+  const atfEmitida = lvAtf(trip, did) === 'aceita';
+  const excel = `<button onclick="baixarExcelListagemAdmin('${did}')" class="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-bold text-emerald-800">⬇️ ${preenchidos ? 'Baixar Excel da listagem' : 'Baixar Excel (modelo do veículo)'}</button>`;
+  const manual = atfEmitida
+    ? '<span class="text-xs text-slate-500">🔒 ATF emitida — não é possível editar a listagem.</span>'
+    : `<button onclick="editarListagemAdmin('${did}')" class="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-bold text-emerald-800">✍️ ${preenchidos ? 'Editar listagem' : 'Preencher listagem manual'}</button>`;
+  return `<div class="mt-3 flex flex-wrap items-center gap-2">${excel}${manual}</div>`;
+}
+function baixarExcelListagemAdmin(did) {
+  const rows = (listagemRowsByDriver[did] || []).filter((p) => String(p.nome || '').trim());
+  downloadListagemModelo(listagemVeiculoTargetId, did, rows.length ? rows : null);
+}
+async function editarListagemAdmin(did) {
+  const trip = agenda.find((a) => a.id === listagemVeiculoTargetId);
+  if (!trip || !ehAgendaAdmin()) return;
+  if (lvAtf(trip, did) === 'aceita') { toast('🔒 ATF emitida — não é possível editar a listagem.', true); return; }
+  listagemAdminEditando.add(did);
+  listagemMetodoByDriver[did] = 'manual';
+  const rows = listagemRowsByDriver[did] || (listagemRowsByDriver[did] = []);
+  const arquivo = listagemFilesByDriver[did];
+  if (!rows.some((p) => String(p.nome || '').trim()) && arquivo && /\.xlsx$/i.test(String(arquivo.filename || arquivo.name || ''))) {
+    await importarArquivoListagemAdmin(did, true);
+  }
+  if (!(listagemRowsByDriver[did] || []).length) listagemRowsByDriver[did] = [{ nome: '', tipo_documento: 'cpf', documento: '' }];
+  renderListagemVeiculoModal();
+}
+async function cancelarListagemAdmin(did) {
+  listagemAdminEditando.delete(did);
+  const grouped = await getExcursionPassengersGrouped(listagemVeiculoTargetId);
+  listagemRowsByDriver[did] = (grouped[did] || []).map((p) => ({ nome: p.nome, tipo_documento: p.tipo_documento || 'cpf', documento: p.documento || '' }));
+  renderListagemVeiculoModal();
+}
+function tipoDocumentoDoTexto(t) {
+  const x = String(t || '').toLowerCase();
+  if (/certid/.test(x)) return 'certidao_nascimento';
+  if (/\brg\b|identidade/.test(x)) return 'rg';
+  return 'cpf';
+}
+// Lê a planilha (.xlsx) enviada pela unidade e traz nome/documento para a edição manual.
+async function importarArquivoListagemAdmin(did, silencioso = false) {
+  const file = listagemUploadsByDriver[did] || listagemFilesByDriver[did];
+  if (!file || !window.XLSX) { if (!silencioso) toast('⚠️ Não foi possível ler o arquivo nesta tela.', true); return false; }
+  try {
+    let buffer;
+    if (file instanceof File) buffer = await file.arrayBuffer();
+    else {
+      let url = file.drive_url || '';
+      const fid = file.drive_file_id || (url.match(/\/d\/([^/]+)/)?.[1]) || (url.match(/[?&]id=([^&]+)/)?.[1]);
+      if (fid) url = `https://drive.google.com/uc?export=download&id=${encodeURIComponent(fid)}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('arquivo indisponível');
+      buffer = await response.arrayBuffer();
+    }
+    const book = XLSX.read(buffer, { type: 'array' });
+    const linhas = XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], { header: 1, defval: '' });
+    const cab = linhas.findIndex((l) => l.some((c) => /nome/i.test(String(c))));
+    if (cab < 0) throw new Error('coluna "Nome" não encontrada');
+    const cNome = linhas[cab].findIndex((c) => /nome/i.test(String(c)));
+    const cDoc = linhas[cab].findIndex((c) => /doc|cpf|rg/i.test(String(c)));
+    const rows = linhas.slice(cab + 1).map((l) => ({ nome: String(l[cNome] || '').trim(), documento: cDoc >= 0 ? String(l[cDoc] || '').trim() : '' }))
+      .filter((p) => p.nome).map((p) => ({ ...p, tipo_documento: tipoDocumentoDoTexto(p.documento) }));
+    if (!rows.length) throw new Error('planilha sem nomes');
+    listagemRowsByDriver[did] = rows;
+    if (!silencioso) { renderListagemVeiculoModal(); toast(`📥 ${rows.length} passageiro(s) trazidos do arquivo. Confira e salve.`); }
+    return true;
+  } catch (err) {
+    if (!silencioso) toast('⚠️ Não foi possível ler a planilha: ' + (err?.message || err) + '. Digite os nomes manualmente.', true);
+    return false;
+  }
+}
+async function salvarListagemAdmin(did) {
+  const id = listagemVeiculoTargetId;
+  const trip = agenda.find((a) => a.id === id);
+  if (!trip || !ehAgendaAdmin()) return;
+  if (lvAtf(trip, did) === 'aceita') { toast('🔒 ATF emitida — não é possível editar a listagem.', true); return; }
+  const v = driverVehicle(did);
+  const rows = (listagemRowsByDriver[did] || []).filter((p) => String(p.nome || '').trim());
+  if (!rows.length) { toast(`⚠️ Preencha ao menos um passageiro no veículo ${v ? v.plate : driverName(did)}.`, true); return; }
+  if (v?.capacity && rows.length > v.capacity) { toast(`⚠️ O veículo tem ${v.capacity} lugares.`, true); return; }
+  if (precisaListagemComNomesDocumentos(trip) && rows.some((p) => !String(p.documento || '').trim() || !p.tipo_documento)) {
+    toast('⚠️ Para esta viagem, informe nome, tipo e número do documento de todos os passageiros.', true); return;
+  }
+  // Os demais veículos mantêm o que está gravado no banco.
+  const grouped = await getExcursionPassengersGrouped(id);
+  const todos = [];
+  (trip.driver_ids || []).forEach((d) => {
+    const lista = d === did ? rows : (grouped[d] || []);
+    lista.filter((p) => String(p.nome || '').trim()).forEach((p) => todos.push({ nome: String(p.nome).trim(), tipo_documento: p.tipo_documento || 'cpf', documento: String(p.documento || '').trim(), driver_id: d }));
+  });
+  if (!await savePassengersForExcursion(id, todos)) return;
+  const agora = new Date().toISOString();
+  const mapa = lvGarantir(trip);
+  const anterior = mapa[did]?.status || 'nao_enviada';
+  mapa[did] = { ...mapa[did], status: 'enviada', enviada_em: agora, motivo: null, editada_admin_em: agora, editada_admin_por: currentUser.id };
+  const patch = { listagem_veiculos: mapa, listagem_status: lvResumoStatus(trip, mapa), listagem_parecer_comentario: null };
+  if (!trip.listagem_enviada_em) patch.listagem_enviada_em = agora;
+  if (!await updateExcursion(id, patch)) return;
+  const acao = anterior === 'nao_enviada' ? 'preenchida' : 'corrigida';
+  await logDocHistory(id, 'enviado', null, null, `Listagem do veículo ${lvPlaca(did)} ${acao} pelo Admin`, 'listagem');
+  await notifyRequester(trip, `Listagem ${acao} pelo Admin`, `A listagem do veículo ${lvPlaca(did)} da viagem para ${trip.destination || '-'} em ${trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'} foi ${acao} pelo Setor de Transporte.`);
+  listagemAdminEditando.delete(did);
+  await loadAgenda(); await loadNotifications(); renderAgenda();
+  toast(`✅ Listagem do veículo ${lvPlaca(did)} salva — aguardando conferência.`);
+  await openListagemVeiculoModal(id);
 }
 
 function selectListagemMethod(driverId, method) {
@@ -7127,7 +7259,8 @@ function dataArquivoListagem(trip) {
   return y && m && d ? `${d}-${m}-${y}` : 'data';
 }
 
-async function downloadListagemModelo(excursionId, driverId) {
+// rows (opcional): baixa a listagem já preenchida, no mesmo layout do modelo.
+async function downloadListagemModelo(excursionId, driverId, rows = null) {
   const trip = agenda.find((a) => a.id === excursionId), d = drivers.find((x) => x.id === driverId), v = driverVehicle(driverId);
   if (!trip || !window.ExcelJS) { toast('⚠️ O gerador do modelo ainda não carregou. Verifique a internet e tente novamente.', true); return; }
   const capacidade = Number(v?.capacity || 0), dataViagem = trip.trip_date ? new Date(trip.trip_date+'T00:00').toLocaleDateString('pt-BR') : '-';
@@ -7141,7 +7274,8 @@ async function downloadListagemModelo(excursionId, driverId) {
   // Layout: título centralizado com o favicon antes, sem fundos verdes; dados da viagem
   // separados por linhas finas; só as colunas A–C visíveis; cabeçalho e dados travados
   // (planilha protegida) e apenas Nome/Documento liberados para digitação.
-  const HEADER_ROW = 6, FIRST = HEADER_ROW + 1, LAST = HEADER_ROW + capacidade;
+  const preenchida = (rows || []).filter((p) => String(p.nome || '').trim());
+  const HEADER_ROW = 6, FIRST = HEADER_ROW + 1, LAST = HEADER_ROW + Math.max(capacidade, preenchida.length);
   const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Listagem', { views:[{state:'frozen', ySplit:HEADER_ROW, topLeftCell:`A${FIRST}`, activeCell:`B${FIRST}`, showGridLines:false}], properties:{defaultRowHeight:0} });
   ws.columns = [{width:6},{width:58},{width:30}];
   for (let c=4; c<=16384; c++) ws.getColumn(c).hidden = true;
@@ -7167,6 +7301,8 @@ async function downloadListagemModelo(excursionId, driverId) {
   for (let r=FIRST; r<=LAST; r++) {
     ws.getRow(r).height = 21;
     ws.getCell(r,1).value = r - HEADER_ROW;
+    const pax = preenchida[r - FIRST];
+    if (pax) { ws.getCell(r,2).value = String(pax.nome).trim(); ws.getCell(r,3).value = String(pax.documento || '').trim(); }
     for (let c=1; c<=3; c++) {
       const cell = ws.getCell(r,c);
       cell.font = {name:'Arial',size:10,color:{argb:'FF0F172A'}}; cell.alignment = {vertical:'middle',wrapText:true,horizontal: c===1 ? 'center' : undefined};
@@ -7178,7 +7314,7 @@ async function downloadListagemModelo(excursionId, driverId) {
   // Favicon antes do título (o título fica centralizado na faixa A:C).
   try { const response=await fetch('assets/favicon-512.png'); const buffer=await response.arrayBuffer(); const imageId=wb.addImage({buffer,extension:'png'}); ws.addImage(imageId,{tl:{col:1.2,row:0.12},ext:{width:24,height:24}}); } catch (_) { /* o título continua legível se a imagem não puder ser carregada */ }
   await ws.protect('', { selectLockedCells:true, selectUnlockedCells:true });
-  const bytes=await wb.xlsx.writeBuffer(); const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}); const link=document.createElement('a'); link.href=URL.createObjectURL(blob); link.download=`${dataArquivoListagem(trip)}_${slugify(schoolName(trip.school_id) || trip.requester_name || originName(trip))}_${slugify(d?.name || v?.plate || 'motorista')}.xlsx`; document.body.appendChild(link); link.click(); setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 1000);
+  const bytes=await wb.xlsx.writeBuffer(); const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}); const link=document.createElement('a'); link.href=URL.createObjectURL(blob); link.download=`${dataArquivoListagem(trip)}_${slugify(schoolName(trip.school_id) || trip.requester_name || originName(trip))}_${slugify(d?.name || v?.plate || 'motorista')}${preenchida.length ? '_listagem' : ''}.xlsx`; document.body.appendChild(link); link.click(); setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 1000);
 }
 
 function addListagemRow(driverId) {
