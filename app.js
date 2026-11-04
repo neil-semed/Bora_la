@@ -84,6 +84,11 @@ const ACCESS_SCREEN_CATALOG = [
 ];
 const CO_ADMIN_NAME = 'Co_Admin';
 // Agenda Mestra com "editar" (Admin ou perfil administrativo): mesmas edições do Admin.
+// Nova solicitação sem trava de antecedência (cadastro retroativo): Admin e perfil
+// administrativo (Co_Admin) com Nova Solicitação · editar.
+function solicitacaoSemTravaAdmin() {
+  return currentUser?.role === 'admin' || (currentUser?.role === 'operacional' && canEditScreen('solicitacao'));
+}
 function ehAgendaAdmin() {
   return currentUser?.role === 'admin' || (currentUser?.role === 'operacional' && canEditScreen('agenda'));
 }
@@ -8236,7 +8241,7 @@ async function completeTrip(id) {
 function openSolicitacaoScreen() {
   const avisoEscola = document.getElementById('solicitacaoAvisoEscola');
   if (avisoEscola) { avisoEscola.innerHTML = `<b>Importante:</b> ${escapeHtml(dicaTexto('solicitacao_aviso'))}`; avisoEscola.classList.toggle('hidden', currentUser?.role !== 'escola'); }
-  const dicaAnt = document.getElementById('dicaAntecedencia'); if (dicaAnt) dicaAnt.innerHTML = currentUser?.role === 'admin' ? '' : dicaHtml('solicitacao_antecedencia');
+  const dicaAnt = document.getElementById('dicaAntecedencia'); if (dicaAnt) dicaAnt.innerHTML = solicitacaoSemTravaAdmin() ? '' : dicaHtml('solicitacao_antecedencia');
   populateEscolaSelect();
   populateAgendamentoDestinoSelect();
   aplicarRecorrenciaPorPerfil();
@@ -8622,8 +8627,8 @@ function validateWizardStep(step) {
       toast('⚠️ Informe data, horário de saída e horário de retorno.', true);
       return false;
     }
-    // Antecedência mínima: 36 h (Nova Lima) ou 72 h (origem ou destino fora); retorno depois da saída. Admin sem trava.
-    if (currentUser?.role !== 'admin') {
+    // Antecedência mínima: 36 h (Nova Lima) ou 72 h (origem ou destino fora); retorno depois da saída. Admin e Co_Admin sem trava.
+    if (!solicitacaoSemTravaAdmin()) {
       const campoErro = (id, on) => document.getElementById(id)?.classList.toggle('border-red-400', on);
       const saida = new Date(`${document.getElementById('wData').value}T${document.getElementById('wHora').value}:00`).getTime();
       const fora = wizardForaDeNovaLima();
@@ -8650,7 +8655,7 @@ function validateWizardStep(step) {
       return false;
     }
     // E4: mesma regra da aprovação da lista PCD — apoio com documento é obrigatório.
-    if (currentUser?.role !== 'admin' && wizardPcdList.some((p) => !String(p.nome_apoio || '').trim() || !String(p.documento_apoio || '').trim())) {
+    if (!solicitacaoSemTravaAdmin() && wizardPcdList.some((p) => !String(p.nome_apoio || '').trim() || !String(p.documento_apoio || '').trim())) {
       toast('⚠️ Informe o nome e o documento do apoio de cada aluno PCD.', true);
       return false;
     }
