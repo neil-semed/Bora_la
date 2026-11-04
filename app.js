@@ -7110,7 +7110,102 @@ function barraAdminListagemHtml(did, preenchidos, arquivo) {
   const manual = atfEmitida
     ? '<span class="text-xs text-slate-500">🔒 ATF emitida — não é possível editar a listagem.</span>'
     : `<button onclick="editarListagemAdmin('${did}')" class="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-bold text-emerald-800">✍️ ${preenchidos ? 'Editar listagem' : 'Preencher listagem manual'}</button>`;
-  return `<div class="mt-3 flex flex-wrap items-center gap-2">${excel}${manual}</div>`;
+  return `<div class="mt-3 flex flex-wrap items-center gap-2">${excel}${manual}</div>${uploadAdminListagemHtml(trip, did, atfEmitida)}${statusAdminListagemHtml(trip, did, atfEmitida)}`;
+}
+// Admin/Co_Admin: envio de arquivo da listagem (sem o prazo de 48 h). Segue o trâmite
+// normal: "Aguardando conferência", aceite e envio à cooperativa.
+function uploadAdminListagemHtml(trip, did, atfEmitida) {
+  if (atfEmitida) return '';
+  return `<div class="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-violet-200 bg-violet-50/60 px-3 py-2 text-xs"><b class="text-violet-900">📤 Enviar arquivo da listagem</b><input id="admListagemArquivo-${did}" type="file" accept=".xlsx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="max-w-[16rem] text-xs"><span class="text-slate-500">Excel (.xlsx) ou PDF</span><button id="btnAdmListagemArquivo-${did}" onclick="enviarArquivoListagemAdmin('${did}')" class="rounded-lg bg-violet-600 px-3 py-1.5 font-bold text-white">Enviar arquivo</button></div>`;
+}
+const LV_STATUS_ADMIN_LABELS = { nao_enviada: 'Aguardando envio', enviada: 'Aguardando conferência', aceita: 'Aceita', rejeitada: 'Recusada' };
+// Status do veículo com a opção "Emitida": registra a ATF como se a cooperativa tivesse validado.
+function statusAdminListagemHtml(trip, did, atfEmitida) {
+  const e = lvMapa(trip)[did] || {};
+  if (atfEmitida) {
+    const quando = lvAtfData(trip, did) ? new Date(lvAtfData(trip, did)).toLocaleDateString('pt-BR') : '';
+    const origem = e.atf_origem && e.atf_origem !== 'cooperativa' ? `registrada pelo admin · ${{ telefone: 'telefone', email: 'e-mail', outro: 'outro' }[e.atf_origem] || e.atf_origem}${e.atf_obs ? ' · ' + escapeHtml(e.atf_obs) : ''}` : 'registrada pela cooperativa';
+    return `<div class="mt-3 flex flex-wrap items-center gap-2 text-xs"><span class="rounded-md bg-emerald-100 px-2 py-1 font-bold text-emerald-800">✅ Emitida${quando ? ' em ' + quando : ''}</span><span class="text-slate-500">${origem}</span></div>`;
+  }
+  const st = lvStatus(trip, did);
+  return `<div class="mt-3 flex flex-wrap items-center gap-2 rounded-lg border bg-slate-50 px-3 py-2 text-xs"><b>Status do veículo:</b><select onchange="onStatusAdminListagem('${did}', this.value)" class="rounded border px-2 py-1 text-xs"><option value="">${LV_STATUS_ADMIN_LABELS[st] || st}</option><option value="emitida">Emitida (ATF emitida)</option></select><span class="text-slate-500">"Emitida" registra a ATF como se a cooperativa tivesse validado a documentação.</span></div>
+    <div id="admEmitida-${did}" class="hidden mt-2 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs">
+      <div class="font-bold text-emerald-900">Registrar como Emitida — ${escapeHtml(lvCoopNome(did))}</div>
+      <div class="flex flex-wrap gap-4"><label><input type="radio" name="admEmitidaOrigem-${did}" value="telefone" checked> Telefone</label><label><input type="radio" name="admEmitidaOrigem-${did}" value="email"> E-mail</label><label><input type="radio" name="admEmitidaOrigem-${did}" value="outro"> Outro</label></div>
+      <input id="admEmitidaObs-${did}" class="w-full rounded border px-2 py-1" placeholder="Observação (opcional): ex. nº da ATF, contato com Fulano">
+      <div class="flex justify-end gap-2"><button onclick="onStatusAdminListagem('${did}', '')" class="rounded border bg-white px-3 py-1">Cancelar</button><button onclick="marcarEmitidaAdmin('${did}')" class="rounded bg-emerald-600 px-3 py-1 font-bold text-white">Confirmar Emitida</button></div>
+    </div>`;
+}
+function onStatusAdminListagem(did, valor) {
+  document.getElementById(`admEmitida-${did}`)?.classList.toggle('hidden', valor !== 'emitida');
+  if (valor !== 'emitida') renderListagemVeiculoModal();
+}
+async function marcarEmitidaAdmin(did) {
+  const id = listagemVeiculoTargetId;
+  const trip = agenda.find((a) => a.id === id);
+  if (!id || !trip || !ehAgendaAdmin()) return;
+  const origem = document.querySelector(`input[name="admEmitidaOrigem-${did}"]:checked`)?.value || 'telefone';
+  const obs = (document.getElementById(`admEmitidaObs-${did}`)?.value || '').trim();
+  const agora = new Date().toISOString();
+  const mapa = lvGarantir(trip);
+  mapa[did] = { ...mapa[did], atf: 'aceita', atf_em: agora, atf_por: currentUser.id, atf_origem: origem, atf_obs: obs || null, emitida_pelo_admin: true };
+  const patch = { listagem_veiculos: mapa };
+  if (lvTodasAtf(trip, mapa)) Object.assign(patch, {
+    atf_status: 'emitida', atf_emitida_em: agora, atf_emitida_por: currentUser.id,
+    atf_cooperativa_response: 'aceita', atf_cooperativa_response_at: agora,
+    situacao: ['cancelada', 'reprovada'].includes(trip.situacao) ? trip.situacao : 'aprovada',
+  });
+  if (!await updateExcursion(id, patch)) return;
+  const dataTxt = trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
+  const msg = `A ATF do veículo ${lvPlaca(did)} da viagem para ${trip.destination || '-'} em ${dataTxt} foi registrada como emitida pelo Setor de Transporte.`;
+  await logDocHistory(id, 'aceito', null, null, `ATF ${lvPlaca(did)} marcada como Emitida pelo Admin (${origem})${obs ? ': ' + obs : ''}`, 'listagem');
+  await notifyRequester(trip, 'ATF emitida', msg);
+  const coopId = driverCooperativaId(did);
+  if (coopId) await notificarGrupo('cooperativa', id, 'ATF registrada pelo Setor de Transporte', msg, coopId);
+  await loadAgenda(); await loadNotifications(); renderAgenda(); renderPendencias();
+  renderListagemVeiculoModal();
+  toast(`✅ ATF do veículo ${lvPlaca(did)} registrada como Emitida.`);
+}
+async function enviarArquivoListagemAdmin(did) {
+  const id = listagemVeiculoTargetId;
+  const trip = agenda.find((a) => a.id === id);
+  if (!id || !trip || !ehAgendaAdmin()) return;
+  if (lvAtf(trip, did) === 'aceita') { toast('🔒 ATF emitida — não é possível alterar a listagem.', true); return; }
+  const file = document.getElementById(`admListagemArquivo-${did}`)?.files?.[0];
+  if (!file) { toast('⚠️ Escolha o arquivo da listagem (Excel ou PDF).', true); return; }
+  if (!(/\.(xlsx|pdf)$/i.test(file.name))) { toast('⚠️ Envie um arquivo Excel (.xlsx) ou PDF.', true); return; }
+  if (file.size > 25 * 1024 * 1024) { toast('⚠️ O arquivo passa de 25 MB.', true); return; }
+  const n = nomeArquivoListagemEnviado(trip, did, file);
+  const btn = document.getElementById(`btnAdmListagemArquivo-${did}`); if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  try {
+    let fileId = null, url = null;
+    if (sb) {
+      const driveUrl = getDriveUploadUrl();
+      if (!driveUrl) { toast('⚠️ Google Drive ainda não configurado (Cooperativas › URL de upload).', true); return; }
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session?.access_token) { toast('⚠️ Sua sessão expirou. Entre novamente.', true); return; }
+      const resp = await enviarArquivoDrive(driveUrl, { excursionId: id, filename: n.filename, mimeType: n.mimeType, blob: file, accessToken: session.access_token, replaceFileId: listagemFilesByDriver[did]?.drive_file_id || '' });
+      fileId = resp?.fileId || null; url = resp?.url || null;
+      if (!fileId && !url) throw new Error('o Drive não devolveu o arquivo.');
+    }
+    if (!await registrarListagemFile(id, did, n.filename, fileId, url)) return;
+    const agora = new Date().toISOString();
+    const mapa = lvGarantir(trip);
+    mapa[did] = { ...mapa[did], status: 'enviada', enviada_em: agora, motivo: null, enviada_admin_em: agora, enviada_admin_por: currentUser.id };
+    const patch = { listagem_veiculos: mapa, listagem_status: lvResumoStatus(trip, mapa), listagem_parecer_comentario: null };
+    if (!trip.listagem_enviada_em) patch.listagem_enviada_em = agora;
+    if (precisaListagemComNomesDocumentos(trip) && !trip.atf_lista_enviada_em) patch.atf_lista_enviada_em = agora;
+    if (!await updateExcursion(id, patch)) return;
+    await logDocHistory(id, 'enviado', null, null, `Arquivo da listagem do veículo ${lvPlaca(did)} enviado pelo Admin`, 'listagem');
+    await notifyRequester(trip, 'Listagem enviada pelo Admin', `O Setor de Transporte enviou o arquivo da listagem do veículo ${lvPlaca(did)} da viagem para ${trip.destination || '-'}.`);
+    await loadAgenda(); await loadNotifications(); renderAgenda();
+    toast(`✅ Arquivo da listagem do veículo ${lvPlaca(did)} enviado — aguardando conferência.`);
+    await openListagemVeiculoModal(id);
+  } catch (err) {
+    toast('❌ Não foi possível enviar o arquivo: ' + (err?.message || err), true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Enviar arquivo'; }
+  }
 }
 function baixarExcelListagemAdmin(did) {
   const rows = (listagemRowsByDriver[did] || []).filter((p) => String(p.nome || '').trim());
