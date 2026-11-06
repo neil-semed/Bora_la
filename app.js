@@ -781,6 +781,7 @@ async function loadUserProfile() {
     currentUser.role = data.role || 'escola';
     currentUser.schoolId = data.school_id || null;
     currentUser.funcaoUnidade = data.funcao_unidade || null;
+    currentUser.podeRegistrarSolicitacao = !!data.pode_registrar_solicitacao;
     currentUser.driverId = data.driver_id || null;
     currentUser.setorPedagogico = data.setor_pedagogico || null;
     currentUser.accessProfileId = data.access_profile_id || null;
@@ -845,6 +846,7 @@ async function handleLogin(e) {
         role: profile.role,
         schoolId: profile.school_id || null,
         funcaoUnidade: profile.funcao_unidade || null,
+        podeRegistrarSolicitacao: !!profile.pode_registrar_solicitacao,
         driverId: profile.driver_id || null,
         setorPedagogico: profile.setor_pedagogico || null,
         accessProfileId: profile.access_profile_id || null,
@@ -924,8 +926,11 @@ function permissionForScreen(screen) {
   if (currentUser?.role !== 'operacional') return null;
   return accessProfilePermissions.find((p) => p.access_profile_id === currentUser.accessProfileId && p.screen_key === screen) || null;
 }
+// Pedagogia › Nova solicitação: liberado para o perfil todo (Perfis de acesso) OU para a pessoa (Validadores).
+function pedagogiaSolicitacaoGeral() { return !!roleScreenPermissions.find((p) => p.role === 'pedagogia' && p.screen_key === 'solicitacao' && p.can_view); }
 function canViewScreen(screen) {
   if (!currentUser) return false;
+  if (currentUser.role === 'pedagogia' && screen === 'solicitacao') return pedagogiaSolicitacaoGeral() || !!currentUser.podeRegistrarSolicitacao;
   if (currentUser.role === 'operacional') return !!permissionForScreen(screen)?.can_view;
   if (currentUser.role !== 'admin') {
     const override = rolePermRow(menuRoleKey(), screen);
@@ -1312,7 +1317,7 @@ let emailMassaModo = 'varios';
 let emailMassaTipo = '';
 let emailMassaSel = new Set();
 let emailsEnviadosCache = [];
-const EMAIL_MASSA_MODO_LABEL = { um: '1 para 1', varios: '1 para N', todas: '1 para todas' };
+const EMAIL_MASSA_MODO_LABEL = { um: '1 para 1', varios: '1 para N', todas: '1 para todas', automatico: 'Automático' };
 function trocarAbaAvisos(aba) {
   document.getElementById('avisosAbaSistema')?.classList.toggle('hidden', aba !== 'sistema');
   document.getElementById('avisosAbaEmails')?.classList.toggle('hidden', aba !== 'emails');
@@ -1459,7 +1464,7 @@ function renderEmailsEnviados() {
     const destHtml = ds.length === 1 ? escapeHtml(ds[0].nome || ds[0].email) : `<details><summary class="cursor-pointer text-blue-700">${ds.length} · ver lista</summary><div class="mt-1 text-xs text-slate-600">${nomes}</div></details>`;
     const sit = r.status === 'enviado'
       ? `<span class="font-semibold text-emerald-700">✅ Enviado</span>${r.tentativas > 1 ? `<div class="text-[11px] text-slate-400">reenviado em ${new Date(r.ultimo_envio_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</div>` : ''}`
-      : `<span class="font-semibold text-red-600">❌ Falhou</span><div class="text-[11px] text-slate-500">${escapeHtml(r.erro || '')}</div>${podeEnviarAvisos() ? `<button type="button" onclick="reenviarEmailMassa('${r.id}')" class="mt-1 rounded-md border border-red-200 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50">↻ Tentar de novo</button>` : ''}`;
+      : `<span class="font-semibold text-red-600">❌ Falhou</span><div class="text-[11px] text-slate-500">${escapeHtml(r.erro || '')}</div>${podeEnviarAvisos() && r.modalidade !== 'automatico' ? `<button type="button" onclick="reenviarEmailMassa('${r.id}')" class="mt-1 rounded-md border border-red-200 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50">↻ Tentar de novo</button>` : ''}`;
     return `<tr class="border-b border-slate-100 align-top"><td class="px-3 py-2 whitespace-nowrap">${new Date(r.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</td><td class="px-3 py-2">${escapeHtml(r.assunto)}</td><td class="px-3 py-2"><span class="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-extrabold text-indigo-800">${EMAIL_MASSA_MODO_LABEL[r.modalidade] || r.modalidade}</span></td><td class="px-3 py-2">${destHtml}</td><td class="px-3 py-2">${escapeHtml(por ? (por.full_name || por.email) : '-')}</td><td class="px-3 py-2">${sit}</td></tr>`;
   }).join('');
 }
@@ -1847,6 +1852,7 @@ function nativeRoleMenuEnabled(role, key) {
   if (row) return !!row.can_view;
   // Relatórios só aparece para Escola/Motorista quando o Admin liberar; as abas do MarkCarro também.
   if (['carrosolicitacoes', 'carronova'].includes(key)) return false;
+  if (role === 'pedagogia' && key === 'solicitacao') return false;
   return !(key === 'relatorios' && ['escola', 'escola_pedagogo', 'motorista'].includes(role));
 }
 function renderNativeRoleProfiles() {
@@ -2041,15 +2047,32 @@ function renderValidadores() {
   const setorSelect = document.getElementById('novoPublicoSetor');
   if (!setorSelect) return;
   setorSelect.innerHTML = '<option value="">— setor responsável —</option>' + validationSectors.filter((s) => s.active !== false).map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
-  document.getElementById('listaSetoresValidacao').innerHTML = validationSectors.length ? validationSectors.map((s) => `<div class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm"><span>${escapeHtml(s.name)}</span><span class="flex gap-2"><button onclick="editarSetorValidacao('${s.id}')" class="text-xs text-blue-600">Editar</button><button onclick="arquivarSetorValidacao('${s.id}')" class="text-xs text-red-600">Remover</button></span></div>`).join('') : '<p class="text-sm text-slate-500">Execute a migration 017 para cadastrar setores.</p>';
+  document.getElementById('listaSetoresValidacao').innerHTML = validationSectors.length ? validationSectors.map((s) => `<div class="rounded-lg bg-slate-50 px-3 py-2 text-sm"><div class="flex items-center justify-between"><span class="font-semibold">${escapeHtml(s.name)}</span><span class="flex gap-2"><button onclick="editarSetorValidacao('${s.id}')" class="text-xs text-blue-600">Editar</button><button onclick="arquivarSetorValidacao('${s.id}')" class="text-xs text-red-600">Remover</button></span></div><div class="mt-1.5 flex gap-2"><input id="emailSetor-${s.id}" type="text" value="${escapeHtml(s.email || '')}" placeholder="E-mail do setor (vírgula para mais de um)" class="min-w-0 flex-1 rounded border bg-white px-2 py-1 text-xs"><button onclick="salvarEmailSetorValidacao('${s.id}')" class="rounded bg-emerald-600 px-2 py-1 text-xs font-bold text-white">Salvar</button></div>${s.email ? '' : '<div class="mt-1 text-[11px] text-amber-700">Sem e-mail: o setor recebe só o aviso no sino.</div>'}</div>`).join('') : '<p class="text-sm text-slate-500">Execute a migration 017 para cadastrar setores.</p>';
   document.getElementById('listaPublicosValidacao').innerHTML = validationTargets.length ? validationTargets.map((t) => { const setor = validationSectors.find((s) => s.id === t.default_sector_id); return `<div class="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm"><div><strong>${escapeHtml(t.name)}</strong><div class="text-xs text-slate-500">Validação inicial: ${escapeHtml(setor?.name || 'não definida')}</div></div><button onclick="editarPublicoValidacao('${t.id}')" class="text-xs text-blue-600">Editar</button></div>`; }).join('') : '<p class="text-sm text-slate-500">Nenhum público-alvo cadastrado.</p>';
   const validadores = allProfiles.filter((p) => p.role === 'pedagogia' && p.active !== false);
   document.getElementById('listaValidadores').innerHTML = validadores.length ? validadores.map((p) => {
     const permitidos = new Set(validatorSectorAssignments.filter((v) => v.profile_id === p.id).map((v) => v.sector_id));
-    return `<div class="border rounded-xl p-4"><strong>${escapeHtml(p.full_name || p.email)}</strong><div class="mt-2 space-y-1">${validationSectors.filter((s) => s.active !== false).map((s) => `<label class="flex gap-2 text-sm"><input type="checkbox" ${permitidos.has(s.id) ? 'checked' : ''} onchange="alterarSetoresValidador('${p.id}')" value="${s.id}" data-validator="${p.id}"> ${escapeHtml(s.name)}</label>`).join('')}</div></div>`;
+    const podeReg = !!p.pode_registrar_solicitacao;
+    return `<div class="border rounded-xl p-4"><strong>${escapeHtml(p.full_name || p.email)}</strong><div class="mt-2 space-y-1">${validationSectors.filter((s) => s.active !== false).map((s) => `<label class="flex gap-2 text-sm"><input type="checkbox" ${permitidos.has(s.id) ? 'checked' : ''} onchange="alterarSetoresValidador('${p.id}')" value="${s.id}" data-validator="${p.id}"> ${escapeHtml(s.name)}</label>`).join('')}</div><label class="mt-3 flex items-start gap-2 border-t border-dashed pt-3 text-sm"><input type="checkbox" ${podeReg ? 'checked' : ''} onchange="alterarPermissaoSolicitacao('${p.id}', this.checked)" class="mt-0.5 h-4 w-4 accent-emerald-600"><span><b class="${podeReg ? 'text-emerald-700' : 'text-slate-600'}">Pode registrar solicitações</b><small class="block text-xs text-slate-500">${podeReg ? 'Vê o menu "Nova solicitação" e registra para qualquer unidade.' : 'Só analisa propostas; o menu "Nova solicitação" não aparece.'}${pedagogiaSolicitacaoGeral() ? ' · Hoje liberado para toda a Pedagogia em Perfis de acesso.' : ''}</small></span></label></div>`;
   }).join('') : '<p class="text-sm text-slate-500">Crie um usuário com perfil Pedagogia para vinculá-lo como validador.</p>';
 }
 
+async function salvarEmailSetorValidacao(id) {
+  const valor = (document.getElementById(`emailSetor-${id}`)?.value || '').trim();
+  const lista = valor.split(/[;,\n]+/).map((e) => e.trim()).filter(Boolean);
+  if (lista.some((e) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))) { toast('⚠️ Confira os e-mails (separe por vírgula).', true); return; }
+  if (!sb) { const s0 = validationSectors.find((x) => x.id === id); if (s0) s0.email = lista.join(', ') || null; renderValidadores(); toast('✅ E-mail do setor salvo (modo demo).'); return; }
+  const { error } = await sb.from('validation_sectors').update({ email: lista.join(', ') || null }).eq('id', id);
+  if (error) { toast('❌ ' + error.message + (/email/i.test(error.message) ? ' (execute a migration 055)' : ''), true); return; }
+  await loadValidationConfig(); renderValidadores(); toast('✅ E-mail do setor salvo.');
+}
+async function alterarPermissaoSolicitacao(profileId, valor) {
+  if (!sb) { const p0 = allProfiles.find((x) => x.id === profileId); if (p0) p0.pode_registrar_solicitacao = !!valor; renderValidadores(); return; }
+  const { error } = await sb.rpc('definir_permissao_solicitacao', { p_profile: profileId, p_valor: !!valor });
+  if (error) { toast('❌ ' + error.message + (/function|definir_permissao/i.test(error.message) ? ' (execute a migration 055)' : ''), true); await loadAllProfiles(); renderValidadores(); return; }
+  await loadAllProfiles(); renderValidadores();
+  toast(valor ? '✅ Validador liberado para registrar solicitações.' : '✅ Permissão de registro retirada.');
+}
 async function criarSetorValidacao() {
   const input = document.getElementById('novoSetorValidacao'); const name = input.value.trim();
   if (!name) { toast('⚠️ Informe o nome do setor.', true); return; }
@@ -6411,6 +6434,7 @@ async function confirmUploadDocInterno() {
   // P3: avisa os validadores do setor.
   notifyValidadoresSetor(trip, wasReenvio ? 'Nova versão da proposta pedagógica' : 'Nova proposta pedagógica para análise',
     `${originName(trip)} → ${trip.destination || '-'} (${trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'}) aguarda análise.`).catch(() => {});
+  avisarSetoresPedagogicos({ ...trip, ...patchEnvio }, 'proposta').catch(() => {});
   // O envio já está gravado: fecha a janela na hora; histórico e recarga seguem em segundo plano.
   const idEnviado = docUploadTargetId;
   toast('✅ Documento enviado para análise da Pedagogia.');
@@ -9075,9 +9099,57 @@ async function saveAdditionalRecurrenceDate() {
 
 // E-mail ao setor (Admin › Cooperativas › e-mail do setor) quando a Escola registra
 // uma solicitação. Mesmo padrão visual dos demais avisos do Bora Lá.
+// ---- E-mail aos setores pedagógicos (setor do público-alvo e, se houver, o validador específico) ----
+async function destinatariosPedagogicos(a) {
+  if (!validationSectors.length) await loadValidationConfig().catch(() => {});
+  const lista = [];
+  const setor = validationSectors.find((x) => x.id === a?.validation_sector_id);
+  String(setor?.email || '').split(/[;,\n]+/).map((e) => e.trim()).filter(Boolean)
+    .forEach((email) => lista.push({ tipo: 'setor_pedagogico', id: setor.id, nome: setor.name, email }));
+  if (a?.validator_profile_id) {
+    let v = allProfiles.find((p) => p.id === a.validator_profile_id);
+    if (!v && sb) { const { data } = await sb.from('profiles').select('id,full_name,email').eq('id', a.validator_profile_id).maybeSingle(); v = data || null; }
+    if (v?.email) lista.push({ tipo: 'validador', id: v.id, nome: v.full_name || v.email, email: v.email });
+  }
+  const vistos = new Set();
+  return { setorNome: setor?.name || '', lista: lista.filter((d) => { const k = d.email.toLowerCase(); if (vistos.has(k)) return false; vistos.add(k); return true; }) };
+}
+async function registrarEmailAutomatico(assunto, texto, destinatarios, ok) {
+  if (!sb || !destinatarios.length) return;
+  try { await sb.rpc('registrar_email_automatico', { p_assunto: assunto, p_mensagem: texto, p_destinatarios: destinatarios, p_status: ok ? 'enviado' : 'falhou', p_erro: ok ? null : (ultimoErroEnvioAutomatico || null) }); } catch (_) { /* histórico é complementar */ }
+}
+async function avisarSetoresPedagogicos(a, momento, qtdDatas = 1) {
+  if (!a || !sb) return;
+  const { setorNome, lista } = await destinatariosPedagogicos(a);
+  if (!lista.length) return;
+  const unidade = schoolName(a.school_id) || a.requester_name || originName(a) || '-';
+  const data = a.trip_date ? new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
+  const destinoViagem = `${a.destination || '-'}${a.city ? ' - ' + a.city : ''}`;
+  const publico = publicoAlvoLabel(a.validation_target_id || a.publico_alvo);
+  const nova = momento === 'nova';
+  const titulo = nova ? 'Nova solicitação de viagem' : 'Proposta para análise';
+  const assunto = `Bora Lá - ${nova ? 'nova solicitação' : 'proposta para análise'} - ${unidade} - ${data}`;
+  const intro = nova
+    ? `${currentUser?.role === 'pedagogia' ? `A Pedagogia registrou para a unidade ${unidade}` : `A unidade ${unidade} registrou`} uma nova solicitação de viagem${setorNome ? ` para o setor ${setorNome}` : ''}.`
+    : `A proposta pedagógica da viagem abaixo chegou para análise${setorNome ? ` do setor ${setorNome}` : ''}.`;
+  const linhas = nova
+    ? [['Data', `${data}${qtdDatas > 1 ? ` (recorrente: ${qtdDatas} datas)` : ''}`], ['Saída', `${hhmm(a.departure_time)}h - Retorno: ${hhmm(a.return_time)}h`], ['Destino', destinoViagem], ['Público-alvo', publico && publico !== '-' ? publico : 'Não informado'], ['Passageiros', String(totalPassengers(a))]]
+    : [['Unidade', unidade], ['Data', data], ['Destino', destinoViagem]];
+  const fim = nova
+    ? (['em_analise'].includes(a.doc_status) ? 'Proposta pedagógica: enviada.' : 'Proposta pedagógica: ainda não enviada. Você será avisado quando chegar.')
+    : 'Acesse o Bora Lá, menu Validações, e clique em Analisar.';
+  const pq = (t) => `<p style="margin:0 0 12px">${t}</p>`;
+  const html = emailPadraoHtml(titulo, pq(escapeHtml(intro)) + pq(linhas.map(([k, v]) => `<strong>${escapeHtml(k)}:</strong> ${escapeHtml(v)}`).join('<br>')) + pq(escapeHtml(fim)));
+  const texto = `${saudacaoEmailBrasilia()}\n\n${intro}\n\n${linhas.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n${fim}\n\nBora Lá - Excursões / Semed Nova Lima`;
+  const ok = await tentarEnviarEmailAutomatico(lista.map((d) => d.email).join(','), assunto, texto, '', html);
+  await registrarEmailAutomatico(assunto, texto, lista, ok);
+}
+
 async function avisarSetorNovaSolicitacao(a, qtdDatas = 1) {
   const destino = appSettings.email_copia_setor || appSettings.remetente_email || '';
-  if (!destino || !a) return;
+  if (!a) return;
+  avisarSetoresPedagogicos(a, 'nova', qtdDatas).catch(() => {});
+  if (!destino) return;
   const unidade = schoolName(a.school_id) || a.requester_name || originName(a) || '-';
   const data = a.trip_date ? new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
   const origem = `${originName(a) || '-'}${originAddress(a) ? ' - ' + originAddress(a) : ''}${originCity(a) ? ' - ' + originCity(a) : ''}`;
@@ -9104,7 +9176,8 @@ async function avisarSetorNovaSolicitacao(a, qtdDatas = 1) {
     + p(saudacaoEmailBrasilia()) + p(escapeHtml(intro))
     + p(linhas.map(([k, v]) => k === 'Saída' ? `<strong>Saída:</strong> ${escapeHtml(hhmm(a.departure_time))}h - <strong>Retorno:</strong> ${escapeHtml(hhmm(a.return_time))}h` : `<strong>${escapeHtml(k)}:</strong> ${escapeHtml(v)}`).join('<br>'))
     + p(escapeHtml(fim)) + '<p style="margin:18px 0 0">Bora Lá - Excursões / Semed Nova Lima</p></div>';
-  await tentarEnviarEmailAutomatico(destino, assunto, texto, '', html);
+  const okTransp = await tentarEnviarEmailAutomatico(destino, assunto, texto, '', html);
+  await registrarEmailAutomatico(assunto, texto, [{ tipo: 'setor_transporte', id: null, nome: 'Setor de Transporte', email: destino }], okTransp);
 }
 
 async function enviarDocumentoFinanceiro(trip, file) {
@@ -9273,6 +9346,7 @@ async function submitSolicitacao() {
     toast(novas.length > 1 ? `✅ ${novas.length} viagens da recorrência foram criadas!` : '✅ Solicitação enviada com sucesso!');
     // Escola: aviso ao e-mail do setor (sem esperar - não altera nem bloqueia o fluxo/upload).
     if (['escola', 'pedagogia'].includes(currentUser?.role) && data?.[0]) avisarSetorNovaSolicitacao(data[0], data.length).catch(() => {});
+    else if (data?.[0]) avisarSetoresPedagogicos(data[0], 'nova', data.length).catch(() => {});
     // Pedagogia: a unidade recebe o aviso, como se tivesse feito o pedido.
     if (currentUser?.role === 'pedagogia' && data?.[0]) {
       const dt = data[0].trip_date ? new Date(data[0].trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';

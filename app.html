@@ -1237,7 +1237,7 @@
                   <h3 class="mr-2 font-semibold text-slate-900">E-mails enviados</h3>
                   <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Mês</label><select id="emenvMes" onchange="renderEmailsEnviados()" class="rounded-lg border px-3 py-2 text-sm"><option value="">Todos</option><option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option><option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option><option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option><option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option></select></div>
                   <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Ano</label><select id="emenvAno" onchange="renderEmailsEnviados()" class="rounded-lg border px-3 py-2 text-sm"><option value="">Todos</option></select></div>
-                  <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Modalidade</label><select id="emenvModo" onchange="renderEmailsEnviados()" class="rounded-lg border px-3 py-2 text-sm"><option value="">Todas</option><option value="um">1 para 1</option><option value="varios">1 para N</option><option value="todas">1 para todas</option></select></div>
+                  <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Modalidade</label><select id="emenvModo" onchange="renderEmailsEnviados()" class="rounded-lg border px-3 py-2 text-sm"><option value="">Todas</option><option value="um">1 para 1</option><option value="varios">1 para N</option><option value="todas">1 para todas</option><option value="automatico">Automático</option></select></div>
                   <div><label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Destinatário</label><select id="emenvDest" onchange="renderEmailsEnviados()" class="rounded-lg border px-3 py-2 text-sm"><option value="">Todos</option></select></div>
                   <button type="button" onclick="['emenvMes','emenvAno','emenvModo','emenvDest'].forEach(i=>document.getElementById(i).value='');renderEmailsEnviados()" class="px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Limpar filtros</button>
                   <button type="button" onclick="carregarEmailsEnviados()" class="px-3 py-2 rounded-lg bg-slate-100 text-sm hover:bg-slate-200">🔄 Atualizar</button>
@@ -2480,7 +2480,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=pedagogia-solicitacao-20261105-001"></script>
+  <script src="app.js?v=setores-email-permissao-20261106-001"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */
