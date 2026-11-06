@@ -91,8 +91,15 @@ Deno.serve(async (req) => {
     if (ehCooperativa) {
       const { data: settings } = await callerClient.from('app_settings').select('key,value').in('key', ['email_copia_setor', 'remetente_email']);
       const setor = new Set((settings || []).flatMap((r: { value: string }) => emails(r.value)).map((e) => e.toLowerCase()));
+      // Escola e Pedagogia também avisam os setores pedagógicos (e-mail do setor) e os validadores.
+      if (callerProfile?.role !== 'agente_externo') {
+        const { data: setoresPed } = await callerClient.from('validation_sectors').select('email');
+        (setoresPed || []).flatMap((r: { email: string | null }) => emails(r.email)).forEach((e) => setor.add(e.toLowerCase()));
+        const { data: validadores } = await callerClient.from('profiles').select('email').eq('role', 'pedagogia').eq('active', true);
+        (validadores || []).flatMap((r: { email: string | null }) => emails(r.email)).forEach((e) => setor.add(e.toLowerCase()));
+      }
       if (cc.length || !to.every((e) => setor.has(e.toLowerCase()))) {
-        return json({ error: 'Este perfil só pode enviar avisos para o e-mail do setor.' }, 403);
+        return json({ error: 'Este perfil só pode enviar avisos para o e-mail do setor de transporte ou dos setores pedagógicos.' }, 403);
       }
     }
 
