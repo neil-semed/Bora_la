@@ -83,7 +83,7 @@ function authorize_(accessToken, excursionId) {
 
   const profiles = parseResposta_(profResp);
   const role = Array.isArray(profiles) ? profiles[0]?.role : null;
-  if (!['escola', 'admin', 'operacional'].includes(role)) throw new Error('Este perfil não pode enviar documentos.');
+  if (!['escola', 'admin', 'operacional', 'pedagogia'].includes(role)) throw new Error('Este perfil não pode enviar documentos.');
 }
 
 // ENVIO DIRETO (mais rápido): o script só confere o login e abre uma sessão de upload
