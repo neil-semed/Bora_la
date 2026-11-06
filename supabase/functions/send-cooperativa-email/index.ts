@@ -53,7 +53,8 @@ Deno.serve(async (req) => {
     const ehAdmin = callerProfile?.role === 'admin';
     // Cooperativa (agente_externo): só pode avisar o e-mail do setor (aceite de ATF/PCD).
     // Cooperativa e Escola: só podem avisar o e-mail do setor (aceite ATF/PCD; nova solicitação).
-    const ehCooperativa = callerProfile?.role === 'agente_externo' || callerProfile?.role === 'escola';
+    // Pedagogia: também só o e-mail do setor (aviso de nova solicitação registrada por ela).
+    const ehCooperativa = callerProfile?.role === 'agente_externo' || callerProfile?.role === 'escola' || callerProfile?.role === 'pedagogia';
     // Perfil administrativo (ex.: Co_Admin) com Agenda Mestra · editar envia como o Admin.
     let ehOperacionalAgenda = false;
     if (callerProfile?.role === 'operacional') {
