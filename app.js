@@ -104,15 +104,24 @@ function aplicarSomenteConsulta(sectionId, screenKey) {
 // escolhe, entre esses, quais ficam liberados (role_screen_permissions, chave "rel:<tipo>").
 const RELATORIOS_POR_PERFIL = {
   escola: ['solicitacoes', 'validacoes', 'atf', 'cancelamentos'],
+  escola_pedagogo: ['solicitacoes', 'validacoes', 'atf', 'cancelamentos'],
   pedagogia: ['escala', 'solicitacoes', 'validacoes', 'cancelamentos'],
   motorista: ['escala', 'km'],
   agente_externo: ['escala', 'atf', 'km', 'veiculos'],
 };
 const RELATORIO_LABELS = { escala: 'Escala de transporte', solicitacoes: 'Solicitações de viagem', validacoes: 'Validações pedagógicas', atf: 'ATF e listagens', financeiro: 'Aportes financeiros', cancelamentos: 'Cancelamentos', km: 'Quilometragem registrada', veiculos: 'Veículos' };
-function relatoriosPermitidos(role = currentUser?.role) {
+// Função na unidade (perfil Escola): "direcao" ou "pedagogo". O Pedagogo(a) tem menus próprios
+// em Perfis de acesso (chave "escola_pedagogo"); sem configuração, segue os da Escola.
+const FUNCAO_UNIDADE_LABELS = { direcao: 'Direção', pedagogo: 'Pedagogo(a)' };
+function menuRoleKey(u = currentUser) { return u?.role === 'escola' && u?.funcaoUnidade === 'pedagogo' ? 'escola_pedagogo' : u?.role; }
+function rolePermRow(role, key) {
+  return roleScreenPermissions.find((p) => p.role === role && p.screen_key === key)
+    || (role === 'escola_pedagogo' ? roleScreenPermissions.find((p) => p.role === 'escola' && p.screen_key === key) : undefined);
+}
+function relatoriosPermitidos(role = menuRoleKey()) {
   if (role === 'admin' || role === 'operacional') return Object.keys(RELATORIO_LABELS);
   const lista = RELATORIOS_POR_PERFIL[role] || [];
-  return lista.filter((tipo) => { const row = roleScreenPermissions.find((p) => p.role === role && p.screen_key === `rel:${tipo}`); return row ? !!row.can_view : true; });
+  return lista.filter((tipo) => { const row = rolePermRow(role, `rel:${tipo}`); return row ? !!row.can_view : true; });
 }
 
 let assignTargetId = null;
@@ -134,7 +143,7 @@ const SCREEN_ROLES = {
   agenda: ['admin', 'escola', 'pedagogia', 'motorista'],
   agendadata: ['motorista'],
   agendageral: ['motorista'],
-  solicitacao: ['admin', 'escola'],
+  solicitacao: ['admin', 'escola', 'pedagogia'],
   validacoes: ['escola', 'pedagogia'],
   km: ['admin', 'motorista', 'agente_externo'],
   unidades: ['admin'],
@@ -171,7 +180,9 @@ const ROLE_DEFAULT_SCREEN = {
 const ROLE_LABELS = { admin: 'Admin', escola: 'Escola', pedagogia: 'Pedagogia', motorista: 'Motorista', operacional: 'Administrativo', agente_externo: 'Agente Externo', financeiro: 'Financeiro' };
 const NATIVE_ROLE_MENU_DEFAULTS = {
   escola: ['dashboard', 'pendencias', 'agenda', 'solicitacao', 'validacoes', 'relatorios', 'carrosolicitacoes', 'carronova'],
-  pedagogia: ['dashboard', 'pendencias', 'agenda', 'validacoes', 'relatorios', 'carrosolicitacoes', 'carronova'],
+  pedagogia: ['dashboard', 'pendencias', 'agenda', 'solicitacao', 'validacoes', 'relatorios', 'carrosolicitacoes', 'carronova'],
+  // Usuário Escola com função "Pedagogo(a)": menus próprios, começa igual à Escola.
+  escola_pedagogo: ['dashboard', 'pendencias', 'agenda', 'solicitacao', 'validacoes', 'relatorios', 'carrosolicitacoes', 'carronova'],
   motorista: ['dashboard', 'agenda', 'agendadata', 'agendageral', 'km', 'relatorios'],
   agente_externo: ['pendenciascoop', 'solicitacoescoop', 'atfpcdcoop', 'km', 'relatorios', 'carrosolicitacoes', 'carronova'],
   financeiro: ['financeiro'],
@@ -769,6 +780,7 @@ async function loadUserProfile() {
   if (data) {
     currentUser.role = data.role || 'escola';
     currentUser.schoolId = data.school_id || null;
+    currentUser.funcaoUnidade = data.funcao_unidade || null;
     currentUser.driverId = data.driver_id || null;
     currentUser.setorPedagogico = data.setor_pedagogico || null;
     currentUser.accessProfileId = data.access_profile_id || null;
@@ -832,6 +844,7 @@ async function handleLogin(e) {
         email: profile.email,
         role: profile.role,
         schoolId: profile.school_id || null,
+        funcaoUnidade: profile.funcao_unidade || null,
         driverId: profile.driver_id || null,
         setorPedagogico: profile.setor_pedagogico || null,
         accessProfileId: profile.access_profile_id || null,
@@ -915,7 +928,7 @@ function canViewScreen(screen) {
   if (!currentUser) return false;
   if (currentUser.role === 'operacional') return !!permissionForScreen(screen)?.can_view;
   if (currentUser.role !== 'admin') {
-    const override = roleScreenPermissions.find((p) => p.role === currentUser.role && p.screen_key === screen);
+    const override = rolePermRow(menuRoleKey(), screen);
     if (override) return !!override.can_view;
   }
   return (SCREEN_ROLES[screen] || []).includes(currentUser.role);
@@ -1574,7 +1587,7 @@ function renderUsuarios() {
     .sort((a, b) => (a.email || '').localeCompare(b.email || ''))
     .map((p) => {
       let vinculo = '—';
-      if (p.role === 'escola') vinculo = schoolName(p.school_id) || '<span class="text-amber-600">sem unidade definida</span>';
+      if (p.role === 'escola') vinculo = (schoolName(p.school_id) || '<span class="text-amber-600">sem unidade definida</span>') + (p.funcao_unidade ? ` <span class="ml-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${p.funcao_unidade === 'pedagogo' ? 'bg-violet-100 text-violet-800' : 'bg-blue-100 text-blue-800'}">${FUNCAO_UNIDADE_LABELS[p.funcao_unidade] || ''}</span>` : '');
       else if (p.role === 'motorista') {
         const d = drivers.find((x) => x.id === p.driver_id);
         vinculo = d ? d.name : '<span class="text-amber-600">sem motorista vinculado</span>';
@@ -1641,6 +1654,7 @@ function openUserModal(id) {
   const schoolSel = document.getElementById('newUserSchoolId');
   schoolSel.innerHTML = '<option value="">— selecione —</option>' + schools.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
   schoolSel.value = p.school_id || '';
+  document.getElementById('newUserFuncao').value = p.funcao_unidade || 'direcao';
 
   const driverSel = document.getElementById('newUserDriverId');
   driverSel.innerHTML = '<option value="">— selecione —</option>' + drivers.map((d) => `<option value="${d.id}">${d.name}</option>`).join('');
@@ -1675,6 +1689,7 @@ async function confirmSaveUser() {
     phone: role === 'motorista' ? null : (document.getElementById('newUserTelefone').value.trim() || null),
     role,
     school_id: role === 'escola' ? (document.getElementById('newUserSchoolId').value || null) : null,
+    funcao_unidade: role === 'escola' ? (document.getElementById('newUserFuncao').value || 'direcao') : null,
     driver_id: role === 'motorista' ? (document.getElementById('newUserDriverId').value || null) : null,
     setor_pedagogico: role === 'pedagogia' ? (document.getElementById('newUserSetorPedagogico').value || null) : null,
     access_profile_id: role === 'operacional' ? perfilAcessoDoSelect(roleSel) : null,
@@ -1713,6 +1728,7 @@ function openCreateUserModal() {
   const driverSel = document.getElementById('createUserDriverId');
   driverSel.innerHTML = '<option value="">— selecione —</option>' + drivers.map((d) => `<option value="${d.id}">${d.name}</option>`).join('');
   document.getElementById('createUserSetorPedagogico').value = '';
+  document.getElementById('createUserFuncao').value = 'direcao';
   fillAccessProfileSelect('createUserAccessProfileId');
   populateCooperativaSelect('createUserCooperativaId');
 
@@ -1775,6 +1791,11 @@ async function confirmCreateUser() {
       toast('❌ ' + (json.error || `Erro ao criar usuário (HTTP ${resp.status}). A Edge Function "admin-create-user" está publicada no seu projeto?`), true);
       return;
     }
+    // Função na unidade (Escola): gravada no perfil recém-criado.
+    if (role === 'escola' && json.id) {
+      const { error: funcErr } = await sb.from('profiles').update({ funcao_unidade: document.getElementById('createUserFuncao').value || 'direcao' }).eq('id', json.id);
+      if (funcErr) toast('⚠️ Usuário criado, mas a função na unidade não foi gravada: ' + funcErr.message + ' (execute a migration 054).', true);
+    }
     toast('✅ Usuário criado! Avise a pessoa da senha temporária por fora do sistema.');
     closeCreateUserModal();
     await loadAllProfiles();
@@ -1822,24 +1843,24 @@ function nativeRoleMenus(role) {
   return (NATIVE_ROLE_MENU_DEFAULTS[role] || []).map((key) => ({ key, label: ACCESS_SCREEN_CATALOG.find((s) => s.key === key)?.label || ({ agendadata: 'Próximas viagens', agendageral: 'Agenda geral', pendenciascoop: 'Pendências da cooperativa', solicitacoescoop: 'Solicitações da cooperativa', atfpcdcoop: 'ATF e PCD' }[key] || key) }));
 }
 function nativeRoleMenuEnabled(role, key) {
-  const row = roleScreenPermissions.find((p) => p.role === role && p.screen_key === key);
+  const row = rolePermRow(role, key);
   if (row) return !!row.can_view;
   // Relatórios só aparece para Escola/Motorista quando o Admin liberar; as abas do MarkCarro também.
   if (['carrosolicitacoes', 'carronova'].includes(key)) return false;
-  return !(key === 'relatorios' && ['escola', 'motorista'].includes(role));
+  return !(key === 'relatorios' && ['escola', 'escola_pedagogo', 'motorista'].includes(role));
 }
 function renderNativeRoleProfiles() {
   const box = document.getElementById('nativeRoleProfilesList'); if (!box) return;
   box.innerHTML = Object.keys(NATIVE_ROLE_MENU_DEFAULTS).map((role) => {
     const enabled = nativeRoleMenus(role).filter((item) => nativeRoleMenuEnabled(role, item.key)).map((item) => item.label);
-    return `<article class="rounded-xl border p-4"><div class="flex items-start justify-between gap-3"><div><strong>${ROLE_LABELS[role]}</strong><p class="mt-1 text-xs text-slate-500">${enabled.length ? enabled.map(escapeHtml).join(' · ') : 'Nenhuma tela visível'}</p></div><button onclick="openRoleProfileModal('${role}')" class="text-sm font-semibold text-emerald-700">Editar menus</button></div></article>`;
+    return `<article class="rounded-xl border p-4"><div class="flex items-start justify-between gap-3"><div><strong>${role === 'escola_pedagogo' ? 'Escola · Pedagogo(a)' : ROLE_LABELS[role]}</strong><p class="mt-1 text-xs text-slate-500">${enabled.length ? enabled.map(escapeHtml).join(' · ') : 'Nenhuma tela visível'}</p></div><button onclick="openRoleProfileModal('${role}')" class="text-sm font-semibold text-emerald-700">Editar menus</button></div></article>`;
   }).join('');
 }
 function openRoleProfileModal(role) {
   editNativeRole = role;
-  document.getElementById('roleProfileModalTitle').textContent = `Menus do perfil ${ROLE_LABELS[role]}`;
+  document.getElementById('roleProfileModalTitle').textContent = `Menus do perfil ${role === 'escola_pedagogo' ? 'Escola · Pedagogo(a)' : ROLE_LABELS[role]}`;
   const relSub = (RELATORIOS_POR_PERFIL[role] || []).map((tipo) => {
-    const row = roleScreenPermissions.find((p) => p.role === role && p.screen_key === `rel:${tipo}`);
+    const row = rolePermRow(role, `rel:${tipo}`);
     return `<label class="block text-xs leading-7"><input type="checkbox" data-native-role-rel="${tipo}" ${row ? (row.can_view ? 'checked' : '') : 'checked'}> ${RELATORIO_LABELS[tipo]}</label>`;
   }).join('');
   const relBox = relSub ? `<div class="-mt-1 mb-2 ml-7 rounded-r-lg border-l-4 border-emerald-200 bg-emerald-50 px-3 py-2"><p class="text-[11px] text-slate-500">Relatórios liberados (somente dados do próprio perfil):</p>${relSub}</div>` : '';
@@ -5651,7 +5672,11 @@ async function replicarNaSerie(trip, patch) {
 
 // ---- Pedagogia: fila de análise (P1/P5) ----
 function meusSetoresValidacao() { return new Set(validatorSectorAssignments.filter((v) => v.profile_id === currentUser?.id).map((v) => v.sector_id)); }
+// Validação atrelada a um validador específico: só essa pessoa analisa.
+function validacaoDeOutraPessoa(a) { return currentUser?.role === 'pedagogia' && !!a?.validator_profile_id && a.validator_profile_id !== currentUser.id; }
 function viagemNoMeuSetor(a) {
+  if (validacaoDeOutraPessoa(a)) return false;
+  if (a?.validator_profile_id && a.validator_profile_id === currentUser?.id) return true;
   if (currentUser?.role !== 'pedagogia' || !validationSectors.length) return true;
   const meus = meusSetoresValidacao();
   return !meus.size || meus.has(a.validation_sector_id);
@@ -6093,7 +6118,8 @@ function renderValidacoesPedagogia() {
   // Pedagogia, mas não pode ser analisada antes de a unidade enviar o arquivo.
   let lista = agenda.filter((a) => !['cancelada', 'reprovada'].includes(a.situacao) && !['aceito', 'rejeitado', 'solicitada', 'correcoes'].includes(a.doc_status || 'nao_enviado') && primeiraDaSerie(a));
   if (validationSectors.length) {
-    lista = lista.filter((a) => setorFiltro ? a.validation_sector_id === setorFiltro : (!meusSetores.size || meusSetores.has(a.validation_sector_id)));
+    lista = lista.filter((a) => !validacaoDeOutraPessoa(a));
+    lista = lista.filter((a) => (a.validator_profile_id && a.validator_profile_id === currentUser?.id) || (setorFiltro ? a.validation_sector_id === setorFiltro : (!meusSetores.size || meusSetores.has(a.validation_sector_id))));
   } else if (setorFiltro) lista = lista.filter((a) => a.setor_pedagogico_atual === setorFiltro);
   if (origemFiltro) lista = lista.filter((a) => origemFiltroId(a) === origemFiltro);
   if (publicoFiltro) lista = lista.filter((a) => publicoAlvoCorresponde(a, publicoFiltro));
@@ -6170,7 +6196,7 @@ function openDocUploadModal(id) {
   const box = document.getElementById('docUploadCorrecaoBox');
   if (['correcoes', 'solicitada'].includes(trip.doc_status) && trip.doc_parecer_comentario) {
     box.textContent = trip.doc_status === 'solicitada'
-      ? '📄 O Admin solicitou a proposta pedagógica: ' + trip.doc_parecer_comentario
+      ? '📄 Proposta pedagógica solicitada: ' + trip.doc_parecer_comentario
       : '✏️ A Pedagogia pediu correções: ' + trip.doc_parecer_comentario;
     box.classList.remove('hidden');
   } else {
@@ -6404,7 +6430,8 @@ function openValidacaoModal(id, somenteLeituraForcada = false) {
   const trip = agenda.find((a) => a.id === id);
   if (!trip) return;
   const meusSetores = new Set(validatorSectorAssignments.filter((v) => v.profile_id === currentUser?.id).map((v) => v.sector_id));
-  if (currentUser?.role === 'pedagogia' && validationSectors.length && meusSetores.size && !meusSetores.has(trip.validation_sector_id)) {
+  if (validacaoDeOutraPessoa(trip)) { toast('⚠️ Esta validação está atrelada a outro validador.', true); return; }
+  if (currentUser?.role === 'pedagogia' && !(trip.validator_profile_id === currentUser.id) && validationSectors.length && meusSetores.size && !meusSetores.has(trip.validation_sector_id)) {
     toast('⚠️ Esta validação está vinculada a outro setor.', true); return;
   }
   // O transporte adaptado PCD é pedido à parte à cooperativa; portanto não entra na
@@ -8341,13 +8368,47 @@ function openSolicitacaoScreen() {
   populateAgendamentoDestinoSelect();
   aplicarRecorrenciaPorPerfil();
   resetWizard();
+  if (currentUser?.role === 'pedagogia' && !allProfiles.length) loadAllProfiles().then(renderValidadorWizard).catch(() => {});
   // Renderiza imediatamente com a escola do perfil logado. A configuração dinâmica
   // chega depois, sem trocar a tela temporariamente pelo estado do administrador.
-  loadValidationConfig().then(() => populatePublicoAlvoWizard()).catch(() => {});
+  loadValidationConfig().then(() => { populatePublicoAlvoWizard(); renderValidadorWizard(); }).catch(() => {});
+  prepararWizardPedagogia();
+}
+// Pedagogia registra para qualquer unidade: escolhe a validação (setor ou validador) e
+// a proposta (anexar agora ou solicitar à unidade). Sem aporte financeiro.
+function prepararWizardPedagogia() {
+  const ped = currentUser?.role === 'pedagogia';
+  document.getElementById('wValidacaoPedagogiaBox')?.classList.toggle('hidden', !ped);
+  document.getElementById('wPropostaPedagogiaOpcoes')?.classList.toggle('hidden', !ped);
+  document.getElementById('wAporteBox')?.classList.toggle('hidden', ped);
+  if (ped) { const fin = document.getElementById('wFinanceRequested'); if (fin) { fin.checked = false; fin.dispatchEvent(new Event('change')); } }
+  const alvo = document.getElementById('wPublicoAlvo');
+  if (alvo && !alvo.dataset.validadorHook) { alvo.dataset.validadorHook = '1'; alvo.addEventListener('change', renderValidadorWizard); }
+  const setor = document.querySelector('input[name="wValidacaoModo"][value="setor"]'); if (setor) setor.checked = true;
+  const anexar = document.querySelector('input[name="wPropostaModo"][value="anexar"]'); if (anexar) anexar.checked = true;
+  renderValidadorWizard();
+}
+function setorDoPublicoWizard() {
+  const alvo = document.getElementById('wPublicoAlvo')?.value || '';
+  return validationTargets.find((t) => t.id === alvo)?.default_sector_id || null;
+}
+function renderValidadorWizard() {
+  const sel = document.getElementById('wValidadorEspecifico'); if (!sel) return;
+  const setor = setorDoPublicoWizard();
+  const ids = new Set(validatorSectorAssignments.filter((v) => !setor || v.sector_id === setor).map((v) => v.profile_id));
+  const lista = allProfiles.filter((p) => p.role === 'pedagogia' && p.active !== false && (ids.has(p.id) || p.id === currentUser?.id));
+  const nomeSetor = validationSectors.find((x) => x.id === setor)?.name || 'setor do público-alvo';
+  const info = document.getElementById('wValidacaoSetorInfo'); if (info) info.textContent = `${nomeSetor}: qualquer validador do setor analisa`;
+  const atual = sel.value;
+  sel.innerHTML = lista.length ? lista.sort((a, b) => (a.id === currentUser?.id) - (b.id === currentUser?.id) || String(a.full_name || a.email).localeCompare(String(b.full_name || b.email), 'pt-BR'))
+    .map((p) => `<option value="${p.id}">${escapeHtml(p.id === currentUser?.id ? `Eu mesma(o) — ${p.full_name || p.email}` : `${p.full_name || p.email} — ${nomeSetor}`)}</option>`).join('')
+    : '<option value="">Nenhum validador no setor</option>';
+  if ([...sel.options].some((o) => o.value === atual)) sel.value = atual;
+  sel.disabled = document.querySelector('input[name="wValidacaoModo"]:checked')?.value !== 'validador';
 }
 
 function aplicarRecorrenciaPorPerfil() {
-  const escola = currentUser?.role === 'escola';
+  const escola = ['escola', 'pedagogia'].includes(currentUser?.role);
   document.querySelectorAll('[data-recorrencia-continuada]').forEach((el) => el.classList.toggle('hidden', escola));
   const selecionada = document.querySelector('input[name="wRecorrencia"]:checked');
   if (escola && selecionada && ['semanal', 'quinzenal', 'mensal'].includes(selecionada.value)) {
@@ -8371,7 +8432,7 @@ function populateEscolaSelect() {
 
   const visiveis = schools.filter((s) => s.active !== false || s.id === currentUser.schoolId);
   sel.innerHTML = visiveis.map((s) => `<option value="${s.id}">${escapeHtml(s.name)}${s.acronym ? ' — ' + escapeHtml(s.acronym) : ''}</option>`).join('')
-    + '<option value="__outra__">Outra (não cadastrada)</option>';
+    + (currentUser.role === 'pedagogia' ? '' : '<option value="__outra__">Outra (não cadastrada)</option>');
   if (currentUser.role === 'escola' && currentUser.schoolId) {
     sel.value = currentUser.schoolId;
     sel.disabled = true;
@@ -9035,12 +9096,12 @@ async function avisarSetorNovaSolicitacao(a, qtdDatas = 1) {
     ['Origem', origem], ['Destino', destinoViagem],
     ['Público-alvo', publico && publico !== '-' ? publico : 'Não informado'], ['Passageiros', pax],
   ];
-  const intro = `A unidade ${unidade} registrou uma nova solicitação de viagem no sistema Bora Lá.`;
+  const intro = currentUser?.role === 'pedagogia' ? `A Pedagogia registrou uma nova solicitação de viagem para a unidade ${unidade} no sistema Bora Lá.` : `A unidade ${unidade} registrou uma nova solicitação de viagem no sistema Bora Lá.`;
   const fim = `Registrada em ${quando}. A solicitação segue o fluxo normal (validação pedagógica e análise administrativa).`;
   const texto = `${saudacaoEmailBrasilia()}\n\n${intro}\n\n${linhas.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n${fim}\n\nBora Lá - Excursões / Semed Nova Lima`;
   const p = (t) => `<p style="margin:0 0 12px">${t}</p>`;
   const html = `<div style="max-width:720px;font-family:Arial,sans-serif;color:#0f172a;line-height:1.5;font-size:14px"><table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="width:46px;padding:0 10px 8px 0;vertical-align:middle"><img src="${escapeHtml(notificacaoViagensFaviconUrl())}" width="42" height="42" alt="Bora Lá" style="display:block;width:42px;height:42px;border:0"></td><td style="padding:0 0 8px;vertical-align:middle"><div style="font-size:18px;font-weight:700">Bora Lá | Nova solicitação de viagem</div><div style="font-size:11px;color:#475569">SEMED Nova Lima</div></td></tr></table><div style="height:3px;background:#16a34a;margin:3px 0 16px"></div>`
-    + p(saudacaoEmailBrasilia()) + p(`A unidade <strong>${escapeHtml(unidade)}</strong> registrou uma nova solicitação de viagem no sistema Bora Lá.`)
+    + p(saudacaoEmailBrasilia()) + p(escapeHtml(intro))
     + p(linhas.map(([k, v]) => k === 'Saída' ? `<strong>Saída:</strong> ${escapeHtml(hhmm(a.departure_time))}h - <strong>Retorno:</strong> ${escapeHtml(hhmm(a.return_time))}h` : `<strong>${escapeHtml(k)}:</strong> ${escapeHtml(v)}`).join('<br>'))
     + p(escapeHtml(fim)) + '<p style="margin:18px 0 0">Bora Lá - Excursões / Semed Nova Lima</p></div>';
   await tentarEnviarEmailAutomatico(destino, assunto, texto, '', html);
@@ -9072,7 +9133,12 @@ async function submitSolicitacao() {
   const dataInicial = document.getElementById('wData').value;
   const recorrencia = document.querySelector('input[name="wRecorrencia"]:checked').value;
   const datasAdicionais = selectedRecurrenceDates();
-  const propostaFile = arquivoEscolhidoWizard.proposta ? (document.getElementById('wPropostaDocument')?.files?.[0] || null) : null;
+  const ehPedagogiaWizard = currentUser?.role === 'pedagogia';
+  const pedSolicitarProposta = ehPedagogiaWizard && document.querySelector('input[name="wPropostaModo"]:checked')?.value === 'solicitar';
+  const pedValidador = ehPedagogiaWizard && document.querySelector('input[name="wValidacaoModo"]:checked')?.value === 'validador'
+    ? (document.getElementById('wValidadorEspecifico')?.value || null) : null;
+  if (ehPedagogiaWizard && document.querySelector('input[name="wValidacaoModo"]:checked')?.value === 'validador' && !pedValidador) { toast('⚠️ Escolha o validador da proposta.', true); return; }
+  const propostaFile = !pedSolicitarProposta && arquivoEscolhidoWizard.proposta ? (document.getElementById('wPropostaDocument')?.files?.[0] || null) : null;
   const anexarProposta = !!propostaFile;
   const solicitarAporte = !!document.getElementById('wFinanceRequested')?.checked;
   const financeItems = solicitarAporte ? financeItemsFromWizard() : [];
@@ -9138,7 +9204,9 @@ async function submitSolicitacao() {
     setor_pedagogico_atual: validationTargets.length ? 'administracao' : setorPadraoPara(document.getElementById('wPublicoAlvo').value),
     validation_target_id: validationTargets.length ? (document.getElementById('wPublicoAlvo').value || null) : null,
     validation_sector_id: validationTargets.find((t) => t.id === document.getElementById('wPublicoAlvo').value)?.default_sector_id || null,
-    doc_status: 'nao_enviado',
+    doc_status: pedSolicitarProposta ? 'solicitada' : 'nao_enviado',
+    ...(pedSolicitarProposta ? { doc_parecer_comentario: 'Proposta pedagógica solicitada pela Pedagogia.' } : {}),
+    validator_profile_id: pedValidador,
     requester_name: isOutra
       ? (document.getElementById('wOutraNome').value || null)
       : (currentUser?.user_metadata?.full_name || (currentUser?.email ? currentUser.email.split('@')[0] : null)),
@@ -9204,7 +9272,13 @@ async function submitSolicitacao() {
 
     toast(novas.length > 1 ? `✅ ${novas.length} viagens da recorrência foram criadas!` : '✅ Solicitação enviada com sucesso!');
     // Escola: aviso ao e-mail do setor (sem esperar - não altera nem bloqueia o fluxo/upload).
-    if (currentUser?.role === 'escola' && data?.[0]) avisarSetorNovaSolicitacao(data[0], data.length).catch(() => {});
+    if (['escola', 'pedagogia'].includes(currentUser?.role) && data?.[0]) avisarSetorNovaSolicitacao(data[0], data.length).catch(() => {});
+    // Pedagogia: a unidade recebe o aviso, como se tivesse feito o pedido.
+    if (currentUser?.role === 'pedagogia' && data?.[0]) {
+      const dt = data[0].trip_date ? new Date(data[0].trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-';
+      notificarGrupo('unidade', data[0].id, 'Nova solicitação registrada pela Pedagogia',
+        `A Pedagogia registrou para a unidade a viagem para ${data[0].destination || '-'} em ${dt}.${pedSolicitarProposta ? ' Envie a proposta pedagógica em Pendências.' : ''}`).catch(() => {});
+    }
   } else {
     novas.forEach((nova, i) => {
       nova.id = 'e' + Date.now() + '_' + i;
