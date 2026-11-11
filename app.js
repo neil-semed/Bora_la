@@ -7754,7 +7754,7 @@ async function conferirListaPcd(id) {
   const rows = await getExcursionPcdStudents(id);
   pcdListTargetId = id;
   document.getElementById('pcdListInfo').textContent = `${originName(trip)} → ${trip.destination} · ${trip.trip_date ? new Date(trip.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'}`;
-  document.getElementById('pcdListRows').innerHTML = rows.length ? `<table class="w-full text-sm"><thead class="bg-violet-50 text-violet-950"><tr><th class="px-3 py-2 text-left">Estudante PCD</th><th class="px-3 py-2 text-left">Documento</th><th class="px-3 py-2 text-left">Apoio</th><th class="px-3 py-2 text-left">Documento</th></tr></thead><tbody>${rows.map((p) => `<tr class="border-t"><td class="px-3 py-2">${escapeHtml(p.nome_aluno || '-')}</td><td class="px-3 py-2">${escapeHtml(p.documento_aluno || '-')}</td><td class="px-3 py-2">${escapeHtml(p.nome_apoio || '-')}</td><td class="px-3 py-2">${escapeHtml(p.documento_apoio || '-')}</td></tr>`).join('')}</tbody></table>` : '<p class="p-4 text-sm text-red-600">Nenhum estudante PCD registrado.</p>';
+  document.getElementById('pcdListRows').innerHTML = rows.length ? `<table class="w-full text-sm whitespace-nowrap"><thead class="bg-violet-50 text-violet-950"><tr><th class="px-3 py-2 text-left">#</th><th class="px-3 py-2 text-left">Estudante PCD</th><th class="px-3 py-2 text-left">Cadeirante</th><th class="px-3 py-2 text-left">Documento</th><th class="px-3 py-2 text-left">Apoio</th><th class="px-3 py-2 text-left">Documento do apoio</th></tr></thead><tbody>${rows.map((p, i) => `<tr class="border-t"><td class="px-3 py-2 text-slate-500">${i + 1}</td><td class="px-3 py-2">${escapeHtml(p.nome_aluno || '-')}</td><td class="px-3 py-2">${p.cadeirante ? 'Sim' : 'Não'}</td><td class="px-3 py-2">${escapeHtml(p.documento_aluno || '-')}</td><td class="px-3 py-2">${escapeHtml(p.nome_apoio || '-')}</td><td class="px-3 py-2">${escapeHtml(p.documento_apoio || '-')}</td></tr>`).join('')}</tbody></table>` : '<p class="p-4 text-sm text-red-600">Nenhum estudante PCD registrado.</p>';
   document.getElementById('pcdListReasonWrap').classList.add('hidden');
   document.getElementById('pcdRejectConfirm').classList.add('hidden');
   document.getElementById('pcdListReason').value = '';
@@ -8551,7 +8551,7 @@ function onWRecorrenciaChange() {
   document.getElementById('wRecorrenciaPadrao')?.classList.toggle('hidden', datasEspecificas);
   document.getElementById('wRecorrenciaFimWrap')?.classList.toggle('hidden', datasEspecificas);
   document.getElementById('wDatasAdicionaisBox')?.classList.toggle('hidden', !datasEspecificas);
-  if (!datasEspecificas) document.getElementById('wDatasRecorrencia').innerHTML = '';
+  if (!datasEspecificas) limparDatasAdicionais();
   if (datasEspecificas && !selectedRecurrenceDates().length) addRecurrenceDateField();
 }
 
@@ -8580,21 +8580,83 @@ function financeItemsFromWizard() {
   }).filter((item) => item.quantity > 0 || item.value > 0);
 }
 
+// Datas adicionais: cada data tem os próprios participantes e a própria lista PCD.
+let wizardExtraDados = {}; // { chave: { alunos, acompanhantes, pcd: [...] } }
+let wizardExtraSeq = 0;
 function addRecurrenceDateField(value = '') {
   const container = document.getElementById('wDatasRecorrencia');
   if (!container) return;
   const inputs = container.querySelectorAll('input[type="date"]');
   if (inputs.length >= 3) { toast('⚠️ Você pode selecionar até 3 datas adicionais.', true); return; }
   const indice = inputs.length + 1;
+  const key = 'x' + (++wizardExtraSeq);
+  wizardExtraDados[key] = { alunos: '', acompanhantes: '', pcd: [] };
   const field = document.createElement('div');
-  field.className = 'relative';
-  field.innerHTML = `<label class="block text-xs font-medium text-emerald-900 mb-1">Data adicional ${indice}</label><input type="date" value="${value}" class="w-full px-3 py-2 border border-emerald-200 rounded-lg bg-white text-sm" data-recurrence-extra-date /><button type="button" onclick="this.parentElement.remove(); renumberRecurrenceDateFields()" class="absolute -right-1 -top-1 h-5 w-5 rounded-full bg-slate-200 text-xs text-slate-600" title="Remover data">×</button>`;
+  field.className = 'relative rounded-lg border border-emerald-200 bg-white p-3';
+  field.dataset.extraKey = key;
+  field.innerHTML = `<div class="flex flex-wrap items-end justify-between gap-2"><div class="min-w-[160px]"><label data-extra-label class="block text-xs font-semibold text-emerald-900 mb-1">Data adicional ${indice}</label><input type="date" value="${value}" class="w-full px-3 py-2 border border-emerald-200 rounded-lg bg-white text-sm" data-recurrence-extra-date /></div><button type="button" onclick="copiarParticipantesPrimeiraData('${key}')" class="px-3 py-1.5 rounded-lg border border-emerald-300 bg-white text-xs font-semibold text-emerald-700">⧉ Copiar da 1ª data</button></div>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
+      <div><label class="block text-xs font-medium mb-1">Nº de alunos <span class="text-red-600">*</span></label><input type="number" min="0" data-extra-alunos oninput="wizardExtraDados['${key}'].alunos = this.value" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+      <div><label class="block text-xs font-medium mb-1">Nº de acompanhantes <span class="text-red-600">*</span></label><input type="number" min="0" data-extra-acomp oninput="wizardExtraDados['${key}'].acompanhantes = this.value" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+      <div><label class="block text-xs font-medium mb-1">Nº de alunos PCD</label><input type="number" min="0" value="0" data-extra-pca oninput="renderExtraPcdRows('${key}')" class="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+    </div>
+    <div data-extra-pcd-box class="hidden mt-2 space-y-2 bg-slate-50 border rounded-lg p-2"></div>
+    <button type="button" onclick="removerDataAdicional('${key}')" class="absolute -right-1 -top-1 h-5 w-5 rounded-full bg-slate-200 text-xs text-slate-600" title="Remover data">×</button>`;
   container.appendChild(field);
+}
+
+function removerDataAdicional(key) {
+  document.querySelector(`#wDatasRecorrencia > [data-extra-key="${key}"]`)?.remove();
+  delete wizardExtraDados[key];
+  renumberRecurrenceDateFields();
+}
+
+function limparDatasAdicionais() {
+  const box = document.getElementById('wDatasRecorrencia');
+  if (box) box.innerHTML = '';
+  wizardExtraDados = {};
+}
+
+function renderExtraPcdRows(key) {
+  const field = document.querySelector(`#wDatasRecorrencia > [data-extra-key="${key}"]`);
+  const dados = wizardExtraDados[key];
+  if (!field || !dados) return;
+  const n = parseInt(field.querySelector('[data-extra-pca]').value) || 0;
+  while (dados.pcd.length < n) dados.pcd.push({ nome_aluno: '', cadeirante: false, documento_aluno: '', nome_apoio: '', documento_apoio: '' });
+  dados.pcd.length = n;
+  const box = field.querySelector('[data-extra-pcd-box]');
+  box.classList.toggle('hidden', n === 0);
+  const inp = (i, campo, rotulo, ph = '') => `<div><label class="block text-xs font-medium mb-1">${rotulo}</label><input type="text" value="${escapeHtml(dados.pcd[i][campo] || '')}" ${ph ? `placeholder="${ph}"` : ''} oninput="wizardExtraDados['${key}'].pcd[${i}].${campo} = this.value" class="w-full px-2 py-1.5 border rounded text-sm" /></div>`;
+  box.innerHTML = dados.pcd.map((p, i) => `<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 items-end border-b border-slate-200 pb-2"><div class="sm:col-span-3 text-xs text-slate-500">Estudante PCD ${i + 1} desta data</div>${inp(i, 'nome_aluno', 'Nome do aluno')}${inp(i, 'documento_aluno', 'Documento do aluno', 'CI/CNH/CPF')}<div><label class="block text-xs font-medium mb-1">Cadeirante?</label><select onchange="wizardExtraDados['${key}'].pcd[${i}].cadeirante = this.value === 'sim'" class="w-full px-2 py-1.5 border rounded text-sm"><option value="nao" ${!p.cadeirante ? 'selected' : ''}>Não</option><option value="sim" ${p.cadeirante ? 'selected' : ''}>Sim</option></select></div>${inp(i, 'nome_apoio', 'Nome do apoio')}${inp(i, 'documento_apoio', 'Documento do apoio', 'CI/CNH/CPF')}</div>`).join('');
+}
+
+function copiarParticipantesPrimeiraData(key) {
+  const field = document.querySelector(`#wDatasRecorrencia > [data-extra-key="${key}"]`);
+  const dados = wizardExtraDados[key];
+  if (!field || !dados) return;
+  dados.alunos = document.getElementById('wAlunos').value;
+  dados.acompanhantes = document.getElementById('wAcompanhantes').value;
+  dados.pcd = wizardPcdList.map((p) => ({ ...p }));
+  field.querySelector('[data-extra-alunos]').value = dados.alunos;
+  field.querySelector('[data-extra-acomp]').value = dados.acompanhantes;
+  field.querySelector('[data-extra-pca]').value = dados.pcd.length;
+  renderExtraPcdRows(key);
+}
+
+// { 'AAAA-MM-DD': { alunos, acompanhantes, pcd } } das datas adicionais preenchidas.
+function participantesDatasAdicionais() {
+  const out = {};
+  document.querySelectorAll('#wDatasRecorrencia > [data-extra-key]').forEach((field) => {
+    const data = field.querySelector('[data-recurrence-extra-date]')?.value;
+    const dados = wizardExtraDados[field.dataset.extraKey];
+    if (data && dados) out[data] = dados;
+  });
+  return out;
 }
 
 function renumberRecurrenceDateFields() {
   document.querySelectorAll('#wDatasRecorrencia > div').forEach((row, i) => {
-    const label = row.querySelector('label');
+    const label = row.querySelector('[data-extra-label]') || row.querySelector('label');
     if (label) label.textContent = `Data adicional ${i + 1}`;
   });
 }
@@ -8727,7 +8789,7 @@ function resetWizard(options = {}) {
   onWRecorrenciaChange();
   document.querySelectorAll('input[name="wDiaSemana"]').forEach((el) => { el.checked = false; });
   document.getElementById('wRecorrenciaFim').value = '';
-  document.getElementById('wDatasRecorrencia').innerHTML = '';
+  limparDatasAdicionais();
   onWTipoSolicitacaoChange();
 }
 
@@ -8857,6 +8919,22 @@ function validateWizardStep(step) {
       if (new Set(extras).size !== extras.length) {
         toast('⚠️ Não repita uma data adicional na mesma recorrência.', true);
         return false;
+      }
+      if (extras.includes(document.getElementById('wData').value)) {
+        toast('⚠️ A data adicional não pode ser igual à data da 1ª viagem.', true);
+        return false;
+      }
+      const extraDados = participantesDatasAdicionais();
+      for (const [dt, d] of Object.entries(extraDados)) {
+        const dtBr = new Date(dt + 'T00:00').toLocaleDateString('pt-BR');
+        if (String(d.alunos) === '' || String(d.acompanhantes) === '') {
+          toast(`⚠️ Data adicional ${dtBr}: informe alunos e acompanhantes (use 0 quando não houver).`, true);
+          return false;
+        }
+        if (d.pcd.some((p) => !String(p.nome_aluno || '').trim() || !String(p.documento_aluno || '').trim() || !String(p.nome_apoio || '').trim() || !String(p.documento_apoio || '').trim())) {
+          toast(`⚠️ Data adicional ${dtBr}: preencha nome e documento de cada PCD e do respectivo apoio.`, true);
+          return false;
+        }
       }
       if (extras.some((d) => d <= document.getElementById('wData').value)) {
         toast('⚠️ Cada data adicional deve ser posterior à data inicial da viagem.', true);
@@ -9001,7 +9079,8 @@ function renderResumo() {
       ? 'Repetição em datas específicas'
       : `Continuado ${recorrencia} - ${dias || 'nenhum dia escolhido'}, até ${fim ? new Date(fim + 'T00:00').toLocaleDateString('pt-BR') : '-'}`;
     const extras = selectedRecurrenceDates();
-    if (extras.length) recorrenciaTxt += ` · datas adicionais: ${extras.map((d) => new Date(d + 'T00:00').toLocaleDateString('pt-BR')).join(', ')}`;
+    const extraDados = participantesDatasAdicionais();
+    if (extras.length) recorrenciaTxt += ` · datas adicionais: ${extras.map((d) => { const x = extraDados[d]; const pc = x?.pcd.length || 0; return `${new Date(d + 'T00:00').toLocaleDateString('pt-BR')} (${parseInt(x?.alunos) || 0} alunos + ${parseInt(x?.acompanhantes) || 0} acomp.${pc ? ` + ${pc} PCD + ${pc} apoio(s)` : ''})`; }).join(', ')}`;
   }
 
   document.getElementById('resumoSolicitacao').innerHTML = `
@@ -9296,7 +9375,20 @@ async function submitSolicitacao() {
     recurrenceGroupId = newGroupId();
   }
 
-  const novas = tripDates.map((d) => ({ ...base, trip_date: d, recurrence_group_id: recurrenceGroupId }));
+  const extrasPorData = participantesDatasAdicionais();
+  const pcdDaData = (d) => extrasPorData[d] ? extrasPorData[d].pcd : wizardPcdList;
+  const novas = tripDates.map((d) => {
+    const x = extrasPorData[d];
+    if (!x) return { ...base, trip_date: d, recurrence_group_id: recurrenceGroupId };
+    return {
+      ...base, trip_date: d, recurrence_group_id: recurrenceGroupId,
+      students_count: parseInt(x.alunos) || 0,
+      companions_count: parseInt(x.acompanhantes) || 0,
+      pca_count: x.pcd.length,
+      apoio_count: x.pcd.filter((p) => p.nome_apoio && p.nome_apoio.trim()).length,
+      pcd_lista_enviada_em: x.pcd.length ? new Date().toISOString() : null,
+    };
+  });
 
   if (sb) {
     const { data, error } = await sb.from('excursions').insert(novas).select();
@@ -9327,10 +9419,10 @@ async function submitSolicitacao() {
       }
     }
 
-    if (wizardPcdList.length && data && data.length) {
+    if (data && data.length && data.some((row) => pcdDaData(row.trip_date).length)) {
       const pcdRows = [];
       data.forEach((row) => {
-        wizardPcdList.forEach((p) => pcdRows.push({
+        pcdDaData(row.trip_date).forEach((p) => pcdRows.push({
           excursion_id: row.id,
           nome_aluno: p.nome_aluno,
           cadeirante: !!p.cadeirante,
@@ -9356,7 +9448,7 @@ async function submitSolicitacao() {
   } else {
     novas.forEach((nova, i) => {
       nova.id = 'e' + Date.now() + '_' + i;
-      nova.pcd_students = wizardPcdList.map((p) => ({ ...p }));
+      nova.pcd_students = pcdDaData(nova.trip_date).map((p) => ({ ...p }));
       agenda.push(nova);
       if (i === 0) primeiraViagemCriadaId = nova.id;
     });
