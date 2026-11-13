@@ -5967,8 +5967,8 @@ async function openValidacoesScreen() {
     const sel = document.getElementById('validacaoFiltroSetor');
     if (sel && validationSectors.length) {
       const anterior = sel.value;
-      sel.innerHTML = '<option value="">Meus setores</option>' + validationSectors.filter((s) => s.active !== false).map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
-      sel.value = validationSectors.some((s) => s.id === anterior) ? anterior : '';
+      sel.innerHTML = '<option value="">Meus setores</option><option value="__todos__">Todos os setores</option>' + validationSectors.filter((s) => s.active !== false).map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+      sel.value = (anterior === '__todos__' || validationSectors.some((s) => s.id === anterior)) ? anterior : '';
     }
     if (sel && !sel.dataset.inited) {
       sel.value = currentUser.setorPedagogico || '';
@@ -6115,9 +6115,17 @@ function destinoEhUnidade(a) {
   return !!nome && schools.some((s) => String(s.name || '').trim().toLocaleLowerCase('pt-BR') === nome);
 }
 
-function limparFiltrosValidacoesPedagogia() {
-  ['validacaoFiltroOrigem', 'validacaoFiltroSetor', 'validacaoFiltroPublico'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+async function limparFiltrosValidacoesPedagogia() {
+  ['validacaoFiltroOrigem', 'validacaoFiltroPublico'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const setor = document.getElementById('validacaoFiltroSetor');
+  if (setor) setor.value = [...setor.options].some((o) => o.value === '__todos__') ? '__todos__' : '';
   const ocultar = document.getElementById('validacaoOcultarPassadas'); if (ocultar) ocultar.checked = true;
+  try { await loadSchools(); await loadAgenda(); } catch (_) {}
+  const origemAnt = document.getElementById('validacaoFiltroOrigem');
+  populateValidacaoOrigemFilter();
+  populatePublicoAlvoFilter('validacaoFiltroPublico', 'Todos os públicos');
+  if (origemAnt) origemAnt.value = '';
+  const pub = document.getElementById('validacaoFiltroPublico'); if (pub) pub.value = '';
   renderValidacoesPedagogia();
 }
 
@@ -6133,7 +6141,8 @@ function renderValidacoesPedagogia() {
   const setorEl = document.getElementById('validacaoFiltroSetor');
   const origemEl = document.getElementById('validacaoFiltroOrigem');
   const publicoEl = document.getElementById('validacaoFiltroPublico');
-  const setorFiltro = setorEl ? setorEl.value : '';
+  const todosSetores = setorEl?.value === '__todos__';
+  const setorFiltro = setorEl && !todosSetores ? setorEl.value : '';
   const origemFiltro = origemEl ? origemEl.value : '';
   const publicoFiltro = publicoEl ? publicoEl.value : '';
   const meusSetores = new Set(validatorSectorAssignments.filter((v) => v.profile_id === currentUser?.id).map((v) => v.sector_id));
@@ -6142,7 +6151,7 @@ function renderValidacoesPedagogia() {
   let lista = agenda.filter((a) => !['cancelada', 'reprovada'].includes(a.situacao) && !['aceito', 'rejeitado', 'solicitada', 'correcoes'].includes(a.doc_status || 'nao_enviado') && primeiraDaSerie(a));
   if (validationSectors.length) {
     lista = lista.filter((a) => !validacaoDeOutraPessoa(a));
-    lista = lista.filter((a) => (a.validator_profile_id && a.validator_profile_id === currentUser?.id) || (setorFiltro ? a.validation_sector_id === setorFiltro : (!meusSetores.size || meusSetores.has(a.validation_sector_id))));
+    lista = lista.filter((a) => (a.validator_profile_id && a.validator_profile_id === currentUser?.id) || (todosSetores || (setorFiltro ? a.validation_sector_id === setorFiltro : (!meusSetores.size || meusSetores.has(a.validation_sector_id)))));
   } else if (setorFiltro) lista = lista.filter((a) => a.setor_pedagogico_atual === setorFiltro);
   if (origemFiltro) lista = lista.filter((a) => origemFiltroId(a) === origemFiltro);
   if (publicoFiltro) lista = lista.filter((a) => publicoAlvoCorresponde(a, publicoFiltro));
@@ -10431,7 +10440,7 @@ async function relatorioLinhas() {
   if (tipo === 'escala') return viagens.filter((a) => a.admin_decision === 'aprovada' && !['cancelada', 'reprovada'].includes(a.situacao) && (a.driver_ids || []).length).map((a) => ({ ...relatorioDadosViagem(a), ATF: ATF_LABELS[a.atf_status] || '-', Situação: 'Aprovada' }));
   if (tipo === 'solicitacoes') return viagens.map((a) => ({ ...relatorioDadosViagem(a), 'Data da solicitação': relData(a.created_at) || '-', Situação: `${SITUACAO_LABELS[a.situacao] || a.situacao || '-'}${a.situacao_em ? ' · desde ' + relData(a.situacao_em) : ''}`, 'Decisão administrativa': a.admin_decision && a.admin_decision !== 'pendente' ? `${relDecisaoLabel(a.admin_decision)}${a.admin_decision_at ? ' em ' + relData(a.admin_decision_at) : ''}${a.admin_decision_by ? ' por ' + relAgente(a.admin_decision_by, false) : ''}` : 'Pendente' }));
   if (tipo === 'validacoes') return viagens.map((a) => ({ ...relatorioDadosViagem(a), 'Proposta pedagógica': DOC_STATUS_LABELS[a.doc_status] || a.doc_status || 'Não enviada', Validador: validatorFullName(a.doc_parecer_por) || '-', 'Data da validação': a.doc_parecer_em ? new Date(a.doc_parecer_em).toLocaleDateString('pt-BR') : '-', Parecer: a.doc_parecer_comentario || '-' }));
-  if (tipo === 'atf') return viagens.filter((a) => a.atf_status !== 'nao_precisa' || (a.pca_count || 0) > 0).map((a) => ({ ...relatorioDadosViagem(a), ATF: relAtfEventos(a), 'Listagem': relListagemEventos(a), PCD: `${a.pca_count || 0} estudante(s) / ${a.apoio_count || 0} apoio(s)${a.pcd_cooperativa_confirmado_em ? ' · confirmado em ' + relData(a.pcd_cooperativa_confirmado_em) : (a.pcd_cooperativa_enviado_em ? ' · enviado à coop em ' + relData(a.pcd_cooperativa_enviado_em) : '')}` }));
+  if (tipo === 'atf') return viagens.filter((a) => a.atf_status !== 'nao_precisa' || (a.pca_count || 0) > 0).map((a) => ({ ...relatorioDadosViagem(a), ATF: relAtfEventos(a), 'Listagem': relListagemEventos(a), PCD: `${a.pca_count || 0} estudante(s) / ${a.apoio_count || 0} apoio(s)${a.pcd_cooperativa_confirmado_em ? ' · confirmado em ' + relData(a.pcd_cooperativa_confirmado_em) : (a.pcd_cooperativa_enviado_em ? ' · enviado à coop em ' + relData(a.pcd_cooperativa_enviado_em) : '')}`, Status: SITUACAO_LABELS[a.situacao] || a.situacao || '-', Confirmação: ['cancelada', 'reprovada'].includes(a.situacao) ? '-' : (a.escola_confirmada_em ? `Confirmada pela unidade${relData(a.escola_confirmada_em) ? ' em ' + relData(a.escola_confirmada_em) : ''}` : 'Pendente') }));
   if (tipo === 'cancelamentos') return viagens.filter((a) => a.situacao === 'cancelada' || a.situacao === 'reprovada' || a.admin_decision === 'reprovada' || a.doc_status === 'rejeitado').map((a) => {
     // Resultado com a data do evento e o agente que o produziu (cancelamento, reprovação do Admin ou rejeição da proposta pela Pedagogia).
     if (a.situacao === 'cancelada') return { ...relatorioDadosViagem(a), Resultado: `Cancelada${relData(a.cancelled_at || a.situacao_em) ? ' em ' + relData(a.cancelled_at || a.situacao_em) : ''}`, Agente: relAgente(a.cancelled_by), Motivo: a.cancel_reason || '-' };
