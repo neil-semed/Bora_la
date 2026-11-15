@@ -81,6 +81,7 @@ const ACCESS_SCREEN_CATALOG = [
   { key: 'validadores', label: 'Validadores', editable: true, coAdminOnly: true },
   { key: 'ajuda', label: 'Ajuda (FAQ, dicas e dúvidas)', editable: true, coAdminOnly: true },
   { key: 'avisos', label: 'Avisos administrativos', editable: true, coAdminOnly: true },
+  { key: 'usuarios', label: 'Usuários · redefinir senha (exceto Admin e Co_Admin)', editable: false, coAdminOnly: true },
 ];
 const CO_ADMIN_NAME = 'Co_Admin';
 // Agenda Mestra com "editar" (Admin ou perfil administrativo): mesmas edições do Admin.
@@ -1569,9 +1570,38 @@ async function sendAvisoViagem() {
   toast(`✅ Aviso enviado para ${ids.length} destinatário(s)${comEmail ? ` · e-mails: ${r.emails}/${r.totalEmails}` : ''}${r.demo ? ' (modo demo)' : ''}.`);
 }
 
+// Co_Admin (permissão "usuarios"): vê a lista e só redefine senha por e-mail; Admin e Co_Admin ficam fora.
+function perfilProtegidoSenha(p) {
+  if (!p) return true;
+  if (p.role === 'admin') return true;
+  return p.role === 'operacional' && accessProfiles.find((x) => x.id === p.access_profile_id)?.name === CO_ADMIN_NAME;
+}
+function usuariosSomenteSenha() { return currentUser?.role === 'operacional'; }
+function podeRedefinirSenhaDe(p) {
+  if (currentUser?.role === 'admin') return true;
+  return currentUser?.role === 'operacional' && canViewScreen('usuarios') && !perfilProtegidoSenha(p);
+}
+async function renderHistoricoSenhas() {
+  const box = document.getElementById('usuariosHistoricoSenhas');
+  if (!box) return;
+  if (!sb) { box.innerHTML = '<p class="text-sm text-slate-500">Disponível com o Supabase configurado.</p>'; return; }
+  const { data, error } = await sb.from('password_reset_log').select('*').order('created_at', { ascending: false }).limit(50);
+  if (error) { box.innerHTML = `<p class="text-sm text-amber-700">Histórico indisponível (${escapeHtml(error.message)}).</p>`; return; }
+  box.innerHTML = (data || []).length
+    ? `<table class="w-full text-left text-sm"><thead><tr class="border-b text-xs uppercase text-slate-500"><th class="px-3 py-2">Data</th><th class="px-3 py-2">Usuário</th><th class="px-3 py-2">Solicitado por</th><th class="px-3 py-2">Meio</th></tr></thead><tbody class="divide-y divide-slate-100">${data.map((r) => `<tr><td class="px-3 py-2 whitespace-nowrap">${new Date(r.created_at).toLocaleString('pt-BR')}</td><td class="px-3 py-2">${escapeHtml(r.target_name || '-')}<div class="text-xs text-slate-500">${escapeHtml(r.target_email || '')}</div></td><td class="px-3 py-2">${escapeHtml(r.requested_by_name || '-')}</td><td class="px-3 py-2">E-mail de recuperação</td></tr>`).join('')}</tbody></table>`
+    : '<p class="text-sm text-slate-500">Nenhuma redefinição registrada.</p>';
+}
 function renderUsuarios() {
   const tbody = document.getElementById('usuariosTable');
   if (!tbody) return;
+  const somenteSenha = usuariosSomenteSenha();
+  document.getElementById('usuariosBtnNovo')?.classList.toggle('hidden', somenteSenha);
+  const desc = document.getElementById('usuariosDescricao');
+  if (desc) desc.textContent = somenteSenha
+    ? 'Envie o e-mail de recuperação de senha aos usuários. Contas Admin e Co_Admin não aparecem nesta lista.'
+    : 'Crie o login (e-mail + senha) e defina o perfil (admin/escola/pedagogia/motorista) e, conforme o perfil, a unidade escolar, o motorista ou o setor pedagógico vinculado.';
+  if (somenteSenha) document.getElementById('createUserUnavailableNotice')?.classList.add('hidden');
+  renderHistoricoSenhas();
   const filtroEl = document.getElementById('usuariosFiltroPerfil');
   if (filtroEl) fillRoleSelect('usuariosFiltroPerfil', filtroEl.value, { filtro: true });
   const perfilFiltro = filtroEl?.value || '';
@@ -1588,6 +1618,7 @@ function renderUsuarios() {
   }
   tbody.innerHTML = allProfiles
     .slice()
+    .filter((p) => !somenteSenha || !perfilProtegidoSenha(p))
     .filter((p) => (!perfilFiltro || (perfilFiltro.startsWith('ap:') ? (p.role === 'operacional' && p.access_profile_id === perfilAcessoDoSelect(perfilFiltro)) : p.role === perfilFiltro)) && (!unidadeFiltro || p.school_id === unidadeFiltro))
     .sort((a, b) => (a.email || '').localeCompare(b.email || ''))
     .map((p) => {
@@ -1616,7 +1647,7 @@ function renderUsuarios() {
       <td class="px-4 py-3 text-sm">${p.role === 'motorista' ? '—' : (p.phone || '—')}</td>
       <td class="px-4 py-3 text-sm">${p.role === 'operacional' ? escapeHtml(accessProfiles.find((x) => x.id === p.access_profile_id)?.name || 'Administrativo') : (ROLE_LABELS[p.role] || p.role)}</td>
       <td class="px-4 py-3 text-sm">${vinculo}</td>
-      <td class="px-4 py-3 text-sm whitespace-nowrap">${statusBadge}<button onclick="openUserModal('${p.id}')" class="ml-2 text-xs text-emerald-600 hover:text-emerald-800">Editar</button><button onclick="sendPasswordResetForUser('${p.id}')" class="ml-2 text-xs text-blue-600 hover:text-blue-800">Redefinir senha</button>${toggleBtn}</td>
+      <td class="px-4 py-3 text-sm whitespace-nowrap">${somenteSenha ? `${statusBadge}<button onclick="sendPasswordResetForUser('${p.id}')" class="ml-2 text-xs font-semibold text-blue-600 hover:text-blue-800">🔑 Redefinir senha</button>` : `${statusBadge}<button onclick="openUserModal('${p.id}')" class="ml-2 text-xs text-emerald-600 hover:text-emerald-800">Editar</button><button onclick="sendPasswordResetForUser('${p.id}')" class="ml-2 text-xs text-blue-600 hover:text-blue-800">Redefinir senha</button>${toggleBtn}`}</td>
     </tr>`;
     }).join('');
 }
@@ -3197,17 +3228,18 @@ async function saveOwnPassword() {
 }
 
 async function sendPasswordResetForUser(id) {
-  if (currentUser?.role !== 'admin' || !sb) { toast('⚠️ Disponível apenas para Admin com Supabase configurado.', true); return; }
   const profile = allProfiles.find((p) => p.id === id); if (!profile?.email) return;
+  if (!sb || !podeRedefinirSenhaDe(profile)) { toast('⚠️ Você não tem permissão para redefinir a senha deste usuário.', true); return; }
   if (!window.confirm(`Enviar e-mail de recuperação de senha para ${profile.email}?`)) return;
   try {
     const { data: { session } } = await sb.auth.getSession();
     const url = localStorage.getItem('sb_url') || DEFAULT_SUPABASE_URL;
     const key = localStorage.getItem('sb_key') || DEFAULT_SUPABASE_ANON_KEY;
-    const resp = await fetch(`${url}/functions/v1/admin-send-password-reset`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${session?.access_token || key}`, apikey:key }, body:JSON.stringify({ email:profile.email }) });
+    const resp = await fetch(`${url}/functions/v1/admin-send-password-reset`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${session?.access_token || key}`, apikey:key }, body:JSON.stringify({ email:profile.email, user_id:profile.id }) });
     const body = await resp.json().catch(() => ({}));
     if (!resp.ok || body.error) { toast('❌ ' + (body.error || 'Não foi possível enviar o e-mail.'), true); return; }
-    toast('✅ E-mail de recuperação enviado. A senha não foi exposta ao Admin.');
+    toast('✅ E-mail de recuperação enviado. A senha não foi exposta.');
+    renderHistoricoSenhas();
   } catch (err) { toast('❌ Falha ao solicitar recuperação: ' + (err?.message || err), true); }
 }
 function viagemConfirmadaParaMotorista(trip) {

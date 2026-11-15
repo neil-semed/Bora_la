@@ -350,7 +350,7 @@
           <a data-screen="cooperativas" data-roles="admin" onclick="showScreen('cooperativas', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
             📨 Cooperativas
           </a>
-          <a data-screen="usuarios" data-roles="admin" onclick="showScreen('usuarios', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
+          <a data-screen="usuarios" data-roles="admin operacional" onclick="showScreen('usuarios', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
             🔑 Usuários
           </a>
           <a data-screen="perfisacesso" data-roles="admin" onclick="showScreen('perfisacesso', this)" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer">
@@ -425,7 +425,7 @@
           <a data-screen="unidades" data-roles="admin" onclick="showScreen('unidades',this)" class="top-nav-link"><i data-lucide="school" class="w-4 h-4 mr-1.5 text-sky-600"></i>Unidades</a>
           <a data-screen="veiculos" data-roles="admin" onclick="showScreen('veiculos',this)" class="top-nav-link"><i data-lucide="bus-front" class="w-4 h-4 mr-1.5 text-teal-600"></i>Veículos</a>
           <a data-screen="motoristas" data-roles="admin" onclick="showScreen('motoristas',this)" class="top-nav-link"><i data-lucide="contact-round" class="w-4 h-4 mr-1.5 text-rose-600"></i>Motoristas</a>
-          <a data-screen="usuarios" data-roles="admin" onclick="showScreen('usuarios',this)" class="top-nav-link"><i data-lucide="users-round" class="w-4 h-4 mr-1.5 text-indigo-600"></i>Usuários</a>
+          <a data-screen="usuarios" data-roles="admin operacional" onclick="showScreen('usuarios',this)" class="top-nav-link"><i data-lucide="users-round" class="w-4 h-4 mr-1.5 text-indigo-600"></i>Usuários</a>
           <a data-screen="perfisacesso" data-roles="admin" onclick="showScreen('perfisacesso',this)" class="top-nav-link"><i data-lucide="shield-check" class="w-4 h-4 mr-1.5 text-fuchsia-600"></i>Perfis de acesso</a>
           <a data-screen="validadores" data-roles="admin" onclick="showScreen('validadores',this)" class="top-nav-link"><i data-lucide="badge-check" class="w-4 h-4 mr-1.5 text-pink-600"></i>Validadores</a>
           <a data-screen="ajuda" data-roles="admin" onclick="showScreen('ajuda',this)" class="top-nav-link"><i data-lucide="circle-help" class="w-4 h-4 mr-1.5 text-emerald-600"></i>Ajuda</a>
@@ -1560,9 +1560,9 @@
               <div class="flex items-start justify-between mb-4 gap-4">
                 <div>
                   <h3 class="font-semibold">Usuários do sistema</h3>
-                  <p class="text-sm text-slate-500 mt-1">Crie o login (e-mail + senha) e defina o perfil (admin/escola/pedagogia/motorista) e, conforme o perfil, a unidade escolar, o motorista ou o setor pedagógico vinculado.</p>
+                  <p id="usuariosDescricao" class="text-sm text-slate-500 mt-1">Crie o login (e-mail + senha) e defina o perfil (admin/escola/pedagogia/motorista) e, conforme o perfil, a unidade escolar, o motorista ou o setor pedagógico vinculado.</p>
                 </div>
-                <button onclick="openCreateUserModal()" class="px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm whitespace-nowrap">+ Novo usuário</button>
+                <button id="usuariosBtnNovo" onclick="openCreateUserModal()" class="px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm whitespace-nowrap">+ Novo usuário</button>
               </div>
               <div id="createUserUnavailableNotice" class="hidden bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-xs text-amber-800">
                 ℹ️ Criar login novo pela tela depende de uma função de servidor (Edge Function) publicada no Supabase (veja <code>supabase/functions/admin-create-user</code> no pacote) — enquanto isso, você ainda pode editar quem já acessou o sistema pelo menos uma vez.
@@ -1583,6 +1583,10 @@
                   <tbody id="usuariosTable" class="divide-y divide-slate-100"></tbody>
                 </table>
               </div>
+              <details class="mt-6 border-t pt-4">
+                <summary class="cursor-pointer text-sm font-semibold text-slate-700">🔑 Histórico de redefinições de senha</summary>
+                <div id="usuariosHistoricoSenhas" class="mt-3 overflow-x-auto"></div>
+              </details>
             </div>
           </section>
 
@@ -2480,7 +2484,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=relatorio-atf-filtros-20261113-001"></script>
+  <script src="app.js?v=coadmin-redefinir-senha-20261115-001"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */
