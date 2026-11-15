@@ -81,7 +81,7 @@ const ACCESS_SCREEN_CATALOG = [
   { key: 'validadores', label: 'Validadores', editable: true, coAdminOnly: true },
   { key: 'ajuda', label: 'Ajuda (FAQ, dicas e dúvidas)', editable: true, coAdminOnly: true },
   { key: 'avisos', label: 'Avisos administrativos', editable: true, coAdminOnly: true },
-  { key: 'usuarios', label: 'Usuários · redefinir senha (exceto Admin e Co_Admin)', editable: false, coAdminOnly: true },
+  { key: 'usuarios', label: 'Usuários · redefinir senha (exceto Admin)', editable: false, coAdminOnly: true },
 ];
 const CO_ADMIN_NAME = 'Co_Admin';
 // Agenda Mestra com "editar" (Admin ou perfil administrativo): mesmas edições do Admin.
@@ -1570,11 +1570,9 @@ async function sendAvisoViagem() {
   toast(`✅ Aviso enviado para ${ids.length} destinatário(s)${comEmail ? ` · e-mails: ${r.emails}/${r.totalEmails}` : ''}${r.demo ? ' (modo demo)' : ''}.`);
 }
 
-// Co_Admin (permissão "usuarios"): vê a lista e só redefine senha por e-mail; Admin e Co_Admin ficam fora.
+// Co_Admin (permissão "usuarios"): vê a lista e só redefine senha por e-mail; o Admin fica fora.
 function perfilProtegidoSenha(p) {
-  if (!p) return true;
-  if (p.role === 'admin') return true;
-  return p.role === 'operacional' && accessProfiles.find((x) => x.id === p.access_profile_id)?.name === CO_ADMIN_NAME;
+  return !p || p.role === 'admin';
 }
 function usuariosSomenteSenha() { return currentUser?.role === 'operacional'; }
 function podeRedefinirSenhaDe(p) {
@@ -1598,7 +1596,7 @@ function renderUsuarios() {
   document.getElementById('usuariosBtnNovo')?.classList.toggle('hidden', somenteSenha);
   const desc = document.getElementById('usuariosDescricao');
   if (desc) desc.textContent = somenteSenha
-    ? 'Envie o e-mail de recuperação de senha aos usuários. Contas Admin e Co_Admin não aparecem nesta lista.'
+    ? 'Envie o e-mail de recuperação de senha aos usuários. Contas Admin não aparecem nesta lista.'
     : 'Crie o login (e-mail + senha) e defina o perfil (admin/escola/pedagogia/motorista) e, conforme o perfil, a unidade escolar, o motorista ou o setor pedagógico vinculado.';
   if (somenteSenha) document.getElementById('createUserUnavailableNotice')?.classList.add('hidden');
   renderHistoricoSenhas();
