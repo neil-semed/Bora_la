@@ -2462,7 +2462,23 @@ function showScreen(name, el) {
   if (name === 'carrosolicitacoes') openCarroSolicitacoes();
   if (name === 'carronova') openCarroNova();
   safeIcons();
+  agendarAjusteListasTravadas();
 }
+
+// Telas com listagem (desktop): título, menu e filtros parados; só a lista rola.
+// No celular e no perfil Motorista, nada muda (lá só a barra de menus fica no topo).
+function ajustarListasTravadas() {
+  const desktop = window.innerWidth >= 768 && !document.body.classList.contains('driver-mobile');
+  document.querySelectorAll('.lista-travada').forEach((el) => {
+    if (!desktop || !el.offsetParent) { el.style.maxHeight = ''; return; }
+    const topoNaPagina = el.getBoundingClientRect().top + window.scrollY;
+    el.style.maxHeight = Math.max(260, window.innerHeight - topoNaPagina - 20) + 'px';
+  });
+}
+function agendarAjusteListasTravadas() {
+  [0, 400, 1200].forEach((ms) => setTimeout(ajustarListasTravadas, ms));
+}
+window.addEventListener('resize', ajustarListasTravadas);
 async function notifyPedagogia(title, message, excursionId = null) {
   if (!sb) return;
   const { data } = await sb.from('profiles').select('id').eq('role', 'pedagogia').eq('active', true);
@@ -6146,7 +6162,7 @@ function destinoEhUnidade(a) {
 }
 
 async function limparFiltrosValidacoesPedagogia() {
-  ['validacaoFiltroOrigem', 'validacaoFiltroPublico'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['validacaoFiltroOrigem', 'validacaoFiltroPublico', 'validacaoFiltroDoc', 'validacaoFiltroAnalisadas'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
   const setor = document.getElementById('validacaoFiltroSetor');
   if (setor) setor.value = [...setor.options].some((o) => o.value === '__todos__') ? '__todos__' : '';
   const ocultar = document.getElementById('validacaoOcultarPassadas'); if (ocultar) ocultar.checked = true;
@@ -6175,10 +6191,17 @@ function renderValidacoesPedagogia() {
   const setorFiltro = setorEl && !todosSetores ? setorEl.value : '';
   const origemFiltro = origemEl ? origemEl.value : '';
   const publicoFiltro = publicoEl ? publicoEl.value : '';
+  const docFiltro = document.getElementById('validacaoFiltroDoc')?.value || '';
+  const analisadasFiltro = document.getElementById('validacaoFiltroAnalisadas')?.value || '';
+  const docFiltroEl = document.getElementById('validacaoFiltroDoc'); if (docFiltroEl) docFiltroEl.disabled = !!analisadasFiltro;
   const meusSetores = new Set(validatorSectorAssignments.filter((v) => v.profile_id === currentUser?.id).map((v) => v.sector_id));
   // A proposta solicitada pelo Admin aparece em Pendências como aviso à
   // Pedagogia, mas não pode ser analisada antes de a unidade enviar o arquivo.
-  let lista = agenda.filter((a) => !['cancelada', 'reprovada'].includes(a.situacao) && !['aceito', 'rejeitado', 'solicitada', 'correcoes'].includes(a.doc_status || 'nao_enviado') && primeiraDaSerie(a));
+  // "Propostas analisadas": mostra só as aprovadas, rejeitadas ou com correções (apenas consulta).
+  let lista = analisadasFiltro
+    ? agenda.filter((a) => (a.doc_status || '') === analisadasFiltro && primeiraDaSerie(a))
+    : agenda.filter((a) => !['cancelada', 'reprovada'].includes(a.situacao) && !['aceito', 'rejeitado', 'solicitada', 'correcoes'].includes(a.doc_status || 'nao_enviado') && primeiraDaSerie(a));
+  if (!analisadasFiltro && docFiltro) lista = lista.filter((a) => (a.doc_status || 'nao_enviado') === docFiltro);
   if (validationSectors.length) {
     lista = lista.filter((a) => !validacaoDeOutraPessoa(a));
     lista = lista.filter((a) => (a.validator_profile_id && a.validator_profile_id === currentUser?.id) || (todosSetores || (setorFiltro ? a.validation_sector_id === setorFiltro : (!meusSetores.size || meusSetores.has(a.validation_sector_id)))));
@@ -6188,7 +6211,7 @@ function renderValidacoesPedagogia() {
   if (document.getElementById('validacaoOcultarPassadas')?.checked !== false) lista = lista.filter((a) => !viagemJaPassou(a));
 
   if (lista.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-500 text-sm">Nenhuma solicitação pendente de validação</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-slate-500 text-sm">${analisadasFiltro ? 'Nenhuma proposta encontrada' : 'Nenhuma solicitação pendente de validação'}</td></tr>`;
     return;
   }
   const podeEditarValidacao = currentUser?.role === 'pedagogia' || (currentUser?.role === 'operacional' && canEditScreen('validacoes'));
@@ -6206,7 +6229,7 @@ function renderValidacoesPedagogia() {
       <td class="px-4 py-3 text-sm">${totalPax}</td>
       <td class="px-4 py-3 text-sm">${validationSectors.find((s) => s.id === a.validation_sector_id)?.name || SETOR_PEDAGOGICO_LABELS[a.setor_pedagogico_atual] || '-'}</td>
       <td class="px-4 py-3 text-sm"><span style="${DOC_STATUS_COLORS[a.doc_status] || ''}" class="px-2 py-1 rounded text-xs font-medium">${DOC_STATUS_LABELS[a.doc_status] || a.doc_status}</span></td>
-      <td class="px-4 py-3 text-sm"><button onclick="openValidacaoModal('${a.id}')" class="text-xs text-emerald-600 hover:text-emerald-800">📋 ${podeEditarValidacao ? 'Analisar' : 'Consultar'}</button></td>
+      <td class="px-4 py-3 text-sm"><button onclick="openValidacaoModal('${a.id}'${analisadasFiltro ? ', true' : ''})" class="text-xs text-emerald-600 hover:text-emerald-800">📋 ${podeEditarValidacao && !analisadasFiltro ? 'Analisar' : 'Consultar'}</button></td>
     </tr>`;
     }).join('');
 }
@@ -8494,7 +8517,7 @@ function populateEscolaSelect() {
   if (!sel) return;
 
   const visiveis = schools.filter((s) => s.active !== false || s.id === currentUser.schoolId);
-  sel.innerHTML = visiveis.map((s) => `<option value="${s.id}">${escapeHtml(s.name)}${s.acronym ? ' — ' + escapeHtml(s.acronym) : ''}</option>`).join('')
+  sel.innerHTML = (currentUser.role === 'escola' ? '' : '<option value="">— Selecione a unidade —</option>') + visiveis.map((s) => `<option value="${s.id}">${escapeHtml(s.name)}${s.acronym ? ' — ' + escapeHtml(s.acronym) : ''}</option>`).join('')
     + (currentUser.role === 'pedagogia' ? '' : '<option value="__outra__">Outra (não cadastrada)</option>');
   if (currentUser.role === 'escola' && currentUser.schoolId) {
     sel.value = currentUser.schoolId;
@@ -8844,6 +8867,11 @@ function validateWizardStep(step) {
 
   if (step === 1) {
     const escolaId = document.getElementById('wEscola')?.value;
+
+    if (!escolaId) {
+      toast('⚠️ Selecione a unidade solicitante.', true);
+      return false;
+    }
 
     if (isAgendamento && (!escolaId || escolaId === '__outra__')) {
       toast('⚠️ Selecione a escola que receberá a equipe/comitiva.', true);

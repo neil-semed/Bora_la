@@ -108,6 +108,17 @@
       #screen-dashboard > .grid > div { position:relative; overflow:hidden; }
     }
     #topNav { position:sticky; top:72px; z-index:44; }
+    /* Título e menu sempre no topo: a área principal não pode ser um contêiner de rolagem
+       (anulava o "sticky"). App/perfil do Motorista fica como está. */
+    body:not(.driver-mobile) #appScreen main { overflow-x: clip; overflow-y: visible; }
+    @media (max-width: 767px) {
+      body:not(.driver-mobile) main > header { position: static; }
+      body:not(.driver-mobile) #topNav { top: 0; }
+    }
+    @media (min-width: 768px) {
+      body:not(.driver-mobile) .lista-travada { overflow-y: auto; overscroll-behavior: contain; scrollbar-color:#059669 #e2e8f0; padding-right: .25rem; }
+      body:not(.driver-mobile) .lista-travada .overflow-x-auto { max-height: none; }
+    }
     .screen-shell { max-width: 1440px; margin:0 auto; }
     .screen-panel { background:rgba(255,255,255,.94); border:1px solid #dbe4ee; border-radius:1rem; box-shadow:0 10px 26px rgba(15,23,42,.06); }
     .screen-intro { border-left:4px solid #059669; background:linear-gradient(100deg,#ecfdf5,#f8fffc); }
@@ -581,7 +592,7 @@
                 <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Filtrar solicitações por unidade</label>
                 <select id="pendenciasFiltroUnidade" onchange="renderPendencias()" class="w-full max-w-md px-3 py-2 border rounded-lg text-sm"><option value="">Todas as unidades</option></select>
               </div>
-              <div id="pendenciasLista" class="space-y-5"></div>
+              <div id="pendenciasLista" class="lista-travada space-y-5"></div>
             </div>
           </section>
 
@@ -1125,6 +1136,23 @@
                     <option value="administracao">Administração</option>
                   </select>
                 </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Documento (a analisar)</label>
+                  <select id="validacaoFiltroDoc" onchange="renderValidacoesPedagogia()" class="px-3 py-2 border rounded-lg text-sm">
+                    <option value="">Todos</option>
+                    <option value="nao_enviado">Aguardando envio</option>
+                    <option value="em_analise">Em análise</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Propostas analisadas</label>
+                  <select id="validacaoFiltroAnalisadas" onchange="renderValidacoesPedagogia()" class="px-3 py-2 border rounded-lg text-sm">
+                    <option value="">Não mostrar</option>
+                    <option value="aceito">Aprovadas</option>
+                    <option value="rejeitado">Rejeitadas</option>
+                    <option value="correcoes">Correções solicitadas</option>
+                  </select>
+                </div>
                 <label class="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700"><input id="validacaoOcultarPassadas" type="checkbox" checked onchange="renderValidacoesPedagogia()"> Ocultar validações passadas</label>
                 <button onclick="limparFiltrosValidacoesPedagogia()" class="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Limpar filtros</button>
               </div>
@@ -1284,7 +1312,7 @@
               </div>
               <div class="bg-white rounded-xl border shadow-sm p-5 lg:col-span-2">
                 <div class="flex flex-wrap justify-between gap-3 mb-4"><div><h3 class="font-semibold">Validadores pedagógicos</h3><p class="text-sm text-slate-500 mt-1">Vincule cada pessoa da Pedagogia aos setores em que ela tem prerrogativa para analisar.</p></div><button onclick="showScreen('usuarios')" class="px-3 py-2 border rounded-lg text-sm font-semibold text-emerald-700">+ Criar usuário validador</button></div>
-                <div id="listaValidadores" class="grid md:grid-cols-2 gap-3"></div>
+                <div id="listaValidadores" class="lista-travada grid md:grid-cols-2 gap-3"></div>
               </div>
             </div>
             </div>
@@ -1464,7 +1492,7 @@
                 <h3 class="font-semibold">Veículos</h3>
                 <button id="btnNovoVeiculo" onclick="openVehicleModal()" class="px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm">+ Adicionar veículo</button>
               </div>
-              <div id="veiculosGrid" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+              <div id="veiculosGrid" class="lista-travada grid grid-cols-1 md:grid-cols-3 gap-4"></div>
             </div>
           </section>
 
@@ -1672,7 +1700,7 @@
                 <button id="btnNotificarViagens" onclick="openNotificarViagensModal()" class="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-lg text-sm">✉️ Notificar viagens</button>
                 <button id="btnConfigurarEmailsEscala" onclick="openEscalaEmailsModal(false)" class="px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-semibold rounded-lg text-sm">✉️ Enviar escala</button>
               </div>
-              <div id="relatorioPreview" class="mt-5 overflow-x-auto"></div>
+              <div id="relatorioPreview" class="lista-travada mt-5 overflow-x-auto"></div>
             </div>
           </section>
 
@@ -1689,13 +1717,13 @@
                 <div><label class="mb-1 block text-xs font-medium text-slate-500">Unidade</label><select id="coopFiltroUnidade" onchange="renderPendenciasCoop()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todas</option></select></div>
                 <button onclick="limparFiltrosCoop()" class="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Limpar filtros</button>
               </div>
-              <div id="pendenciasCoopLista" class="space-y-4"></div>
+              <div id="pendenciasCoopLista" class="lista-travada space-y-4"></div>
             </div>
           </section>
 
           <!-- AGENTE EXTERNO: VIAGENS ATRIBUÍDAS À COOPERATIVA -->
-          <section id="screen-solicitacoescoop" class="hidden-screen"><div class="max-w-6xl"><div class="rounded-xl border border-emerald-100 bg-emerald-50 p-4 mb-4"><h3 class="font-semibold text-emerald-950">Solicitações atribuídas à cooperativa</h3><p class="text-sm text-emerald-800">Viagens confirmadas com motorista vinculado à sua cooperativa.</p></div><div class="rounded-xl border bg-white p-3 mb-4 flex flex-wrap items-end gap-3"><div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Data da viagem</label><input id="scFiltroData" type="date" onchange="renderSolicitacoesCoop()" class="px-3 py-2 border rounded-lg text-sm"></div><div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Unidade</label><select id="scFiltroUnidade" onchange="renderSolicitacoesCoop()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todas</option></select></div><div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Motorista</label><select id="scFiltroMotorista" onchange="renderSolicitacoesCoop()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todos</option></select></div><label class="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700"><input id="scOcultarPassadas" type="checkbox" checked onchange="renderSolicitacoesCoop()"> Ocultar viagens passadas</label><button type="button" onclick="limparFiltrosCoop('sc', renderSolicitacoesCoop)" class="px-3 py-2 text-sm text-slate-600">⟲ Limpar filtros</button></div><div id="solicitacoesCoopLista" class="grid md:grid-cols-2 xl:grid-cols-3 gap-4"></div></div></section>
-          <section id="screen-atfpcdcoop" class="hidden-screen"><div class="max-w-6xl"><div class="rounded-xl border border-emerald-100 bg-emerald-50 p-4 mb-4"><h3 class="font-semibold text-emerald-950">Gestão de ATF e transporte PCD</h3><p class="text-sm text-emerald-800">Todos os pedidos de ATF e PCD da cooperativa: pendentes, emitidos e recusados, com listagens e arquivos.</p></div><div class="rounded-xl border bg-white p-3 mb-4 flex flex-wrap items-end gap-3"><div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Data da viagem</label><input id="apcFiltroData" type="date" onchange="renderAtfPcdCoop()" class="px-3 py-2 border rounded-lg text-sm"></div><div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Unidade</label><select id="apcFiltroUnidade" onchange="renderAtfPcdCoop()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todas</option></select></div><div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Motorista</label><select id="apcFiltroMotorista" onchange="renderAtfPcdCoop()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todos</option></select></div><div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Tipo</label><select id="apcFiltroTipo" onchange="renderAtfPcdCoop()" class="px-3 py-2 border rounded-lg text-sm"><option value="">ATF e PCD</option><option value="atf">Só ATF</option><option value="pcd">Só PCD</option></select></div><div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Situação</label><select id="apcFiltroSituacao" onchange="renderAtfPcdCoop()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todas</option><option value="pendente">Aguardando</option><option value="ok">Emitida / confirmado</option><option value="recusada">Recusada</option></select></div><label class="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700"><input id="apcOcultarPassadas" type="checkbox" checked onchange="renderAtfPcdCoop()"> Ocultar solicitações passadas</label><button type="button" onclick="limparFiltrosCoop('apc', renderAtfPcdCoop)" class="px-3 py-2 text-sm text-slate-600">⟲ Limpar filtros</button></div><div id="atfPcdCoopLista" class="grid md:grid-cols-2 xl:grid-cols-3 gap-4"></div></div></section>
+          <section id="screen-solicitacoescoop" class="hidden-screen"><div class="max-w-6xl"><div class="rounded-xl border border-emerald-100 bg-emerald-50 p-4 mb-4"><h3 class="font-semibold text-emerald-950">Solicitações atribuídas à cooperativa</h3><p class="text-sm text-emerald-800">Viagens confirmadas com motorista vinculado à sua cooperativa.</p></div><div class="rounded-xl border bg-white p-3 mb-4 flex flex-wrap items-end gap-3"><div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Data da viagem</label><input id="scFiltroData" type="date" onchange="renderSolicitacoesCoop()" class="px-3 py-2 border rounded-lg text-sm"></div><div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Unidade</label><select id="scFiltroUnidade" onchange="renderSolicitacoesCoop()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todas</option></select></div><div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Motorista</label><select id="scFiltroMotorista" onchange="renderSolicitacoesCoop()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todos</option></select></div><label class="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700"><input id="scOcultarPassadas" type="checkbox" checked onchange="renderSolicitacoesCoop()"> Ocultar viagens passadas</label><button type="button" onclick="limparFiltrosCoop('sc', renderSolicitacoesCoop)" class="px-3 py-2 text-sm text-slate-600">⟲ Limpar filtros</button></div><div id="solicitacoesCoopLista" class="lista-travada grid md:grid-cols-2 xl:grid-cols-3 gap-4"></div></div></section>
+          <section id="screen-atfpcdcoop" class="hidden-screen"><div class="max-w-6xl"><div class="rounded-xl border border-emerald-100 bg-emerald-50 p-4 mb-4"><h3 class="font-semibold text-emerald-950">Gestão de ATF e transporte PCD</h3><p class="text-sm text-emerald-800">Todos os pedidos de ATF e PCD da cooperativa: pendentes, emitidos e recusados, com listagens e arquivos.</p></div><div class="rounded-xl border bg-white p-3 mb-4 flex flex-wrap items-end gap-3"><div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Data da viagem</label><input id="apcFiltroData" type="date" onchange="renderAtfPcdCoop()" class="px-3 py-2 border rounded-lg text-sm"></div><div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Unidade</label><select id="apcFiltroUnidade" onchange="renderAtfPcdCoop()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todas</option></select></div><div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Motorista</label><select id="apcFiltroMotorista" onchange="renderAtfPcdCoop()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todos</option></select></div><div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Tipo</label><select id="apcFiltroTipo" onchange="renderAtfPcdCoop()" class="px-3 py-2 border rounded-lg text-sm"><option value="">ATF e PCD</option><option value="atf">Só ATF</option><option value="pcd">Só PCD</option></select></div><div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Situação</label><select id="apcFiltroSituacao" onchange="renderAtfPcdCoop()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todas</option><option value="pendente">Aguardando</option><option value="ok">Emitida / confirmado</option><option value="recusada">Recusada</option></select></div><label class="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700"><input id="apcOcultarPassadas" type="checkbox" checked onchange="renderAtfPcdCoop()"> Ocultar solicitações passadas</label><button type="button" onclick="limparFiltrosCoop('apc', renderAtfPcdCoop)" class="px-3 py-2 text-sm text-slate-600">⟲ Limpar filtros</button></div><div id="atfPcdCoopLista" class="lista-travada grid md:grid-cols-2 xl:grid-cols-3 gap-4"></div></div></section>
         </div>
       </main>
     </div>
@@ -2484,7 +2512,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=coadmin-redefinir-senha-20261115-002"></script>
+  <script src="app.js?v=filtros-unidade-menu-20261115-001"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */
