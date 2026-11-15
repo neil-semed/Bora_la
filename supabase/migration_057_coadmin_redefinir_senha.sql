@@ -1,5 +1,5 @@
 -- ============================================================
--- BORA LÁ - migration_057: Co_Admin redefine senha (exceto Admin e Co_Admin)
+-- BORA LÁ - migration_057: Co_Admin redefine senha (exceto Admin)
 -- 1) Tela "usuarios" no catálogo dos perfis administrativos (o Admin liga em
 --    Perfis de acesso › Co_Admin › "Usuários · redefinir senha").
 -- 2) Histórico das redefinições (gravado pela função admin-send-password-reset).
