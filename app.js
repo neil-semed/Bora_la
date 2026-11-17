@@ -3251,8 +3251,8 @@ async function sendPasswordResetForUser(id) {
     const key = localStorage.getItem('sb_key') || DEFAULT_SUPABASE_ANON_KEY;
     const resp = await fetch(`${url}/functions/v1/admin-send-password-reset`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${session?.access_token || key}`, apikey:key }, body:JSON.stringify({ email:profile.email, user_id:profile.id }) });
     const body = await resp.json().catch(() => ({}));
-    if (!resp.ok || body.error) { toast('❌ ' + (body.error || 'Não foi possível enviar o e-mail.'), true); return; }
-    toast('✅ E-mail de recuperação enviado. A senha não foi exposta.');
+    if (!resp.ok || body.error) { toast('❌ ' + (body.error || (resp.status === 404 ? 'Função admin-send-password-reset não publicada no Supabase.' : `Não foi possível enviar o e-mail (HTTP ${resp.status}).`)), true); return; }
+    toast(body.aviso ? '⚠️ ' + body.aviso : `✅ E-mail de recuperação enviado para ${profile.email}.`, !!body.aviso);
     renderHistoricoSenhas();
   } catch (err) { toast('❌ Falha ao solicitar recuperação: ' + (err?.message || err), true); }
 }
