@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#059669" />
   <title>Bora Lá - Excursões</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" type="image/png" sizes="512x512" href="assets/favicon-512.png" />
   <link rel="apple-touch-icon" href="assets/favicon-512.png" />
@@ -298,6 +301,125 @@
     tr.agenda-linha-sel > td:first-child { box-shadow: inset 4px 0 0 #fde68a; }
     .dica-i .dica-bubble { display: none; position: absolute; z-index: 80; left: 50%; top: 125%; transform: translateX(-50%); width: 250px; padding: 8px 10px; border-radius: 8px; background: #1e293b; color: #fff; font-size: 11px; font-weight: 400; line-height: 1.4; text-align: left; white-space: normal; box-shadow: 0 8px 20px rgb(0 0 0 / .2); }
     .dica-i:hover .dica-bubble, .dica-i:focus .dica-bubble { display: block; }
+
+    /* ===================== REDESENHO VISUAL (nov/2026) =====================
+       Só aparência e organização das telas. Não vale para o perfil Motorista
+       (body.driver-mobile) nem para a tela de login (index.html). */
+    body:not(.driver-mobile){
+      --rv-l0:#f6f8f7; --rv-l1:#fff; --rv-l1b:#fbfcfb; --rv-ac:#059669; --rv-ac-esc:#047857; --rv-ac-fundo:#ecf8f3;
+      --rv-titulo:#0b2a5b; --rv-texto:#1e293b; --rv-apoio:#5b6676; --rv-borda:rgba(30,41,59,.10); --rv-borda-f:rgba(30,41,59,.18); --rv-div:rgba(30,41,59,.07);
+      --rv-sombra:0 1px 3px rgba(15,23,42,.06);
+      font-family:"Nunito","Segoe UI",Arial,sans-serif; background:var(--rv-l0); color:var(--rv-texto);
+    }
+    body:not(.driver-mobile) main{ background:var(--rv-l0); }
+    body:not(.driver-mobile) main > header{ background:#fff; border-bottom:1px solid var(--rv-borda); }
+    body:not(.driver-mobile) main > header #pageTitle{ color:var(--rv-titulo); font-weight:600; }
+    body:not(.driver-mobile) #escolaPageFavicon{ width:40px; height:40px; }
+    body:not(.driver-mobile) #topNav{ background:#fff; border-bottom:1px solid var(--rv-borda); box-shadow:none; }
+    body:not(.driver-mobile) .top-nav-link{ border:0; border-bottom:2px solid transparent; border-radius:0; margin:0 .1rem; padding:.75rem .75rem; font-weight:500; color:var(--rv-apoio); box-shadow:none; background:transparent; }
+    body:not(.driver-mobile) .top-nav-link:hover{ color:var(--rv-ac-esc); background:transparent; box-shadow:none; }
+    body:not(.driver-mobile) .top-nav-link.active{ color:var(--rv-ac-esc); border-bottom-color:var(--rv-ac); background:transparent; box-shadow:none; font-weight:600; }
+    body:not(.driver-mobile) .screen-shell{ max-width:1440px !important; }
+    body:not(.driver-mobile) .screen-panel,
+    body:not(.driver-mobile) section > .bg-white.rounded-xl.border,
+    body:not(.driver-mobile) .bg-white.rounded-xl.border.shadow-sm{ border:1px solid var(--rv-borda); border-radius:12px; box-shadow:var(--rv-sombra); }
+    body:not(.driver-mobile) .screen-intro{ border-radius:12px; }
+    body:not(.driver-mobile) main select, body:not(.driver-mobile) main input[type=text], body:not(.driver-mobile) main input[type=date],
+    body:not(.driver-mobile) main input[type=email], body:not(.driver-mobile) main input[type=number], body:not(.driver-mobile) main input[type=search]{ border-color:var(--rv-borda-f); border-radius:10px; font-family:inherit; }
+    body:not(.driver-mobile) main table thead th{ background:var(--rv-l1b); color:var(--rv-apoio); font-weight:600; border-bottom:1px solid var(--rv-borda); }
+    body:not(.driver-mobile) main table tbody td{ border-bottom:1px solid var(--rv-div); }
+    body:not(.driver-mobile) .bg-emerald-600{ background-color:var(--rv-ac); } body:not(.driver-mobile) .disabled\:bg-slate-200:disabled{ background-color:#e2e8f0; } body:not(.driver-mobile) .disabled\:bg-slate-300:disabled{ background-color:#cbd5e1; } body:not(.driver-mobile) .hover\:bg-emerald-700:hover{ background-color:var(--rv-ac-esc); }
+    body:not(.driver-mobile) .agenda-table-wrap, body:not(.driver-mobile) .overflow-x-auto{ border-color:var(--rv-borda); }
+    /* Telas sobrepostas (janelas) com contorno */
+    body:not(.driver-mobile) .fixed.inset-0 > div:first-child:not(#notificationPanel){ border:2px solid var(--rv-ac); box-shadow:0 0 0 4px rgba(5,150,105,.12),0 8px 24px rgba(15,23,42,.08); }
+    /* Dashboard usando toda a largura */
+    body:not(.driver-mobile) #dashStatsGrid{ grid-template-columns:repeat(auto-fit,minmax(130px,1fr)) !important; gap:.75rem !important; }
+    body:not(.driver-mobile) #dashStatsGrid > div{ border:1px solid var(--rv-borda); border-radius:12px; box-shadow:var(--rv-sombra); padding:.75rem 1rem !important; }
+    body:not(.driver-mobile) #dashStatsGrid .text-xs{ font-size:.875rem !important; color:var(--rv-apoio); }
+    body:not(.driver-mobile) #dashStatsGrid .text-xl{ font-size:1.75rem !important; line-height:1.2 !important; font-weight:600; }
+    /* Navegação lateral (tipos de pendência, filas, relatórios, cadastros) */
+    .pend-layout{ display:grid; grid-template-columns:250px minmax(0,1fr); gap:1.5rem; align-items:start; }
+    .pend-direita{ display:grid; gap:1rem; min-width:0; }
+    .lado-nav{ background:#fff; border:1px solid rgba(30,41,59,.10); border-radius:12px; padding:.5rem; display:grid; gap:2px; position:sticky; top:130px; }
+    .lado-nav button{ display:flex; justify-content:space-between; align-items:center; gap:.5rem; width:100%; text-align:left; padding:.55rem .75rem; border-radius:8px; font-size:.875rem; font-weight:500; color:#1e293b; background:transparent; border:0; cursor:pointer; font-family:inherit; }
+    .lado-nav button:hover{ background:#f3f7f5; }
+    .lado-nav button.on{ background:#ecf8f3; color:#047857; font-weight:600; }
+    .lado-nav button span{ color:#5b6676; font-weight:500; }
+    .lado-nav:empty{ display:none; }
+    body:not(.driver-mobile) #pendenciasFiltroTipo{ display:none; }
+    body:not(.driver-mobile) label[for="pendenciasFiltroTipo"], body:not(.driver-mobile) .pend-tipo-wrap{ display:none; }
+    @media (max-width:900px){ .pend-layout{ grid-template-columns:minmax(0,1fr); } .lado-nav{ position:static; display:flex; overflow-x:auto; } .lado-nav button{ white-space:nowrap; width:auto; } }
+    /* Cartões da cooperativa: contorno mais definido e motorista em destaque */
+    .coop-card{ border:1.5px solid #a9b8b1 !important; border-left-width:6px !important; box-shadow:0 1px 3px rgba(15,23,42,.06); }
+    .coop-motorista{ display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; margin-top:.5rem; padding:.45rem .75rem; border:1px solid rgba(30,41,59,.18); border-radius:8px; font-size:.875rem; }
+    .coop-motorista span{ color:#5b6676; } .coop-motorista b{ font-weight:600; }
+    /* Agenda: linha do tempo (Escola e Pedagogia) */
+    .agenda-tempo-wrap{ border:1px solid rgba(30,41,59,.10); border-radius:12px; background:#fff; max-height:calc(100vh - 260px); overflow:auto; }
+    .tl-cab,.tl-viag{ display:grid; gap:1rem; padding:.75rem 1.5rem; }
+    .tl-cab{ position:sticky; top:0; z-index:2; background:#fbfcfb; border-bottom:1px solid rgba(30,41,59,.10); font-size:.875rem; font-weight:600; color:#5b6676; }
+    .tl-viag{ border-bottom:1px solid rgba(30,41,59,.07); align-items:start; padding-top:1rem; padding-bottom:1rem; cursor:pointer; }
+    .tl-viag.agenda-linha-sel{ background:#ecf8f3; }
+    .tl-esc{ grid-template-columns:120px 64px 64px minmax(0,1fr) 130px; }
+    .tl-ped{ grid-template-columns:150px minmax(0,1fr) 130px; }
+    .tl-data b{ display:block; font-size:1.05rem; font-weight:600; color:#0b2a5b; }
+    .tl-data span{ display:block; font-size:.875rem; color:#5b6676; text-transform:capitalize; }
+    .tl-hora{ font-size:1.05rem; font-weight:600; color:#0b2a5b; }
+    .tl-st{ margin-top:.5rem; } .tl-st .px-2{ display:inline-block; } .tl-dt{ display:block; font-size:.75rem; color:#5b6676; margin-top:2px; }
+    .tl-tit{ font-weight:600; color:#0b2a5b; }
+    .tl-tempo{ display:grid; grid-template-columns:repeat(8,1fr); position:relative; margin-top:.75rem; }
+    .tl-tempo::before{ content:""; position:absolute; left:6.25%; right:6.25%; top:9px; height:2px; background:#d8dfdc; }
+    .tl-tempo .tl-feito{ position:absolute; left:6.25%; top:9px; height:2px; background:#059669; }
+    .tl-tempo > div{ position:relative; text-align:center; padding:0 4px; font-size:.75rem; color:#5b6676; line-height:1.35; }
+    .tl-tempo > div::before{ content:""; display:block; margin:0 auto .5rem; width:20px; height:20px; border-radius:50%; border:2px solid #c8d1cd; background:#fff; box-sizing:border-box; }
+    .tl-tempo > div.ok::before{ background:#059669; border-color:#059669; }
+    .tl-tempo > div.ag::before{ border-color:#059669; box-shadow:0 0 0 4px #ecf8f3; }
+    .tl-tempo > div.x::before{ background:#b91c1c; border-color:#b91c1c; }
+    .tl-tempo > div > b{ display:block; font-size:.875rem; font-weight:500; color:#1e293b; }
+    .tl-tempo > div.ag > b{ color:#047857; font-weight:600; }
+    .tl-det{ display:block; margin-top:.5rem; padding-top:.5rem; border-top:1px dashed rgba(30,41,59,.10); color:#1e293b; }
+    .tl-det > *{ display:block; }
+    .tl-acoes{ display:flex; flex-direction:column; align-items:stretch; gap:.35rem; font-size:.8rem; }
+    .tl-acoes button{ font-size:.8rem !important; }
+    .tl-acoes > div, .tl-acoes > span{ display:flex; flex-direction:column; gap:.35rem; align-items:flex-start; }
+    @media (max-width:1100px){ .tl-cab{ display:none; } .tl-esc,.tl-ped{ grid-template-columns:1fr 1fr 1fr; } .tl-esc > .tl-corpo,.tl-esc > .tl-acoes,.tl-ped > .tl-corpo,.tl-ped > .tl-acoes{ grid-column:1/-1; } .tl-tempo{ grid-template-columns:repeat(4,1fr); row-gap:1rem; } .tl-tempo::before,.tl-tempo .tl-feito{ display:none; } }
+    /* Validação pedagógica: documento à esquerda, parecer à direita, janela mais baixa */
+    #validacaoPainel{ max-width:min(1420px,98vw); }
+    #validacaoPainel #validacaoInfo{ display:flex; flex-wrap:wrap; gap:.25rem 1.5rem; }
+    #validacaoPainel .val-corpo{ display:grid; grid-template-columns:minmax(0,1fr) 338px; gap:1rem; align-items:start; }
+    #validacaoPainel .val-doc{ margin-bottom:0; }
+    #validacaoPainel #validacaoDocPreview{ min-height:0 !important; height:max(400px, calc((100vh - 170px) * .7)); }
+    #validacaoPainel #validacaoDocPreview iframe{ height:100% !important; min-height:0 !important; }
+    @media (max-width:900px){ #validacaoPainel .val-corpo{ grid-template-columns:1fr; } }
+    #finParecerModal .bg-red-700{ background:#b91c1c; }
+    #finParecerModal [role=dialog] > div{ padding:1rem 1.5rem; }
+    .fin-ap > div{ min-width:0; } .fin-ap table{ table-layout:auto; }
+    .fin-kpis{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.75rem; }
+    .fin-kpis > div{ background:#fff; border:1px solid #dfe6e2; border-radius:12px; padding:.75rem 1rem; }
+    .fin-kpis p{ font-size:.8rem; color:#5b6676; } .fin-kpis b{ display:block; font-size:1.35rem; font-weight:600; font-variant-numeric:tabular-nums; }
+    .fin-ap{ border:1.5px solid #a9b8b1; border-left:6px solid #c2410c; border-radius:12px; background:#fff; padding:1rem 1.25rem; display:grid; grid-template-columns:minmax(0,1fr) 280px; gap:1.25rem; }
+    .fin-ap.def{ border-left-color:#047857; } .fin-ap.ind{ border-left-color:#b91c1c; }
+    .fin-ap .fin-via{ display:flex; flex-wrap:wrap; gap:.25rem 1.25rem; font-size:.85rem; color:#5b6676; } .fin-ap .fin-via b{ color:#1e293b; font-weight:500; }
+    .fin-ap table{ width:100%; border-collapse:collapse; margin-top:.75rem; font-size:.85rem; } .fin-ap th{ text-align:left; font-weight:500; color:#5b6676; border-bottom:1px solid #e5ebe8; padding:.25rem .5rem; } .fin-ap td{ padding:.45rem .5rem; border-bottom:1px solid #e5ebe8; } .fin-ap .n{ text-align:right; font-variant-numeric:tabular-nums; } .fin-ap tfoot td{ font-weight:600; border-bottom:0; }
+    .fin-ap .fin-lado{ border-left:1px solid #e5ebe8; padding-left:1.25rem; display:flex; flex-direction:column; gap:.75rem; } .fin-ap .fin-valor{ font-size:1.5rem; font-weight:700; color:#0f2e3a; font-variant-numeric:tabular-nums; }
+    @media (max-width:900px){ .fin-kpis{ grid-template-columns:repeat(2,minmax(0,1fr)); } .fin-ap{ grid-template-columns:1fr; } .fin-ap .fin-lado{ border-left:0; padding-left:0; border-top:1px solid #e5ebe8; padding-top:.75rem; } }
+    .tl-viag > div, .tl-tempo > div{ min-width:0; overflow-wrap:break-word; }
+    @media (max-width:640px){ .tl-esc,.tl-ped{ grid-template-columns:1.6fr 1fr 1fr !important; } .tl-tempo{ grid-template-columns:repeat(2,minmax(0,1fr)) !important; } }
+    @media (max-width:1100px){ .tl-tempo{ grid-template-columns:repeat(4,minmax(0,1fr)); } }
+    @media (max-width:640px){ body:not(.driver-mobile) main > header > .min-w-0{ overflow:hidden; } body:not(.driver-mobile) main > header #pageSubtitle{ display:none !important; } body:not(.driver-mobile) main > header #pageTitle{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } }
+    /* Admin e perfil administrativo: menu agrupado */
+    .menu-grupo{ position:relative; display:inline-flex; align-self:stretch; align-items:stretch; }
+    .top-nav-grupo{ display:inline-flex; align-items:center; margin:0 .1rem; padding:.75rem .75rem; font-size:.86rem; line-height:1.25rem; font-weight:500; color:#5b6676; background:transparent; border:0; border-bottom:2px solid transparent; cursor:pointer; font-family:inherit; }
+    .top-nav-grupo:hover{ color:#047857; }
+    .menu-grupo[hidden]{ display:none !important; }
+    .menu-grupo.ativo > .top-nav-grupo{ color:#047857; border-bottom-color:#059669; font-weight:600; }
+    .menu-grupo > .top-nav-grupo::after{ content:""; display:inline-block; margin-left:6px; border:4px solid transparent; border-top-color:currentColor; transform:translateY(2px); }
+    .menu-grupo-lista{ display:none; position:fixed; z-index:60; background:#fff; border:2px solid #059669; border-radius:10px; box-shadow:0 8px 24px rgba(15,23,42,.08); padding:4px; min-width:230px; }
+    .menu-grupo-lista.aberto{ display:block; }
+    .menu-grupo-lista .top-nav-link{ display:flex !important; width:100%; border:0 !important; margin:0 !important; padding:.55rem .75rem !important; border-radius:6px !important; }
+    .menu-grupo-lista .top-nav-link:hover,.menu-grupo-lista .top-nav-link.active{ background:#ecf8f3 !important; }
+    /* Admin: Agenda Mestra igual à de hoje, só com o novo visual */
+    body.agenda-tl #screen-agenda .agenda-table-wrap, body.agenda-tl #agendaCardsList{ display:none !important; }
+    .ag-dt{ display:block; margin-top:3px; font-size:.7rem; color:#5b6676; white-space:nowrap; }
   </style>
 </head>
 <body class="bg-slate-200 min-h-screen" data-page="app">
@@ -406,7 +528,7 @@
           </button>
           <img src="assets/logo_bora-la.png" alt="Bora Lá" class="hidden sm:block h-9 w-auto shrink-0" />
           <img id="driverTopIcon" src="assets/favicon-512.png" alt="" class="hidden" />
-          <img id="escolaPageFavicon" src="assets/favicon-512.png" alt="Bora Lá" class="hidden w-8 h-8 shrink-0" />
+          <img id="escolaPageFavicon" src="assets/icon-apk-motorista.png" alt="Bora Lá" class="hidden w-8 h-8 shrink-0" />
           <img id="markcarroPageFavicon" src="assets/markcarro-favicon.png" alt="MarkCarro" class="hidden w-8 h-8 shrink-0 rounded-lg" />
           <div class="min-w-0 flex-1"><p id="pageGreeting" class="hidden"></p><h1 class="text-xl font-bold text-slate-800 truncate" id="pageTitle">Dashboard</h1><p class="text-sm text-slate-500 truncate" id="pageSubtitle">Visão geral do sistema</p><p id="pageRoleName" class="hidden text-xs font-semibold text-emerald-700 mt-0.5"></p></div><div class="relative shrink-0">
             <button id="btnAjuda" onclick="abrirAjuda()" class="hidden h-9 w-9 rounded-full border border-emerald-200 bg-emerald-50 font-bold text-emerald-700 hover:bg-emerald-100" title="Ajuda" aria-label="Ajuda">?</button>
@@ -581,9 +703,10 @@
                 <span class="screen-kicker">Central de acompanhamento</span><strong id="pendenciasIntroTitulo" class="block text-base mt-0.5">Fila de tratativas</strong>
                 <span id="pendenciasIntroTexto" class="block mt-1 text-emerald-800">Solicitações mais recentes, em ordem cronológica.</span>
               </div>
+              <div class="pend-layout"><nav id="pendenciasNav" class="lado-nav" aria-label="Tipos de pendência"></nav><div class="pend-direita">
               <div class="screen-panel px-4 py-3 flex flex-wrap items-end gap-3">
                 <div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Data da viagem</label><input id="pendenciasFiltroData" type="date" onchange="renderPendencias()" class="px-3 py-2 border rounded-lg text-sm"></div>
-                <div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Tipo de pendência</label><select id="pendenciasFiltroTipo" onchange="renderPendencias()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todas</option><option value="novas">Novas solicitações</option><option value="validacao">Sem validação pedagógica</option><option value="proposta">Proposta aguardada</option><option value="semsetor">Sem setor responsável</option><option value="confirmacao">Confirmar viagem</option><option value="listagem">Listagens</option><option value="canceladas">Canceladas pela unidade</option><option value="financeiro">Aporte financeiro</option></select></div>
+                <div class="pend-tipo-wrap"><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Tipo de pendência</label><select id="pendenciasFiltroTipo" onchange="renderPendencias()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todas</option><option value="novas">Novas solicitações</option><option value="validacao">Sem validação pedagógica</option><option value="proposta">Proposta aguardada</option><option value="semsetor">Sem setor responsável</option><option value="confirmacao">Confirmar viagem</option><option value="listagem">Listagens</option><option value="canceladas">Canceladas pela unidade</option><option value="financeiro">Aporte financeiro</option></select></div>
                 <div><label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Público-alvo</label><select id="pendenciasFiltroPublico" onchange="renderPendencias()" class="min-w-52 px-3 py-2 border rounded-lg text-sm"><option value="">Todos os públicos</option></select></div>
                 <label id="pendenciasOcultarPassadasWrap" class="hidden flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700"><input id="pendenciasOcultarPassadas" type="checkbox" checked onchange="renderPendencias()"> Ocultar pendências passadas</label>
                 <button onclick="limparFiltrosPendencias()" class="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Limpar seleção</button>
@@ -593,10 +716,18 @@
                 <select id="pendenciasFiltroUnidade" onchange="renderPendencias()" class="w-full max-w-md px-3 py-2 border rounded-lg text-sm"><option value="">Todas as unidades</option></select>
               </div>
               <div id="pendenciasLista" class="lista-travada space-y-5"></div>
+              </div></div>
             </div>
           </section>
 
-          <section id="screen-financeiro" class="hidden-screen"><div class="screen-shell max-w-6xl space-y-4"><div class="screen-intro screen-intro--amber rounded-xl border border-orange-100 px-5 py-4"><span class="screen-kicker">Financeiro</span><h2 class="font-bold text-orange-950">Pendências e validações financeiras</h2><p class="mt-1 text-sm text-orange-800">O parecer financeiro não bloqueia a excursão nem altera sua aprovação.</p></div><div class="screen-panel p-4"><div id="financeRequestsList" class="space-y-3"></div></div></div></section>
+          <section id="screen-financeiro" class="hidden-screen"><div class="screen-shell max-w-6xl space-y-4"><div class="screen-intro screen-intro--amber rounded-xl border border-orange-100 px-5 py-4"><span class="screen-kicker">Financeiro</span><h2 class="font-bold text-orange-950">Pendências e validações financeiras</h2><p class="mt-1 text-sm text-orange-800">O parecer financeiro não bloqueia a excursão nem altera sua aprovação.</p></div>
+            <div id="finKpis" class="fin-kpis"></div>
+            <div class="pend-layout"><nav id="finNav" class="lado-nav" aria-label="Fila de aportes"></nav><div class="pend-direita"><div class="screen-panel p-4"><div class="flex flex-wrap items-end gap-3">
+              <label class="text-xs font-semibold text-slate-600">Data do pedido<input id="finFiltroPedido" type="date" onchange="renderFinanceLista()" class="mt-1 block rounded-lg border border-slate-300 px-3 py-2 text-sm"></label>
+              <label class="text-xs font-semibold text-slate-600">Data da viagem<input id="finFiltroViagem" type="date" onchange="renderFinanceLista()" class="mt-1 block rounded-lg border border-slate-300 px-3 py-2 text-sm"></label>
+              <label class="text-xs font-semibold text-slate-600">Unidade<select id="finFiltroUnidade" onchange="renderFinanceLista()" class="mt-1 block min-w-[200px] rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="">Todas</option></select></label>
+              <button type="button" onclick="limparFiltrosFinance()" class="px-3 py-2 text-sm font-semibold text-emerald-700">Limpar filtros</button></div></div>
+            <div class="screen-panel p-4"><div id="financeRequestsList" class="space-y-3"></div></div></div></div></div></section>
 
           <!-- AGENDA -->
           <section id="screen-agenda" class="hidden-screen">
@@ -672,6 +803,7 @@
                 </table>
               </div>
               <div id="agendaCardsList" class="agenda-cards-wrap space-y-3"></div>
+              <div id="agendaLinhaTempo" class="hidden agenda-tempo-wrap"></div>
             </div>
           </section>
 
@@ -1712,12 +1844,14 @@
                 <h3 class="font-semibold text-amber-950">Pendências da cooperativa</h3>
                 <p class="text-sm text-amber-800">ATF e transporte PCD encaminhados à sua cooperativa. O envio por e-mail permanece registrado no sistema.</p>
               </div>
+              <div class="pend-layout"><nav id="pendenciasCoopNav" class="lado-nav" aria-label="Filas da cooperativa"></nav><div class="pend-direita">
               <div class="screen-panel flex flex-wrap items-end gap-3 p-4">
                 <div><label class="mb-1 block text-xs font-medium text-slate-500">Data</label><input id="coopFiltroData" type="date" onchange="renderPendenciasCoop()" class="px-3 py-2 border rounded-lg text-sm"></div>
                 <div><label class="mb-1 block text-xs font-medium text-slate-500">Unidade</label><select id="coopFiltroUnidade" onchange="renderPendenciasCoop()" class="px-3 py-2 border rounded-lg text-sm"><option value="">Todas</option></select></div>
                 <button onclick="limparFiltrosCoop()" class="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Limpar filtros</button>
               </div>
               <div id="pendenciasCoopLista" class="lista-travada space-y-4"></div>
+              </div></div>
             </div>
           </section>
 
@@ -2218,16 +2352,17 @@
 
   <!-- MODAL VALIDAÇÃO PEDAGÓGICA (Pedagogia dá parecer / encaminha) -->
   <div id="validacaoModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-    <div class="bg-white rounded-2xl p-6 max-w-[1440px] w-full max-h-[90vh] overflow-y-auto">
+    <div id="validacaoPainel" class="bg-white rounded-2xl p-6 w-full max-h-[94vh] overflow-y-auto">
       <h3 class="font-bold text-lg mb-3">📋 Validação pedagógica</h3>
       <div id="validacaoInfo" class="bg-slate-50 border rounded-lg p-3 text-sm mb-4 grid grid-cols-2 gap-1"></div>
 
-      <div class="mb-4">
+      <div class="val-corpo">
+      <div class="mb-4 val-doc">
         <div class="mb-1 flex items-center justify-between gap-2"><label class="block text-sm font-medium">Documento enviado pela unidade</label><a id="validacaoDocLink" href="#" target="_blank" rel="noopener" class="hidden text-xs font-semibold text-blue-700 hover:text-blue-900">↗ Abrir documento em nova aba</a></div>
         <div id="validacaoDocPreview" class="border rounded-lg overflow-hidden bg-slate-50" style="min-height:62vh"></div>
       </div>
 
-      <div class="grid md:grid-cols-2 gap-4">
+      <div class="val-lado grid gap-4">
         <div class="border rounded-lg p-3">
           <h4 class="font-semibold text-sm mb-2">Parecer <span id="dicaParecer"></span></h4>
           <div id="parecerAviso" class="hidden mb-2 rounded-lg border px-3 py-2 text-xs"></div>
@@ -2253,6 +2388,7 @@
           <input id="encaminharMotivo" type="text" placeholder="Motivo do encaminhamento *" class="w-full px-3 py-2 border rounded-lg text-sm mb-2" />
           <button id="btnEncaminharValidacao" onclick="confirmEncaminhar()" class="w-full px-3 py-2 bg-blue-600 text-white rounded-lg text-sm">↪️ Encaminhar</button>
         </div>
+      </div>
       </div>
 
       <div class="flex justify-end mt-4">
@@ -2512,7 +2648,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=redefinir-senha-brevo-20261117-001"></script>
+  <script src="app.js?v=redesenho-financeiro-20261119-001"></script>
   <script>
     /* Ponte de compatibilidade: garante as ações críticas da Agenda Mestra
        quando o navegador ainda usa uma cópia anterior de app.js. */
@@ -2597,5 +2733,13 @@
       });
     })();
   </script>
+<div id="finParecerModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(15,23,42,.55)" onclick="if(event.target===this)fecharParecerFinance()">
+  <div class="w-full rounded-2xl bg-white shadow-xl" style="max-width:560px" role="dialog" aria-modal="true" aria-labelledby="finParecerTitulo">
+    <div class="border-b border-slate-200 px-6 py-4"><h3 id="finParecerTitulo" class="text-lg font-bold text-slate-900">Deferir aporte</h3><p id="finParecerViagem" class="text-sm text-slate-500"></p></div>
+    <div class="grid gap-4 px-6 py-4"><div class="flex items-baseline justify-between text-sm"><span class="text-slate-500">Valor solicitado</span><b id="finParecerValor" class="text-lg text-slate-900"></b></div>
+      <label class="text-sm font-semibold text-slate-700"><span id="finParecerRotulo">Parecer financeiro (opcional)</span><textarea id="finParecerTexto" rows="4" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal"></textarea></label></div>
+    <div class="flex justify-end gap-2 border-t border-slate-200 px-6 py-4"><button type="button" onclick="fecharParecerFinance()" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700">Voltar</button><button type="button" id="finParecerConfirmar" onclick="confirmarParecerFinance()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white">Deferir aporte</button></div>
+  </div>
+</div>
 </body>
 </html>

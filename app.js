@@ -966,6 +966,65 @@ async function loadRoleScreenPermissions() {
   roleScreenPermissions = data || [];
 }
 
+// ===== Redesenho: menu agrupado e navegação de Cadastros (Admin e perfil administrativo) =====
+const MENU_GRUPOS = [
+  { id: 'operacao', label: 'Operação', depoisDe: 'solicitacao', telas: ['financeiro', 'km', 'agendacombinada'] },
+  { id: 'cadastros', label: 'Cadastros', telas: ['unidades', 'veiculos', 'motoristas', 'cooperativas', 'usuarios', 'perfisacesso', 'validadores'] },
+  { id: 'comunicacao', label: 'Comunicação', telas: ['avisos', 'ajuda'] },
+  { id: 'markcarro', label: 'MarkCarro', depoisDe: 'relatorios', telas: ['carrosolicitacoes', 'carronova'] },
+];
+function menuAgrupadoAtivo() { return ['admin', 'operacional'].includes(currentUser?.role); }
+function montarMenuAgrupado() {
+  const nav = document.getElementById('topNav'); if (!nav) return;
+  if (!menuAgrupadoAtivo()) return;
+  if (!nav.dataset.agrupado) {
+    nav.dataset.agrupado = '1';
+    let ancora = nav.querySelector('.top-nav-link[data-screen="solicitacao"]');
+    MENU_GRUPOS.forEach((g) => {
+      const wrap = document.createElement('span'); wrap.className = 'menu-grupo'; wrap.dataset.grupo = g.id;
+      wrap.innerHTML = `<button type="button" class="top-nav-grupo" onclick="abrirGrupoMenu('${g.id}', this)">${g.label}</button><div class="menu-grupo-lista" data-lista="${g.id}"></div>`;
+      const lista = wrap.querySelector('.menu-grupo-lista');
+      g.telas.forEach((t) => { const a = nav.querySelector(`.top-nav-link[data-screen="${t}"]`); if (a) lista.appendChild(a); });
+      const ref = g.depoisDe ? nav.querySelector(`.top-nav-link[data-screen="${g.depoisDe}"]`) : ancora;
+      if (ref && ref.parentElement === nav) ref.after(wrap); else nav.appendChild(wrap);
+      ancora = wrap;
+    });
+    document.addEventListener('click', (e) => { if (!e.target.closest('.menu-grupo')) fecharGruposMenu(); });
+    window.addEventListener('scroll', fecharGruposMenu, { passive: true });
+  }
+  nav.querySelectorAll('.menu-grupo').forEach((w) => { w.hidden = ![...w.querySelectorAll('.top-nav-link')].some((a) => !a.hidden); });
+  atualizarGruposMenu();
+}
+function fecharGruposMenu() { document.querySelectorAll('.menu-grupo-lista.aberto').forEach((l) => l.classList.remove('aberto')); }
+function abrirGrupoMenu(id, btn) {
+  const lista = document.querySelector(`.menu-grupo-lista[data-lista="${id}"]`); if (!lista) return;
+  const abrir = !lista.classList.contains('aberto');
+  fecharGruposMenu();
+  if (!abrir) return;
+  const r = btn.getBoundingClientRect();
+  lista.style.top = `${r.bottom + 4}px`; lista.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 250))}px`;
+  lista.classList.add('aberto');
+}
+function atualizarGruposMenu() {
+  document.querySelectorAll('.menu-grupo').forEach((w) => w.classList.toggle('ativo', !!w.querySelector('.top-nav-link.active')));
+}
+// Cadastros: menu do grupo à esquerda (mesmas telas e permissões do menu de cima).
+function navCadastros(tela) {
+  const grupo = MENU_GRUPOS.find((g) => g.id === 'cadastros');
+  if (!menuAgrupadoAtivo() || !grupo.telas.includes(tela)) return;
+  const sec = document.getElementById('screen-' + tela); if (!sec) return;
+  let nav = sec.querySelector(':scope > .pend-layout > .cad-nav');
+  if (!nav) {
+    const grid = document.createElement('div'); grid.className = 'pend-layout';
+    nav = document.createElement('nav'); nav.className = 'lado-nav cad-nav'; nav.setAttribute('aria-label', 'Cadastros');
+    const dir = document.createElement('div'); dir.className = 'pend-direita';
+    while (sec.firstChild) dir.appendChild(sec.firstChild);
+    grid.appendChild(nav); grid.appendChild(dir); sec.appendChild(grid);
+  }
+  const rotulo = (t) => document.querySelector(`#topNav .top-nav-link[data-screen="${t}"]`)?.textContent.trim() || t;
+  nav.innerHTML = grupo.telas.filter((t) => canViewScreen(t)).map((t) => `<button type="button" class="${t === tela ? 'on' : ''}" onclick="showScreen('${t}')">${escapeHtml(rotulo(t))}</button>`).join('');
+}
+
 function applyRoleUI(role) {
   document.body.classList.toggle('pedagogia-compact', role === 'pedagogia');
   document.body.classList.toggle('driver-mobile', role === 'motorista');
@@ -974,6 +1033,7 @@ function applyRoleUI(role) {
   document.querySelectorAll('.sidebar-link, .top-nav-link').forEach((a) => {
     a.hidden = !canViewScreen(a.dataset.screen);
   });
+  montarMenuAgrupado();
   // Atalho de odômetro na lateral (não é um item de navegação de tela, por isso não usa
   // a classe .sidebar-link - evita ser tratado como uma tela navegável em outro lugar).
   const btnKmSidebar = document.getElementById('btnRegistrarOdometroSidebar');
@@ -2428,8 +2488,10 @@ function showScreen(name, el) {
   // Favicon no topo, junto ao título (exceto Motorista): do MarkCarro nas abas do MarkCarro, do Bora Lá nas demais.
   const telaMarkCarro = ['carrosolicitacoes', 'carronova'].includes(name);
   const comFavicon = !!currentUser && currentUser.role !== 'motorista';
-  document.getElementById('escolaPageFavicon')?.classList.toggle('hidden', !(comFavicon && !telaMarkCarro));
-  document.getElementById('markcarroPageFavicon')?.classList.toggle('hidden', !(comFavicon && telaMarkCarro));
+  // Redesenho: todas as telas (exceto Motorista) com o ícone do app do motorista.
+  document.getElementById('escolaPageFavicon')?.classList.toggle('hidden', !comFavicon);
+  document.getElementById('markcarroPageFavicon')?.classList.add('hidden');
+  void telaMarkCarro;
 
   // Ao trocar de tela, sempre atualiza os dados vindos do Supabase antes de redesenhar.
   // O desenho imediato evita tela vazia; o redesenho após o carregamento garante dados atuais.
@@ -2463,6 +2525,9 @@ function showScreen(name, el) {
   if (name === 'carronova') openCarroNova();
   safeIcons();
   agendarAjusteListasTravadas();
+  fecharGruposMenu();
+  atualizarGruposMenu();
+  navCadastros(name);
 }
 
 // Telas com listagem (desktop): título, menu e filtros parados; só a lista rola.
@@ -2625,28 +2690,113 @@ function openKmScreen() {
   renderKmTable();
 }
 
+let finFila = 'aguardando';
+let finDecisao = null;
+const FIN_STATUS = { solicitado: 'Solicitado', em_analise: 'Em análise', deferido: 'Deferido', indeferido: 'Indeferido' };
+const finBRL = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const finViagem = (f) => agenda.find((a) => a.finance_request_id === f.id) || agenda.find((a) => a.id === f.root_excursion_id);
+const finFilaDe = (f) => (['deferido', 'indeferido'].includes(f.status) ? f.status : 'aguardando');
+
 async function renderFinanceRequests() {
   const box = document.getElementById('financeRequestsList');
   if (!box || !['financeiro', 'admin'].includes(currentUser?.role)) return;
   const { data, error } = await sb.from('finance_requests').select('*').order('created_at', { ascending: true });
   if (error) { box.innerHTML = `<p class="text-sm text-red-600">Não foi possível carregar os aportes: ${escapeHtml(error.message)}</p>`; return; }
   financeRequests = data || [];
+  const sel = document.getElementById('finFiltroUnidade');
+  if (sel) {
+    const atual = sel.value;
+    const ids = [...new Set(financeRequests.map((f) => finViagem(f)?.school_id).filter(Boolean))];
+    sel.innerHTML = '<option value="">Todas</option>' + ids.map((id) => ({ id, nome: schoolName(id) })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')).map((u) => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.nome)}</option>`).join('');
+    sel.value = ids.includes(atual) ? atual : '';
+  }
+  renderFinanceLista();
+}
+
+function limparFiltrosFinance() {
+  ['finFiltroPedido', 'finFiltroViagem', 'finFiltroUnidade'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+  renderFinanceLista();
+}
+
+function escolherFilaFinance(fila) { finFila = fila; renderFinanceLista(); }
+
+function renderFinanceLista() {
+  const box = document.getElementById('financeRequestsList'); if (!box) return;
+  const ped = document.getElementById('finFiltroPedido')?.value || '';
+  const via = document.getElementById('finFiltroViagem')?.value || '';
+  const uni = document.getElementById('finFiltroUnidade')?.value || '';
+  const filtrados = financeRequests.filter((f) => {
+    const trip = finViagem(f);
+    if (ped && (f.created_at ? fmtDate(new Date(f.created_at)) : '') !== ped) return false;
+    if (via && trip?.trip_date !== via) return false;
+    if (uni && trip?.school_id !== uni) return false;
+    return true;
+  });
+  const mes = new Date().toISOString().slice(0, 7);
+  const aguard = financeRequests.filter((f) => finFilaDe(f) === 'aguardando');
+  const defMes = financeRequests.filter((f) => f.status === 'deferido' && String(f.decided_at || '').slice(0, 7) === mes);
+  const kp = document.getElementById('finKpis');
+  if (kp) kp.innerHTML = [['Aguardando parecer', aguard.length, '#b45309'], ['Valor aguardando', finBRL(aguard.reduce((s, f) => s + Number(f.requested_total || 0), 0)), '#0f2e3a'], ['Deferidos no mês', defMes.length, '#047857'], ['Valor deferido no mês', finBRL(defMes.reduce((s, f) => s + Number(f.approved_total ?? f.requested_total ?? 0), 0)), '#047857']].map(([r, v, c]) => `<div><p>${r}</p><b style="color:${c}">${v}</b></div>`).join('');
+  const filas = [['aguardando', 'Aguardando parecer'], ['deferido', 'Deferidos'], ['indeferido', 'Indeferidos'], ['todos', 'Todos']];
+  const nav = document.getElementById('finNav');
+  if (nav) nav.innerHTML = filas.map(([k, r]) => `<button type="button" class="${finFila === k ? 'on' : ''}" onclick="escolherFilaFinance('${k}')"><span>${r}</span><span class="qtd">${k === 'todos' ? filtrados.length : filtrados.filter((f) => finFilaDe(f) === k).length}</span></button>`).join('');
+  const lista = filtrados.filter((f) => finFila === 'todos' || finFilaDe(f) === finFila);
   if (!financeRequests.length) { box.innerHTML = '<p class="rounded-lg bg-slate-50 p-5 text-center text-sm text-slate-500">Nenhuma solicitação de aporte pendente.</p>'; return; }
-  box.innerHTML = financeRequests.map((f) => {
-    const trip = agenda.find((a) => a.finance_request_id === f.id) || agenda.find((a) => a.id === f.root_excursion_id);
-    const items = (f.items || []).map((i) => `${escapeHtml(i.description)} · ${i.quantity} · R$ ${Number(i.value || 0).toLocaleString('pt-BR',{minimumFractionDigits:2})}`).join('<br>');
-    const actions = currentUser?.role === 'financeiro' ? `<div class="flex gap-2 items-start"><button onclick="decideFinanceRequest('${f.id}','deferido')" class="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white">Deferir</button><button onclick="decideFinanceRequest('${f.id}','indeferido')" class="rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-bold text-red-700">Indeferir</button></div>` : '<span class="text-xs font-semibold text-slate-500">Consulta administrativa</span>';
-    return `<article class="rounded-xl border border-orange-200 bg-orange-50/50 p-4"><div class="flex flex-wrap justify-between gap-3"><div><span class="rounded-full bg-orange-100 px-2 py-1 text-xs font-bold text-orange-800">${escapeHtml(f.status)}</span><h3 class="mt-2 font-bold">${escapeHtml(originName(trip || {}))} → ${escapeHtml(trip?.destination || 'Excursão')}</h3><p class="text-sm text-slate-600">Valor solicitado: <strong>R$ ${Number(f.requested_total || 0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</strong></p><p class="mt-2 text-xs text-slate-600">${items}</p>${f.document_drive_url ? `<a href="${escapeHtml(f.document_drive_url)}" target="_blank" rel="noopener" class="mt-2 inline-block rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">📎 Abrir ${escapeHtml(f.document_filename || 'documento')}</a>` : f.document_filename ? `<p class="mt-2 text-xs text-orange-800">📎 ${escapeHtml(f.document_filename)}</p>` : ''}</div>${actions}</div></article>`;
+  if (!lista.length) { box.innerHTML = '<p class="rounded-lg bg-slate-50 p-5 text-center text-sm text-slate-500">Nenhum aporte nesta fila.</p>'; return; }
+  box.innerHTML = lista.map((f) => {
+    const trip = finViagem(f);
+    const cls = f.status === 'deferido' ? 'def' : f.status === 'indeferido' ? 'ind' : '';
+    const cor = f.status === 'deferido' ? 'text-emerald-700' : f.status === 'indeferido' ? 'text-red-700' : 'text-orange-700';
+    const desde = f.decided_at ? `em ${relData(f.decided_at)}` : (f.created_at ? `desde ${relData(f.created_at)}` : '');
+    const dados = [];
+    if (trip?.trip_date) dados.push(['Viagem', `${relData(trip.trip_date)}`]);
+    if (trip?.departure_time) dados.push(['Saída', String(trip.departure_time).slice(0, 5)]);
+    if (trip?.return_time) dados.push(['Retorno', String(trip.return_time).slice(0, 5)]);
+    if (trip) dados.push(['Passageiros', totalPassengers(trip)]);
+    if (trip?.requester_name) dados.push(['Solicitante', trip.requester_name]);
+    const linhas = (f.items || []).map((i) => `<tr><td>${escapeHtml(i.description || 'Item')}</td><td class="n">${escapeHtml(String(i.quantity ?? ''))}</td><td class="n">${finBRL(i.value)}</td></tr>`).join('');
+    const doc = f.document_drive_url ? `<a href="${escapeHtml(f.document_drive_url)}" target="_blank" rel="noopener" class="inline-block rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">📎 Abrir ${escapeHtml(f.document_filename || 'documento')}</a>` : f.document_filename ? `<p class="text-xs text-slate-500">📎 ${escapeHtml(f.document_filename)}</p>` : '';
+    const decidido = ['deferido', 'indeferido'].includes(f.status);
+    const acoes = currentUser?.role === 'financeiro'
+      ? `<div class="flex gap-2"><button onclick="decideFinanceRequest('${f.id}','deferido')" class="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white">Deferir</button><button onclick="decideFinanceRequest('${f.id}','indeferido')" class="flex-1 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-bold text-red-700">Indeferir</button></div>`
+      : '<span class="text-xs font-semibold text-slate-500">Consulta administrativa</span>';
+    const parecer = decidido ? `<p class="text-xs text-slate-600">${f.decided_by ? `Decidido por ${escapeHtml(relAgente(f.decided_by, false))}` : ''}${f.decision_comment ? `<br>"${escapeHtml(f.decision_comment)}"` : ''}</p>` : '';
+    return `<article class="fin-ap ${cls}"><div><div class="flex flex-wrap items-baseline justify-between gap-2"><span class="text-sm font-semibold ${cor}">● ${escapeHtml(FIN_STATUS[f.status] || f.status || 'Solicitado')} <span class="ml-1 text-xs font-normal text-slate-500">${desde}</span></span><span class="text-xs text-slate-500">${f.created_at ? 'pedido em ' + relData(f.created_at) : ''}</span></div>
+      <h3 class="mt-2 mb-1 font-semibold text-slate-900">${escapeHtml(originName(trip || {}))} → ${escapeHtml(trip?.destination || 'Excursão')}</h3>
+      <div class="fin-via">${dados.map(([r, v]) => `<span>${r} <b>${escapeHtml(String(v))}</b></span>`).join('')}</div>
+      <table><thead><tr><th>Item</th><th class="n">Qtd</th><th class="n">Valor</th></tr></thead><tbody>${linhas}</tbody><tfoot><tr><td>Total solicitado</td><td></td><td class="n">${finBRL(f.requested_total)}</td></tr></tfoot></table></div>
+      <div class="fin-lado"><div><p class="text-xs text-slate-500">Valor solicitado</p><div class="fin-valor">${finBRL(f.requested_total)}</div></div>${doc}${parecer}${acoes}</div></article>`;
   }).join('');
 }
 
-async function decideFinanceRequest(id, status) {
+function decideFinanceRequest(id, status) {
   const request = financeRequests.find((item) => item.id === id); if (!request) return;
-  const comment = window.prompt(status === 'indeferido' ? 'Motivo do indeferimento (opcional):' : 'Parecer financeiro (opcional):', request.decision_comment || '');
-  if (comment === null) return;
+  finDecisao = { id, status };
+  const trip = finViagem(request);
+  const ind = status === 'indeferido';
+  document.getElementById('finParecerTitulo').textContent = ind ? 'Indeferir aporte' : 'Deferir aporte';
+  document.getElementById('finParecerViagem').textContent = `${originName(trip || {})} → ${trip?.destination || 'Excursão'}${trip?.trip_date ? ', ' + relData(trip.trip_date) : ''}`;
+  document.getElementById('finParecerValor').textContent = finBRL(request.requested_total);
+  document.getElementById('finParecerRotulo').textContent = ind ? 'Motivo do indeferimento (opcional)' : 'Parecer financeiro (opcional)';
+  document.getElementById('finParecerTexto').value = request.decision_comment || '';
+  const btn = document.getElementById('finParecerConfirmar');
+  btn.textContent = ind ? 'Indeferir aporte' : 'Deferir aporte';
+  btn.className = `rounded-lg px-4 py-2 text-sm font-bold text-white ${ind ? 'bg-red-700' : 'bg-emerald-600'}`;
+  document.getElementById('finParecerModal').classList.remove('hidden');
+  document.getElementById('finParecerTexto').focus();
+}
+
+function fecharParecerFinance() { document.getElementById('finParecerModal')?.classList.add('hidden'); finDecisao = null; }
+
+async function confirmarParecerFinance() {
+  if (!finDecisao) return;
+  const { id, status } = finDecisao;
+  const request = financeRequests.find((item) => item.id === id); if (!request) return;
+  const comment = document.getElementById('finParecerTexto').value.trim();
   const approved = status === 'deferido' ? request.requested_total : null;
   const { error } = await sb.from('finance_requests').update({ status, approved_total: approved, decision_comment: comment || null, decided_by: currentUser.id, decided_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', id);
   if (error) { toast('❌ ' + error.message, true); return; }
+  fecharParecerFinance();
   toast(status === 'deferido' ? '✅ Aporte deferido.' : 'ℹ️ Aporte indeferido. A excursão permanece inalterada.'); renderFinanceRequests();
 }
 
@@ -3428,10 +3578,11 @@ async function renderAtfPcdCoop() {
       ? `<div class="mt-3 grid gap-2 md:grid-cols-2"><input id="pcdVeiculo-${a.id}" placeholder="Veículo (opcional)" class="border rounded-lg px-3 py-2 text-sm"><input id="pcdMotorista-${a.id}" placeholder="Motorista (opcional)" class="border rounded-lg px-3 py-2 text-sm"></div><div class="mt-3 flex flex-wrap gap-2"><button onclick="confirmarPcdCoop('${a.id}')" class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white">Confirmar atendimento</button>${dicaHtml('coop_pcd')}<button onclick="rejeitarPcdCoop('${a.id}')" class="rounded-lg border border-red-200 px-3 py-2 text-sm font-bold text-red-700">Recusar</button></div>`
       : `<div class="mt-3 flex flex-wrap gap-2"><button onclick="aceitarAtfCoop('${a.id}')" class="rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-white">Aprovar e emitir ATF</button>${dicaHtml('coop_atf')}<button onclick="rejeitarAtfCoop('${a.id}')" class="rounded-lg border border-red-200 px-3 py-2 text-sm font-bold text-red-700">Reprovar</button></div>`);
     const detalhe = pcdCard ? `${a.pca_count || 0} estudante(s) PCD + ${a.apoio_count || 0} apoio(s)` : (qtd ? `${qtd} passageiros na listagem` : 'listagem em arquivo ou ainda não digitada');
-    return `<article class="rounded-xl border border-slate-200 border-l-4 ${borda} bg-white p-4 shadow-sm"><div class="flex flex-wrap gap-2">${tipoPill}${stPill}</div>
+    return `<article class="coop-card rounded-xl border border-slate-200 border-l-4 ${borda} bg-white p-4 shadow-sm" style="border-left-color:${pcdCard ? '#6d28d9' : '#a16207'}"><div class="flex flex-wrap gap-2">${tipoPill}${stPill}</div>
       <div class="mt-2 text-sm font-bold text-slate-800">${a.trip_date ? new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'} · ${horaComH(a.departure_time)} → ${horaComH(a.return_time)}</div>
       <h3 class="mt-1 font-bold text-slate-800">${escapeHtml(originName(a))} <span class="text-slate-400">→</span> ${escapeHtml(a.destination || '-')}</h3>
-      <p class="mt-1 text-xs text-slate-600">Motorista(s): ${motoristas || 'não informado'}<br>${detalhe}${info.envio ? ` · pedido em ${coopFmtData(info.envio)}` : ''}${info.motivo ? `<br><b>Motivo:</b> ${escapeHtml(info.motivo)}` : ''}</p>
+      <div class="coop-motorista"><span>Motorista(s)</span><b>${motoristas || 'não informado'}</b></div>
+      <p class="mt-1 text-xs text-slate-600">${detalhe}${info.envio ? ` · pedido em ${coopFmtData(info.envio)}` : ''}${info.motivo ? `<br><b>Motivo:</b> ${escapeHtml(info.motivo)}` : ''}</p>
       <div class="mt-3 flex flex-wrap gap-2">${listaBtns}</div>${acoes}</article>`;
   };
   box.innerHTML = lista.length ? lista.map(card).join('') : '<p class="rounded-xl bg-slate-50 p-6 text-center text-sm text-slate-500 md:col-span-2 xl:col-span-3">Nenhum pedido de ATF ou PCD encontrado com esses filtros.</p>';
@@ -3462,6 +3613,7 @@ async function verListagemCoop(id, tipo) {
   document.body.appendChild(m);
 }
 
+let coopFila = ''; // Pendências da cooperativa: '' (todas), 'atf' ou 'pcd'
 async function renderPendenciasCoop() {
   if (telaAtivaCoop('atfpcdcoop')) return renderAtfPcdCoop();
   const box = document.getElementById('pendenciasCoopLista'); if (!box) return;
@@ -3528,16 +3680,23 @@ async function renderPendenciasCoop() {
       : `<div class="mt-3 flex flex-wrap gap-2"><button onclick="aceitarAtfCoop('${a.id}')" class="rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-white">Aprovar e emitir ATF</button>${dicaHtml('coop_atf')}<button onclick="rejeitarAtfCoop('${a.id}')" class="rounded-lg border border-red-200 px-3 py-2 text-sm font-bold text-red-700">Reprovar</button></div>`;
     const tone = pcdCard ? 'border-blue-200 bg-blue-50/40' : 'border-amber-200 bg-amber-50/40';
     const badge = pcdCard ? '<span class="rounded-full bg-blue-100 px-3 py-1 text-sm font-extrabold text-blue-700">♿ Transporte e lista PCD</span>' : '<span class="rounded-full bg-amber-100 px-3 py-1 text-sm font-extrabold text-amber-800">🕒 ATF aguardando emissão</span>';
-    return `<article class="rounded-xl border ${tone} p-4 shadow-sm">${badge}
+    return `<article class="coop-card rounded-xl border ${tone} p-4 shadow-sm" style="border-left-color:${pcdCard ? '#6d28d9' : '#a16207'}">${badge}
       <h3 class="mt-2 font-bold text-slate-800">${escapeHtml(originName(a))} <span class="text-slate-400">→</span> ${escapeHtml(a.destination || '-')}</h3>
       <div class="mt-1 text-sm"><b>${a.trip_date ? new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR') : '-'}</b> | <b>${horaComH(a.departure_time)} → ${horaComH(a.return_time)}</b>${extra}</div>
       <p class="mt-1 text-sm font-semibold text-violet-700">Público-alvo: ${escapeHtml(publicoAlvoLabel(a.validation_target_id || a.publico_alvo))}</p>
       <div class="mt-1 text-sm"><b>Origem:</b> ${escapeHtml(originName(a))}${originAddress(a) ? ` <span class="text-xs text-slate-500">→ ${escapeHtml(originAddress(a))}</span>` : ''}</div>
       <div class="text-sm"><b>Destino:</b> ${escapeHtml(a.destination || '-')}${destinoEnd ? ` <span class="text-xs text-slate-500">→ ${escapeHtml(destinoEnd)}</span>` : ''}</div>
-      <div class="mt-1 text-[12px] font-medium text-slate-600">Motorista(s) escalado(s): ${motoristas || 'não informado'}</div>
-    </article><div class="-mt-3 rounded-b-xl border border-t-0 bg-white px-4 pb-4 pt-5 shadow-sm">${listaBtns ? `<div class="flex flex-wrap gap-2">${listaBtns}</div>` : ''}${acoes}</div>`;
+      <div class="coop-motorista"><span>Motorista(s) escalado(s)</span><b>${motoristas || 'não informado'}</b></div>
+    </article><div class="coop-card -mt-3 rounded-b-xl border border-t-0 bg-white px-4 pb-4 pt-5 shadow-sm" style="border-left-color:${pcdCard ? '#6d28d9' : '#a16207'}">${listaBtns ? `<div class="flex flex-wrap gap-2">${listaBtns}</div>` : ''}${acoes}</div>`;
   };
-  box.innerHTML = `${pendenciaBloco('ATF para emissão', 'Solicitações que aguardam a confirmação de emissão pela cooperativa.', atf.map((a) => makeCard(a, 'atf')), '📄', 'amber')}${pendenciaBloco('Transporte e listagem PCD', 'Atendimentos adaptados encaminhados para confirmação.', pcd.map((a) => makeCard(a, 'pcd')), '♿', 'blue')}`;
+  const blocoAtf = pendenciaBloco('ATF para emissão', 'Solicitações que aguardam a confirmação de emissão pela cooperativa.', atf.map((a) => makeCard(a, 'atf')), '📄', 'amber');
+  const blocoPcd = pendenciaBloco('Transporte e listagem PCD', 'Atendimentos adaptados encaminhados para confirmação.', pcd.map((a) => makeCard(a, 'pcd')), '♿', 'blue');
+  box.innerHTML = (coopFila === 'atf' ? blocoAtf : coopFila === 'pcd' ? blocoPcd : blocoAtf + blocoPcd);
+  const navCoop = document.getElementById('pendenciasCoopNav');
+  if (navCoop) {
+    const item = (f, label, n) => `<button type="button" class="${coopFila === f ? 'on' : ''}" onclick="coopFila='${f}';renderPendenciasCoop()">${label}<span>${n}</span></button>`;
+    navCoop.innerHTML = item('', 'Todas', atf.length + pcd.length) + item('atf', 'ATF para emissão', atf.length) + item('pcd', 'Transporte e listagem PCD', pcd.length);
+  }
   safeIcons();
 }
 
@@ -4105,7 +4264,7 @@ function filtrarAgendaAmanha() {
 let agendaLinhaSelecionada = null;
 function selecionarLinhaAgenda(id) {
   agendaLinhaSelecionada = id;
-  document.querySelectorAll('tr[data-agenda-id]').forEach((tr) => tr.classList.toggle('agenda-linha-sel', tr.dataset.agendaId === id));
+  document.querySelectorAll('tr[data-agenda-id], .tl-viag[data-agenda-id]').forEach((tr) => tr.classList.toggle('agenda-linha-sel', tr.dataset.agendaId === id));
   atualizarBotaoEmailUnidade();
 }
 // Admin › Agenda: e-mail livre para a unidade da linha selecionada.
@@ -4175,6 +4334,61 @@ async function sendEmailUnidade() {
   toast(`❌ Não foi possível enviar. ${ultimoErroEnvioAutomatico || ''}`, true);
 }
 
+// Agenda (Escola e Pedagogia): oito paradas da viagem, com os dados de cada etapa embaixo.
+function linhaTempoAgenda(a, c) {
+  const txt = (html) => String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const aprovada = a.admin_decision === 'aprovada';
+  const reprovada = a.admin_decision === 'reprovada' || a.situacao === 'reprovada';
+  const cancelada = a.situacao === 'cancelada';
+  const exigeLista = c.precisaAtf || c.exigePcd;
+  const st = [];
+  // 1. Pedido
+  st.push({ nome: 'Pedido', cls: 'ok', nota: c.dt(a.created_at) || '—', det: [escapeHtml(a.requester_name || ''), `${c.totalPax} passageiros`, `${a.students_count || 0} alunos, ${a.companions_count || 0} acomp.${a.pca_count ? `, ${a.pca_count} PCD e ${a.apoio_count || 0} apoio` : ''}`] });
+  // 2. Proposta
+  const ds = a.doc_status || 'nao_enviado';
+  const docNota = { aceito: 'aprovada', rejeitado: 'rejeitada', correcoes: 'correções solicitadas', em_analise: 'em análise', solicitada: 'solicitada à unidade', nao_enviado: 'não enviada' }[ds] || (DOC_STATUS_LABELS[ds] || ds);
+  st.push({ nome: 'Proposta', cls: ds === 'aceito' ? 'ok' : ds === 'rejeitado' ? 'x' : (aprovada ? 'ok' : ''), nota: docNota,
+    det: [a.doc_parecer_em ? `${ds === 'aceito' ? 'Parecer' : 'Análise'} em ${c.dt(a.doc_parecer_em)}` : (a.doc_uploaded_at ? `Enviada em ${c.dt(a.doc_uploaded_at)}` : ''), escapeHtml(validatorFullName(a.doc_parecer_por) || '')] });
+  // 3. Aprovação
+  st.push({ nome: 'Aprovação', cls: aprovada ? 'ok' : reprovada ? 'x' : '', nota: aprovada ? (c.dt(a.admin_decision_at) || 'aprovada') : reprovada ? 'reprovada' : 'aguardando',
+    det: [a.admin_decision_by && (aprovada || reprovada) ? escapeHtml(relAgente(a.admin_decision_by, false)) : ''] });
+  // 4. Atribuição de motorista
+  const temMot = (a.driver_ids || []).length > 0 && c.exibeMotoristas;
+  st.push({ nome: 'Motorista', cls: temMot ? 'ok' : '', nota: temMot ? 'atribuído' : 'aguardando', det: [temMot ? txt(c.motoristasCell) : ''] });
+  // 5. Listagem
+  const ls = a.listagem_status || 'nao_enviada';
+  st.push(!exigeLista ? { nome: 'Listagem', cls: 'ok', nota: 'não precisa', det: [] } : {
+    nome: 'Listagem', cls: ls === 'aceita' ? 'ok' : ls === 'rejeitada' ? 'x' : '',
+    nota: ls === 'aceita' ? `aceita ${c.dt(a.listagem_parecer_em || a.atf_lista_conferida_em)}`.trim() : ls === 'enviada' ? `enviada ${c.dt(a.listagem_enviada_em)}`.trim() : ls === 'rejeitada' ? 'rejeitada' : 'aguardando',
+    det: [txt(c.listaEscolaCell) !== '—' ? `Envio: ${txt(c.listaEscolaCell)}` : '', txt(c.conferenciaCell) !== '—' ? `Conferência: ${txt(c.conferenciaCell)}` : ''] });
+  // 6. ATF e PCD
+  const atfOk = !c.precisaAtf || a.atf_status === 'emitida' || a.atf_status === 'nao_precisa';
+  const pcdOk = !c.exigePcd || !!a.pcd_cooperativa_confirmado_em;
+  const atfRec = a.atf_cooperativa_response === 'rejeitada' || a.pcd_cooperativa_response === 'negada';
+  st.push(!exigeLista && a.atf_status === 'nao_precisa' ? { nome: 'ATF e PCD', cls: 'ok', nota: 'não precisa', det: [] } : {
+    nome: 'ATF e PCD', cls: atfRec ? 'x' : (atfOk && pcdOk ? 'ok' : ''),
+    nota: atfRec ? 'recusada' : (a.atf_status === 'emitida' ? `emitida ${c.dt(a.atf_emitida_em || a.atf_cooperativa_response_at)}`.trim() : (ATF_LABELS[a.atf_status] || '—').toLowerCase()),
+    det: [txt(c.envioCoopCell) !== '—' ? txt(c.envioCoopCell) : ''] });
+  // 7. Confirmação
+  st.push({ nome: 'Confirmação', cls: a.escola_confirmada_em ? 'ok' : '', nota: a.escola_confirmada_em ? c.dt(a.escola_confirmada_em) : 'pendente', det: [] });
+  // 8. Viagem
+  st.push({ nome: 'Viagem', cls: a.status === 'completed' ? 'ok' : (cancelada ? 'x' : ''), nota: a.status === 'completed' ? 'concluída' : a.status === 'in_transit' ? 'em andamento' : cancelada ? 'cancelada' : '—', det: [] });
+  let k = st.findIndex((e) => e.cls !== 'ok'); if (k < 0) k = st.length - 1;
+  if (st[k].cls === '') st[k].cls = 'ag';
+  const feito = Math.max(0, k) / 7;
+  const etapas = st.map((e) => `<div class="${e.cls}"><b>${e.nome}</b>${e.nota}<span class="tl-det">${e.det.filter(Boolean).map((d) => `<span>${d}</span>`).join('') || '<span>—</span>'}</span></div>`).join('');
+  const tempo = `<div class="tl-tempo"><i class="tl-feito" style="width:calc((100% - 12.5%) * ${feito})"></i>${etapas}</div>`;
+  const destinoTxt = [a.destination, a.city].filter(Boolean).join(', ');
+  const titulo = `<div class="tl-tit">${escapeHtml(originName(a) || '')} para ${escapeHtml(destinoTxt)}</div>`;
+  const status = `<div class="tl-st">${c.situacaoStatusHtml}${a.situacao_em ? `<span class="tl-dt">desde ${c.dt(a.situacao_em)}</span>` : ''}</div>`;
+  const acoes = `<div class="tl-acoes">${c.temAcoes ? c.acoes : ''}</div>`;
+  const sel = agendaLinhaSelecionada === a.id ? ' agenda-linha-sel' : '';
+  if (c.role === 'escola') {
+    return `<article data-agenda-id="${a.id}" onclick="selecionarLinhaAgenda('${a.id}')" class="tl-viag tl-esc${sel}"><div class="tl-data"><b>${c.dataFmt}</b><span>${c.diaSemana}, ${c.turnoLabel}</span>${status}</div><div class="tl-hora">${hhmm(a.departure_time)}</div><div class="tl-hora">${hhmm(a.return_time)}</div><div class="tl-corpo">${titulo}${tempo}</div>${acoes}</article>`;
+  }
+  return `<article data-agenda-id="${a.id}" onclick="selecionarLinhaAgenda('${a.id}')" class="tl-viag tl-ped${sel}"><div class="tl-data"><b>${c.dataFmt}</b><span>${c.diaSemana}, ${c.turnoLabel}</span><span>Saída ${hhmm(a.departure_time)}</span><span>Retorno ${hhmm(a.return_time)}</span>${status}</div><div class="tl-corpo">${titulo}${tempo}</div>${acoes}</article>`;
+}
+
 function renderAgenda() {
   atualizarBotaoEmailUnidade();
   const roleVeUnidade = currentUser && (currentUser.role === 'admin' || currentUser.role === 'pedagogia' || (currentUser.role === 'operacional' && canViewScreen('agenda')));
@@ -4228,7 +4442,13 @@ function renderAgenda() {
     }
   }
 
+  // Redesenho: Escola e Pedagogia veem a Agenda como linha do tempo (mesmos dados e botões).
+  const usaLinhaTempo = ['escola', 'pedagogia'].includes(currentUser?.role);
+  document.body.classList.toggle('agenda-tl', usaLinhaTempo);
+  const tlWrap = document.getElementById('agendaLinhaTempo');
+  if (tlWrap) tlWrap.classList.toggle('hidden', !usaLinhaTempo);
   if (filtered.length === 0) {
+    if (tlWrap && usaLinhaTempo) tlWrap.innerHTML = '<p class="text-center py-8 text-slate-500 text-sm">Nenhuma viagem encontrada</p>';
     tbody.innerHTML = `<tr><td colspan="${currentUser?.role === 'escola' ? 17 : 16}" class="text-center py-8 text-slate-500 text-sm">Nenhuma viagem encontrada</td></tr>`;
     if (cardsWrapVazio) cardsWrapVazio.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm bg-white border rounded-lg" data-placeholder="1">Nenhuma viagem encontrada</div>';
     return;
@@ -4522,6 +4742,7 @@ function renderAgenda() {
       }).join('<br>');
       const viagensIndicadas = motoristaVinculado ? numeroViagensIndicadas(a) : 1;
 
+      const dataAtfReg = dt(a.atf_emitida_em || a.atf_cooperativa_response_at || a.atf_cooperativa_enviado_em);
       const tr = `
     <tr data-agenda-id="${a.id}" onclick="selecionarLinhaAgenda('${a.id}')" class="hover:bg-slate-50${agendaLinhaSelecionada === a.id ? ' agenda-linha-sel' : ''}">
       <td class="px-4 py-3 text-sm">
@@ -4548,9 +4769,9 @@ function renderAgenda() {
         <div>${a.requester_name || '-'}</div>
       </td>
       <td class="px-4 py-3 text-xs text-slate-500">${validacaoPedagogicaCell}</td>
-      <td class="px-4 py-3">${atfCell}</td>
+      <td class="px-4 py-3">${atfCell}${dataAtfReg ? `<span class="ag-dt">desde ${dataAtfReg}</span>` : ''}</td>
       <td class="px-4 py-3">${situacaoCell}</td>${confirmarViagemTd}
-      <td class="px-4 py-3">${statusCell}</td>
+      <td class="px-4 py-3">${statusCell}${a.situacao_em ? `<span class="ag-dt">desde ${dt(a.situacao_em)}</span>` : ''}</td>
       <td class="px-4 py-3 text-xs">${motoristasCell}</td>
       <td class="px-4 py-3 whitespace-nowrap">${acoes}</td>
       <td class="px-4 py-3 text-sm text-center">${listaEscolaCell}</td>
@@ -4562,6 +4783,10 @@ function renderAgenda() {
       // lado a lado) - segue o mesmo modelo de planilha que os motoristas já usam hoje:
       // Data/Turno, Saída/Retorno, Origem, Destino, Passageiros, ATF e Motorista(s) em
       // destaque; Situação como selo colorido no topo; as mesmas ações de sempre embaixo.
+      const tl = usaLinhaTempo ? linhaTempoAgenda(a, {
+        role, dt, totalPax, dataFmt, diaSemana, turnoLabel, acoes, temAcoes, motoristasCell, exibeMotoristas,
+        situacaoStatusHtml: situacaoBase, precisaAtf, exigePcd, listaEscolaCell, conferenciaCell, envioCoopCell,
+      }) : '';
       const card = `
     <div class="${ehMotorista ? 'driver-trip-card' : 'border'} ${canceladaHojeMotorista ? 'border-l-4 border-red-600 bg-red-50/40' : 'bg-white'} rounded-lg overflow-hidden shadow-sm" data-horario="${a.departure_time || ''}">
       <div class="px-4 py-2.5 flex items-center justify-between gap-2 ${canceladaHojeMotorista ? 'bg-red-50 border-b border-red-100' : 'bg-slate-50 border-b border-slate-100'}">
@@ -4618,9 +4843,15 @@ function renderAgenda() {
       ${temAcoes ? `<div class="px-4 py-3 border-t border-slate-100 bg-slate-50 flex flex-wrap gap-x-1 gap-y-2">${acoes}</div>` : ''}
     </div>`;
 
-      return { tr, card };
+      return { tr, card, tl };
     });
   tbody.innerHTML = linhas.map((l) => l.tr).join('');
+  if (tlWrap && usaLinhaTempo) {
+    const cab = role === 'escola'
+      ? '<div class="tl-cab tl-esc"><span>Data da viagem</span><span>Saída</span><span>Retorno</span><span>Viagem e evolução</span><span>Ações</span></div>'
+      : '<div class="tl-cab tl-ped"><span>Data da viagem</span><span>Viagem e evolução</span><span>Ações</span></div>';
+    tlWrap.innerHTML = cab + linhas.map((l) => l.tl).join('');
+  }
   if (cardsWrap) cardsWrap.innerHTML = linhas.map((l) => l.card).join('');
 }
 
@@ -5468,9 +5699,24 @@ function pendenciaCard(a, { badge, tone = 'amber', detail = '', action = '' } = 
   </article>`;
 }
 
+// Pendências: tipos à esquerda com o total de cada um (substitui visualmente o campo "Tipo de pendência").
+function navPendencias(blocos, tipoFiltro, extras = []) {
+  const nav = document.getElementById('pendenciasNav'); if (!nav) return;
+  const sel = document.getElementById('pendenciasFiltroTipo');
+  const qtd = {}; let total = 0;
+  blocos.forEach(([tipo, html]) => { const n = (String(html).match(/data-qtd="(\d+)"/g) || []).reduce((t, m) => t + Number(m.replace(/\D/g, '')), 0); qtd[tipo] = (qtd[tipo] || 0) + n; total += n; });
+  const tipos = [...new Set([...blocos.map(([t]) => t), ...extras])];
+  const rotulo = (t) => [...(sel?.options || [])].find((o) => o.value === t)?.textContent || t;
+  const item = (t, label, n) => `<button type="button" data-tipo="${t}" class="${(tipoFiltro || '') === t ? 'on' : ''}" onclick="escolherTipoPendencia('${t}')">${escapeHtml(label)}<span data-qtd-tipo="${t}">${n === '' ? '' : n}</span></button>`;
+  nav.innerHTML = item('', 'Todas', total) + tipos.map((t) => item(t, rotulo(t), t in qtd ? qtd[t] : '')).join('');
+}
+function escolherTipoPendencia(tipo) {
+  const sel = document.getElementById('pendenciasFiltroTipo'); if (sel) sel.value = tipo;
+  renderPendencias();
+}
 function pendenciaBloco(titulo, subtitulo, cards, icon, tone, extraCabecalho = '') {
   const colors = { emerald: 'text-emerald-700 bg-emerald-50 border-emerald-100', amber: 'text-amber-700 bg-amber-50 border-amber-100', blue: 'text-blue-700 bg-blue-50 border-blue-100', red: 'text-red-700 bg-red-50 border-red-100' };
-  return `<section class="screen-panel p-4">
+  return `<section class="screen-panel p-4" data-qtd="${cards.length}">
     <div class="mb-3 flex items-center justify-between gap-3"><div class="flex items-start gap-3"><span class="grid h-10 w-10 place-items-center rounded-xl border text-lg ${colors[tone] || colors.amber}">${icon}</span><div><h2 class="font-bold text-slate-800">${titulo}</h2><p class="text-xs text-slate-500 mt-0.5">${subtitulo}</p></div></div><div class="flex items-center gap-2">${extraCabecalho}<span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">${cards.length}</span></div></div>
     <div class="space-y-3">${cards.length ? cards.join('') : '<p class="rounded-lg bg-slate-50 px-3 py-4 text-center text-sm text-slate-400">Nenhum item nesta fila.</p>'}</div>
   </section>`;
@@ -5646,6 +5892,7 @@ function renderPendencias() {
       ['canceladas', pendenciaBloco('Canceladas pela unidade', 'Também chegam como notificação para o Admin e o motorista.', canceladasPelaUnidade.map((a) => pendenciaCard(a, { badge: 'Cancelada pela unidade', tone: 'red', detail: escapeHtml(a.cancel_reason || 'Sem motivo informado.') })), '🚫', 'red')],
     ];
     container.innerHTML = blocos.filter(([tipo]) => !tipoFiltro || tipoFiltro === tipo).map(([, html]) => html).join('') || '<p class="rounded-xl bg-slate-50 p-6 text-center text-sm text-slate-500">Nenhuma pendência para este filtro.</p>';
+    navPendencias(blocos, tipoFiltro, sb ? ['financeiro'] : []);
     if ((!tipoFiltro || tipoFiltro === 'financeiro') && sb) {
       sb.from('finance_requests').select('*').in('status', ['solicitado', 'em_analise']).order('created_at', { ascending: true }).then(({ data, error }) => {
         if (error || !data?.length) return;
@@ -5662,6 +5909,7 @@ function renderPendencias() {
         });
         const empty = container.querySelector('p.rounded-xl.bg-slate-50'); if (empty && tipoFiltro === 'financeiro') empty.remove();
         container.insertAdjacentHTML('beforeend', pendenciaBloco('Aporte financeiro', 'Solicitações encaminhadas ao setor financeiro.', cards, '💲', 'amber'));
+        const qf = document.querySelector('#pendenciasNav [data-qtd-tipo="financeiro"]'); if (qf) qf.textContent = cards.length;
         safeIcons();
       });
     }
@@ -5692,6 +5940,7 @@ function renderPendencias() {
       ['listagem', pendenciaBloco('Correções em Listagem PCD', 'A unidade deve revisar os dados de estudante PCD e respectivo apoio.', pcdPendentes.map((a) => pendenciaCard(a, { badge: 'Lista PCD pendente', tone: 'amber', detail: escapeHtml(a.pcd_list_reason || 'Revise a listagem PCD.'), action: `<button onclick="openPcdCorrectionModal('${a.id}')" class="shrink-0 rounded-lg bg-amber-600 px-3 py-2 text-sm font-bold text-white">Refazer listagem PCD</button>` })), '♿', 'amber')],
     ];
     container.innerHTML = blocosEscola.filter(([tipo]) => !tipoFiltro || tipoFiltro === tipo).map(([, html]) => html).join('') || '<p class="rounded-xl bg-slate-50 p-6 text-center text-sm text-slate-500">Nenhuma pendência para este filtro.</p>';
+    navPendencias(blocosEscola, tipoFiltro);
   } else {
     const botaoValidacao = (a) => `<button onclick="abrirValidacaoDaPendencia('${a.id}')" class="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-700">Abrir solicitação</button>`;
     const blocosPedagogia = [
@@ -5700,6 +5949,7 @@ function renderPendencias() {
       ['proposta', pendenciaBloco('Proposta aguardando da unidade', 'Pedido do Admin ou correção solicitada pela Pedagogia.', filaPedagogia(reenvio).map((a) => pendenciaCard(a, { badge: a.doc_status === 'solicitada' ? 'Solicitada pelo Admin' : 'Aguardando reenvio', tone: 'blue', detail: escapeHtml(a.doc_parecer_comentario || 'Aguardando proposta pedagógica da unidade.'), action: botaoValidacao(a) })), '📄', 'blue')],
     ];
     container.innerHTML = blocosPedagogia.filter(([tipo]) => !tipoFiltro || tipoFiltro === tipo).map(([, html]) => html).join('') || '<p class="rounded-xl bg-slate-50 p-6 text-center text-sm text-slate-500">Nenhuma pendência para este filtro.</p>';
+    navPendencias(blocosPedagogia, tipoFiltro);
   }
 }
 
@@ -10125,6 +10375,28 @@ function populateRelatorioFilters() {
   const podeEnviar = currentUser?.role === 'admin';
   document.getElementById('btnEnviarEscala')?.classList.toggle('hidden', !podeEnviar);
   document.getElementById('btnConfigurarEmailsEscala')?.classList.toggle('hidden', !podeEnviar);
+  navRelatorios();
+}
+
+// Relatórios: os tipos liberados ficam numa lista à esquerda (mesmo campo "Tipo de relatório" por baixo).
+function navRelatorios() {
+  const tipo = document.getElementById('relTipo'); const sec = document.getElementById('screen-relatorios');
+  if (!tipo || !sec) return;
+  let nav = document.getElementById('relNav');
+  if (!nav) {
+    const painel = sec.firstElementChild;
+    const grid = document.createElement('div'); grid.className = 'pend-layout';
+    nav = document.createElement('nav'); nav.id = 'relNav'; nav.className = 'lado-nav'; nav.setAttribute('aria-label', 'Tipos de relatório');
+    const dir = document.createElement('div'); dir.className = 'pend-direita';
+    sec.insertBefore(grid, painel); grid.appendChild(nav); grid.appendChild(dir); dir.appendChild(painel);
+    tipo.closest('div')?.classList.add('hidden');
+    tipo.addEventListener('change', navRelatorios);
+  }
+  nav.innerHTML = [...tipo.options].filter((o) => !o.hidden && !o.disabled).map((o) => `<button type="button" class="${o.value === tipo.value ? 'on' : ''}" onclick="escolherRelatorio('${o.value}')">${escapeHtml(o.textContent)}</button>`).join('');
+}
+function escolherRelatorio(valor) {
+  const tipo = document.getElementById('relTipo'); if (!tipo) return;
+  tipo.value = valor; navRelatorios(); renderRelatorioPreview();
 }
 
 function clearRelatorioFilters() {
