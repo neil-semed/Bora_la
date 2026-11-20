@@ -548,7 +548,7 @@ function backfillDemoData() {
 // ============ ÍCONES (tolera falha de rede ao carregar a lib externa) ============
 function decorateActionButtons() {
   document.querySelectorAll('button').forEach((button) => {
-    if (button.dataset.iconified || button.querySelector('i, svg')) return;
+    if (button.dataset.iconified || button.querySelector('i, svg') || button.closest('.lado-nav')) return;
     const label = (button.textContent || '').trim().toLowerCase();
     const icon = /cancelar|voltar|fechar/.test(label) ? ['circle-x', 'text-slate-500']
       : /excluir|bloquear|recusa|rejeitar/.test(label) ? ['trash-2', 'text-rose-500']
