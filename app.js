@@ -185,7 +185,7 @@ const NATIVE_ROLE_MENU_DEFAULTS = {
   // Usuário Escola com função "Pedagogo(a)": menus próprios, começa igual à Escola.
   escola_pedagogo: ['dashboard', 'pendencias', 'agenda', 'solicitacao', 'validacoes', 'relatorios', 'carrosolicitacoes', 'carronova'],
   motorista: ['dashboard', 'agenda', 'agendadata', 'agendageral', 'km', 'relatorios'],
-  agente_externo: ['pendenciascoop', 'solicitacoescoop', 'atfpcdcoop', 'km', 'relatorios', 'carrosolicitacoes', 'carronova'],
+  agente_externo: ['dashboard', 'pendenciascoop', 'solicitacoescoop', 'atfpcdcoop', 'km', 'relatorios', 'carrosolicitacoes', 'carronova'],
   financeiro: ['financeiro'],
 };
 
@@ -1941,6 +1941,8 @@ function nativeRoleMenuEnabled(role, key) {
   if (row) return !!row.can_view;
   // Relatórios só aparece para Escola/Motorista quando o Admin liberar; as abas do MarkCarro também.
   if (['carrosolicitacoes', 'carronova'].includes(key)) return false;
+  // Dashboard da Cooperativa só aparece quando o Admin liberar.
+  if (role === 'agente_externo' && key === 'dashboard') return false;
   if (role === 'pedagogia' && key === 'solicitacao') return false;
   return !(key === 'relatorios' && ['escola', 'escola_pedagogo', 'motorista'].includes(role));
 }
@@ -3455,12 +3457,25 @@ function popularFiltrosCoop(prefixo) {
 }
 function filtroCoopPassa(prefixo, a) {
   const data = document.getElementById(prefixo + 'FiltroData')?.value || '';
+  const periodo = document.getElementById(prefixo + 'FiltroPeriodo')?.value || '';
   const unidade = document.getElementById(prefixo + 'FiltroUnidade')?.value || '';
   const motorista = document.getElementById(prefixo + 'FiltroMotorista')?.value || '';
-  return (!data || a.trip_date === data) && (!unidade || origemFiltroId(a) === unidade) && (!motorista || (a.driver_ids || []).includes(motorista));
+  let dataOk = !data || a.trip_date === data;
+  if (periodo === 'semana' || periodo === 'mes') {
+    const ref = data ? new Date(data + 'T00:00') : new Date();
+    const t = new Date(a.trip_date + 'T00:00');
+    if (periodo === 'semana') { const ini = new Date(ref); ini.setDate(ref.getDate() - ref.getDay()); ini.setHours(0, 0, 0, 0); const fim = new Date(ini); fim.setDate(ini.getDate() + 6); dataOk = t >= ini && t <= fim; }
+    else dataOk = t.getFullYear() === ref.getFullYear() && t.getMonth() === ref.getMonth();
+  }
+  return dataOk && (!unidade || origemFiltroId(a) === unidade) && (!motorista || (a.driver_ids || []).includes(motorista));
+}
+function coopDataRapida(prefixo, dias, render) {
+  const d = new Date(); d.setDate(d.getDate() + dias);
+  const el = document.getElementById(prefixo + 'FiltroData'); if (el) el.value = fmtDate(d);
+  render();
 }
 function limparFiltrosCoop(prefixo, render) {
-  ['FiltroData', 'FiltroUnidade', 'FiltroMotorista', 'FiltroTipo', 'FiltroSituacao'].forEach((k) => { const e = document.getElementById(prefixo + k); if (e) e.value = ''; });
+  ['FiltroData', 'FiltroPeriodo', 'FiltroUnidade', 'FiltroMotorista', 'FiltroTipo', 'FiltroSituacao'].forEach((k) => { const e = document.getElementById(prefixo + k); if (e) e.value = ''; });
   const oc = document.getElementById(prefixo + 'OcultarPassadas'); if (oc) oc.checked = true;
   render();
 }
@@ -3957,6 +3972,7 @@ function renderDashboardCharts(visible) {
   const statusMes = { solicitacoes:{}, aprovadas:{}, reprovadas:{}, canceladas:{} };
   dados.forEach((a) => { const k = monthKey(a.trip_date); if (!mesesAno.includes(k)) return; statusMes.solicitacoes[k]=(statusMes.solicitacoes[k]||0)+1; if(a.admin_decision==='aprovada')statusMes.aprovadas[k]=(statusMes.aprovadas[k]||0)+1; if(a.admin_decision==='reprovada'||a.situacao==='reprovada')statusMes.reprovadas[k]=(statusMes.reprovadas[k]||0)+1; if(a.situacao==='cancelada')statusMes.canceladas[k]=(statusMes.canceladas[k]||0)+1; });
 
+  if (currentUser?.role !== 'motorista' && window.Chart) { renderDashboardChartsV2(mesesOrdenados, porMes, mesesAno, statusMes, ano); return; }
   const ctx1 = document.getElementById('chartPorMes');
   if (ctx1) {
     if (chartMesInstance) chartMesInstance.destroy();
@@ -3973,15 +3989,141 @@ function renderDashboardCharts(visible) {
   }
 }
 
+// Redesenho (todos os perfis, menos o motorista): barras com número em cima, mês atual
+// em destaque e, no gráfico anual, só os meses que têm viagem.
+const dashRotuloBarras = {
+  id: 'dashRotuloBarras',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart; ctx.save(); ctx.font = '600 12px Nunito, sans-serif'; ctx.fillStyle = '#1e293b';
+    chart.data.datasets.forEach((ds, di) => {
+      if (ds.type === 'line' || ds.semRotulo) return;
+      const meta = chart.getDatasetMeta(di); if (meta.hidden) return;
+      meta.data.forEach((el, idx) => {
+        const v = ds.data[idx]; if (!v) return;
+        if (chart.options.indexAxis === 'y') { ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(v, el.x + 6, el.y); }
+        else { ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(v, el.x, el.y - 4); }
+      });
+    });
+    ctx.restore();
+  },
+};
+function renderDashboardChartsV2(mesesOrdenados, porMes, mesesAno, statusMes, ano) {
+  const mesAtual = monthKey(fmtDate(new Date()));
+  const eixo = { ticks: { color: '#64748b' }, grid: { display: false } };
+  const eixoY = { beginAtZero: true, grace: '12%', ticks: { precision: 0, color: '#64748b' }, grid: { color: 'rgba(148,163,184,.16)' } };
+  const titulo = (t) => ({ display: true, text: t, align: 'start', color: '#0f2e3a', font: { size: 14, weight: '600' }, padding: { bottom: 12 } });
+  const ctx1 = document.getElementById('chartPorMes');
+  if (ctx1) {
+    if (chartMesInstance) chartMesInstance.destroy();
+    chartMesInstance = new Chart(ctx1, {
+      type: 'bar',
+      data: { labels: mesesOrdenados.map(monthLabel), datasets: [{ label: 'Viagens', data: mesesOrdenados.map((k) => porMes[k]), backgroundColor: mesesOrdenados.map((k) => (k === mesAtual ? '#059669' : '#bfe6d6')), borderRadius: 6, maxBarThickness: 120 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, title: titulo('Evolução de viagens') }, scales: { y: eixoY, x: eixo } },
+      plugins: [dashRotuloBarras],
+    });
+  }
+  const comDados = mesesAno.filter((k) => statusMes.solicitacoes[k]);
+  const meses = comDados.length ? mesesAno.slice(mesesAno.indexOf(comDados[0]), mesesAno.indexOf(comDados[comDados.length - 1]) + 1) : mesesAno;
+  const ctx2 = document.getElementById('chartPorUnidade');
+  if (ctx2) {
+    if (chartUnidadeInstance) chartUnidadeInstance.destroy();
+    const linha = (label, dados, cor, ordem) => ({ type: 'line', label, data: meses.map((k) => dados[k] || 0), borderColor: cor, backgroundColor: cor, borderWidth: 2.5, tension: .3, pointRadius: 4, pointBackgroundColor: '#fff', pointBorderWidth: 2, order: ordem });
+    chartUnidadeInstance = new Chart(ctx2, {
+      type: 'bar',
+      data: { labels: meses.map(monthLabel), datasets: [
+        { type: 'bar', label: 'Solicitações', data: meses.map((k) => statusMes.solicitacoes[k] || 0), backgroundColor: '#e2e8f0', borderRadius: 6, maxBarThickness: 120, order: 4, semRotulo: true },
+        linha('Aprovadas', statusMes.aprovadas, '#059669', 1), linha('Reprovadas', statusMes.reprovadas, '#b91c1c', 2), linha('Canceladas', statusMes.canceladas, '#d97706', 3),
+      ] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { title: titulo(`Solicitações e resultados em ${ano}`), legend: { align: 'start', labels: { boxWidth: 12, boxHeight: 3, color: '#5b6676', font: { size: 12 } } } }, scales: { y: eixoY, x: eixo } },
+    });
+  }
+}
+
+// ===== Dashboard da Cooperativa (só aparece quando liberado em Perfis de acesso) =====
+let chartCoopMesInstance = null;
+let chartCoopAtfInstance = null;
+function montarDashboardCoop() {
+  const box = document.getElementById('dashCoopBox'); if (!box || box.dataset.montado) return;
+  box.dataset.montado = '1';
+  const sel = 'class="px-3 py-2 border rounded-lg text-sm"';
+  const lab = 'class="block text-xs font-medium text-slate-500 mb-1"';
+  box.innerHTML = `<div id="dcKpis" class="dash-coop-kpis"></div>
+    <div class="dash-corpo"><div class="dash-painel"><div class="flex flex-wrap items-end justify-between gap-3 mb-2"><h3 class="!mb-0">Viagens e ATF/PCD por mês</h3><div class="flex flex-wrap items-end gap-3">
+      <div><label ${lab}>Ano</label><select id="dcAno" onchange="renderDashboardCoop()" ${sel}><option value="">Todos</option></select></div>
+      <div><label ${lab}>Mês</label><select id="dcMes" onchange="renderDashboardCoop()" ${sel}><option value="">Todos os meses</option>${Array.from({ length: 12 }, (_, i) => `<option value="${String(i + 1).padStart(2, '0')}">${new Date(2026, i, 1).toLocaleDateString('pt-BR', { month: 'long' })}</option>`).join('')}</select></div>
+      <div><label ${lab}>Data</label><input id="dcData" type="date" onchange="renderDashboardCoop()" ${sel}></div>
+      <div><label ${lab}>Motorista (da cooperativa)</label><select id="dcMotorista" onchange="renderDashboardCoop()" ${sel}><option value="">Todos</option></select></div>
+      <button type="button" onclick="['dcAno','dcMes','dcData','dcMotorista'].forEach((id)=>{const e=document.getElementById(id); if(e) e.value='';});renderDashboardCoop()" class="px-3 py-2 text-sm font-semibold text-emerald-700">Limpar</button></div></div>
+      <div class="dashboard-chart" style="height:250px;padding:1rem 0"><canvas id="chartCoopMes"></canvas></div>
+      <div class="dashboard-chart" style="height:250px;padding:1rem 0;border-top:1px solid #e5ebe8"><canvas id="chartCoopAtf"></canvas></div></div>
+    <div class="dash-lado"><div class="dash-painel"><h3>Pendências da cooperativa</h3><div id="dcPendencias"></div></div><div class="dash-painel"><h3>Próximas viagens</h3><div id="dcProximas"></div></div></div></div>
+    <div class="dash-baixo"><div class="dash-painel"><h3>Viagens realizadas por motorista</h3><div id="dcPorMotorista" class="dash-hbar"></div></div><div class="dash-painel"><h3>Unidades mais atendidas</h3><div id="dcPorUnidade" class="dash-hbar"></div></div></div>`;
+}
+function abrirFilaCoop(fila) { coopFila = fila; showScreen('pendenciascoop'); }
+function renderDashboardCoop() {
+  montarDashboardCoop();
+  const v = (id) => document.getElementById(id)?.value || '';
+  const motoristas = coopMotoristasDaCooperativa();
+  const selM = document.getElementById('dcMotorista');
+  if (selM && selM.options.length <= 1) selM.innerHTML = '<option value="">Todos</option>' + motoristas.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}${driverVehicle(d.id)?.plate ? ' · ' + escapeHtml(driverVehicle(d.id).plate) : ''}</option>`).join('');
+  const motorista = v('dcMotorista');
+  const base = getVisibleAgenda().filter(viagemConfirmadaParaMotorista).filter((a) => !motorista || (a.driver_ids || []).includes(motorista));
+  const selA = document.getElementById('dcAno');
+  if (selA) { const atual = selA.value; const anos = [...new Set(base.map((a) => String(a.trip_date || '').slice(0, 4)).filter(Boolean))].sort(); selA.innerHTML = '<option value="">Todos</option>' + anos.map((y) => `<option value="${y}">${y}</option>`).join(''); selA.value = anos.includes(atual) ? atual : ''; }
+  const ano = v('dcAno'), mes = v('dcMes'), data = v('dcData');
+  const filtrada = base.filter((a) => { const d = String(a.trip_date || ''); if (data) return d === data; if (ano && d.slice(0, 4) !== ano) return false; if (mes && d.slice(5, 7) !== mes) return false; return true; });
+  const hoje = fmtDate(new Date()); const ref = new Date(); const ini = new Date(ref); ini.setDate(ref.getDate() - ref.getDay()); const fim = new Date(ini); fim.setDate(ini.getDate() + 6);
+  const naSemana = base.filter((a) => { const t = new Date(a.trip_date + 'T00:00'); return t >= new Date(fmtDate(ini) + 'T00:00') && t <= new Date(fmtDate(fim) + 'T00:00'); }).length;
+  const atfPend = base.filter((a) => { const i = coopAtfInfo(a); return i.pedido && i.status === 'pendente'; });
+  const pcdPend = base.filter((a) => { const i = coopPcdInfo(a); return i.pedido && i.status === 'pendente'; });
+  const idsMot = new Set(motoristas.map((d) => d.id));
+  const mesAtual = hoje.slice(0, 7);
+  const km = (kmLogs || []).filter((k) => idsMot.has(k.driver_id) && (!motorista || k.driver_id === motorista) && String(k.log_date || '').slice(0, 7) === mesAtual).reduce((t, k) => t + Number(k.km_rodado || 0), 0);
+  const comViagem = new Set(); filtrada.forEach((a) => cooperativeDriversForTrip(a).forEach((d) => comViagem.add(d.id)));
+  const kp = [['Viagens hoje', base.filter((a) => a.trip_date === hoje).length, '#047857'], ['Viagens na semana', naSemana, '#0f2e3a'], ['ATF aguardando emissão', atfPend.length, '#a16207'], ['PCD aguardando confirmação', pcdPend.length, '#6d28d9'],
+    ['ATF emitidas', filtrada.filter((a) => coopAtfInfo(a).status === 'emitida').length, '#15803d'], ['ATF recusadas', filtrada.filter((a) => coopAtfInfo(a).status === 'recusada').length, '#b91c1c'],
+    ['PCD realizados', filtrada.filter((a) => coopPcdInfo(a).status === 'confirmado').length, '#6d28d9'], ['KM rodados no mês', km.toLocaleString('pt-BR'), '#0f2e3a'], ['Motoristas com viagem', comViagem.size, '#0f2e3a']];
+  document.getElementById('dcKpis').innerHTML = kp.map(([r, n, c]) => `<div><p>${r}</p><b style="color:${c}">${n}</b></div>`).join('');
+  const maisAntiga = (lista, fn) => lista.map(fn).filter(Boolean).sort()[0];
+  const linhaPend = (t, n, desde, fila) => `<div class="flex items-center justify-between gap-3 border-b border-slate-100 py-3 last:border-0"><div><p class="text-sm font-semibold text-slate-800">${t}</p><p class="text-xs text-slate-500">${desde ? 'o mais antigo enviado em ' + coopFmtData(desde) : 'nada aguardando'}</p></div><button type="button" onclick="abrirFilaCoop('${fila}')" class="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Abrir fila (${n})</button></div>`;
+  document.getElementById('dcPendencias').innerHTML = linhaPend('ATF para emissão', atfPend.length, maisAntiga(atfPend, (a) => coopAtfInfo(a).envio), 'atf') + linhaPend('Transporte e listagem PCD', pcdPend.length, maisAntiga(pcdPend, (a) => coopPcdInfo(a).envio), 'pcd');
+  const prox = base.filter((a) => a.trip_date >= hoje && !['cancelada', 'reprovada'].includes(a.situacao)).sort((a, b) => `${a.trip_date}${a.departure_time}`.localeCompare(`${b.trip_date}${b.departure_time}`)).slice(0, 5);
+  document.getElementById('dcProximas').innerHTML = prox.length ? prox.map((a) => {
+    const mot = cooperativeDriversForTrip(a).map((d) => `<b class="font-semibold text-slate-700">${escapeHtml(d.name)}</b>${driverVehicle(d.id)?.plate ? ' · ' + escapeHtml(driverVehicle(d.id).plate) : ''}`).join('<br>');
+    return `<div class="dash-prox"><div class="d"><b>${new Date(a.trip_date + 'T00:00').getDate()}</b><span>${new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')}</span></div><div class="min-w-0"><h5 class="truncate">${escapeHtml(a.destination || '')}</h5><p>${escapeHtml(originName(a))}, ${hhmm(a.departure_time)}, ${a.students_count || 0} passageiros</p><p>${mot || '—'}</p></div></div>`;
+  }).join('') : '<p class="py-6 text-center text-sm text-slate-500">Nenhuma viagem agendada</p>';
+  const realizadas = filtrada.filter((a) => !['cancelada', 'reprovada'].includes(a.situacao) && (a.status === 'completed' || (['approved', 'in_transit'].includes(a.status) && (a.trip_date || '') < hoje)));
+  const barras = (alvo, mapa, cor) => { const top = Object.entries(mapa).sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0], 'pt-BR')).slice(0, 10); const mx = top.length ? top[0][1] : 1; document.getElementById(alvo).innerHTML = top.length ? top.map(([n, q]) => `<div><span class="n" title="${escapeHtml(n)}">${escapeHtml(n)}</span><span class="b" style="width:${Math.max(4, Math.round(q / mx * 100))}%;background:${cor}"></span><b>${q}</b></div>`).join('') : '<p class="text-sm text-slate-400">Nenhuma viagem realizada no período.</p>'; };
+  const porMot = {}; realizadas.forEach((a) => cooperativeDriversForTrip(a).forEach((d) => { const n = `${d.name}${driverVehicle(d.id)?.plate ? ' · ' + driverVehicle(d.id).plate : ''}`; porMot[n] = (porMot[n] || 0) + 1; }));
+  const porUni = {}; realizadas.forEach((a) => { const n = originName(a); porUni[n] = (porUni[n] || 0) + 1; });
+  barras('dcPorMotorista', porMot, '#2563eb'); barras('dcPorUnidade', porUni, '#059669');
+  if (!window.Chart) return;
+  const porMes = {}; filtrada.forEach((a) => { const k = monthKey(a.trip_date); porMes[k] = (porMes[k] || 0) + 1; });
+  const meses = Object.keys(porMes).sort();
+  const mesCor = monthKey(hoje);
+  const eixo = { ticks: { color: '#64748b' }, grid: { display: false } };
+  const eixoY = { beginAtZero: true, grace: '12%', ticks: { precision: 0, color: '#64748b' }, grid: { color: 'rgba(148,163,184,.16)' } };
+  const titulo = (t) => ({ display: true, text: t, align: 'start', color: '#0f2e3a', font: { size: 14, weight: '600' }, padding: { bottom: 12 } });
+  if (chartCoopMesInstance) chartCoopMesInstance.destroy();
+  chartCoopMesInstance = new Chart(document.getElementById('chartCoopMes'), { type: 'bar', data: { labels: meses.map(monthLabel), datasets: [{ label: 'Viagens', data: meses.map((k) => porMes[k]), backgroundColor: meses.map((k) => (k === mesCor ? '#059669' : '#bfe6d6')), borderRadius: 6, maxBarThickness: 120 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, title: titulo('Viagens da cooperativa por mês') }, scales: { y: eixoY, x: eixo } }, plugins: [dashRotuloBarras] });
+  const st = { enc: {}, ok: {}, rec: {}, ag: {} };
+  filtrada.forEach((a) => { const k = monthKey(a.trip_date); [coopAtfInfo(a), coopPcdInfo(a)].forEach((i) => { if (!i.pedido) return; st.enc[k] = (st.enc[k] || 0) + 1; const g = ['emitida', 'confirmado'].includes(i.status) ? 'ok' : ['recusada', 'recusado'].includes(i.status) ? 'rec' : 'ag'; st[g][k] = (st[g][k] || 0) + 1; }); });
+  const ma = Object.keys(st.enc).sort();
+  const linha = (label, d, cor, o) => ({ type: 'line', label, data: ma.map((k) => d[k] || 0), borderColor: cor, backgroundColor: cor, borderWidth: 2.5, tension: .3, pointRadius: 4, pointBackgroundColor: '#fff', pointBorderWidth: 2, order: o });
+  if (chartCoopAtfInstance) chartCoopAtfInstance.destroy();
+  chartCoopAtfInstance = new Chart(document.getElementById('chartCoopAtf'), { type: 'bar', data: { labels: ma.map(monthLabel), datasets: [{ type: 'bar', label: 'Encaminhados', data: ma.map((k) => st.enc[k] || 0), backgroundColor: '#e2e8f0', borderRadius: 6, maxBarThickness: 120, order: 4 }, linha('Emitidos / confirmados', st.ok, '#059669', 1), linha('Recusados', st.rec, '#b91c1c', 2), linha('Aguardando', st.ag, '#d97706', 3)] }, options: { responsive: true, maintainAspectRatio: false, plugins: { title: titulo('ATF e PCD por mês'), legend: { align: 'start', labels: { boxWidth: 12, boxHeight: 3, color: '#5b6676', font: { size: 12 } } } }, scales: { y: eixoY, x: eixo } } });
+}
+
 function renderDashboardPedagogiaCharts(dados) {
   if (!window.Chart) return;
   const barH = (ctx, titulo, labels, valores, cor) => new Chart(ctx, {
     type: 'bar',
     data: { labels, datasets: [{ label: 'Solicitações', data: valores, backgroundColor: cor, borderRadius: 5, maxBarThickness: 22 }] },
+    plugins: [dashRotuloBarras],
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, title: { display: true, text: titulo, align: 'start', color: '#1e293b', font: { size: 14, weight: '600' } } },
-      scales: { x: { beginAtZero: true, ticks: { precision: 0, color: '#64748b' }, grid: { color: 'rgba(148,163,184,.16)' } }, y: { ticks: { color: '#334155', autoSkip: false, callback(v) { const t = this.getLabelForValue(v); return t.length > 28 ? t.slice(0, 27) + '…' : t; } }, grid: { display: false } } },
+      scales: { x: { beginAtZero: true, grace: '12%', ticks: { precision: 0, color: '#64748b' }, grid: { color: 'rgba(148,163,184,.16)' } }, y: { ticks: { color: '#334155', autoSkip: false, callback(v) { const t = this.getLabelForValue(v); return t.length > 28 ? t.slice(0, 27) + '…' : t; } }, grid: { display: false } } },
     },
   });
 
@@ -4014,6 +4156,10 @@ function renderDashboardPedagogiaCharts(dados) {
 }
 
 function renderDashboard() {
+  const ehCoopDash = currentUser?.role === 'agente_externo';
+  document.getElementById('dashMainGrid')?.classList.toggle('hidden', ehCoopDash);
+  document.getElementById('dashCoopBox')?.classList.toggle('hidden', !ehCoopDash);
+  if (ehCoopDash) { renderDashboardCoop(); return; }
   const visibleBruto = getVisibleAgenda();
   const unidadeFiltro = document.getElementById('dashFiltroUnidade')?.value || '';
   const visible = visibleBruto.filter((a) => dashPassaFiltroData(a.trip_date) && (!unidadeFiltro || a.school_id === unidadeFiltro));
@@ -4105,13 +4251,18 @@ function renderDashboard() {
       chartViagensCooperativaInstance = new Chart(ctxCoop, {
         type: 'doughnut',
         data: { labels: coopEntries.map(([n]) => n), datasets: [{ data: coopEntries.map(([, v]) => v), backgroundColor: coopEntries.map((_, i) => cores[i % cores.length]), borderWidth: 2, borderColor: '#fff' }] },
-        options: { responsive: true, maintainAspectRatio: false, cutout: '58%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '62%', plugins: { legend: { display: false } } },
       });
+      const leg = document.getElementById('dashCoopLegenda');
+      if (leg) leg.innerHTML = coopEntries.length
+        ? coopEntries.map(([n, v], i) => `<li><span><i style="background:${cores[i % cores.length]}"></i>${escapeHtml(n)}</span><b>${v}</b></li>`).join('')
+        : '<li class="text-slate-400">Nenhuma viagem realizada no período.</li>';
     }
     const lista = document.getElementById('dashRankingLista');
+    const maxTop = top.length ? top[0][1] : 1;
     if (lista) lista.innerHTML = top.length
-      ? top.map(([nome, n]) => `<li class="py-0.5"><span class="flex justify-between gap-2"><span class="truncate">${escapeHtml(nome)}</span><b>${n}</b></span></li>`).join('')
-      : '<li class="list-none -ml-5 text-slate-400">Nenhuma viagem realizada no período.</li>';
+      ? top.map(([nome, n]) => `<div><span class="n" title="${escapeHtml(nome)}">${escapeHtml(nome)}</span><span class="b" style="width:${Math.max(4, Math.round(n / maxTop * 100))}%"></span><b>${n}</b></div>`).join('')
+      : '<p class="text-sm text-slate-400">Nenhuma viagem realizada no período.</p>';
   }
 
   // Pedagogia: "Próximas Viagens" sai e entram os gráficos de solicitações por
@@ -4132,6 +4283,10 @@ function renderDashboard() {
     return;
   }
 
+  if (currentUser?.role !== 'motorista') {
+    container.innerHTML = proximas.map((a) => `<div class="dash-prox"><div class="d"><b>${new Date(a.trip_date + 'T00:00').getDate()}</b><span>${new Date(a.trip_date + 'T00:00').toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')}</span></div><div class="min-w-0"><h5 class="truncate">${escapeHtml(a.destination || '')}</h5><p>${escapeHtml(originName(a))}, ${hhmm(a.departure_time)}, ${a.students_count || 0} passageiros</p><p><span style="${SITUACAO_COLORS[a.situacao] || ''}" class="inline-block rounded px-1.5 py-0.5 font-semibold">${SITUACAO_LABELS[a.situacao] || a.situacao || ''}</span>${a.situacao_em ? ` <span>desde ${new Date(a.situacao_em).toLocaleDateString('pt-BR')}</span>` : ''}</p></div></div>`).join('');
+    return;
+  }
   container.innerHTML = proximas.map((a) => `
     <div class="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-slate-100 p-2.5 hover:bg-slate-50">
       <div class="flex min-w-0 items-center gap-2.5">
@@ -5537,6 +5692,15 @@ function setAgendaCombinadaDia(offset) {
   renderAgendaCombinadaAdmin();
 }
 
+function acStatusCor(t) {
+  const x = String(t || '').toLowerCase();
+  if (/cancel|reprov|recus|negad/.test(x)) return 'c';
+  if (/conclu|finaliz/.test(x)) return 's';
+  if (/trânsito|transito|andamento|curso/.test(x)) return 'm';
+  if (/aprov|confirm/.test(x)) return 'v';
+  if (/motorista|atf|coop|atribu/.test(x)) return 'a';
+  return 'm';
+}
 async function renderAgendaCombinadaAdmin() {
   const tbody = document.getElementById('agendaCombinadaTable');
   if (!tbody) return;
@@ -5557,7 +5721,7 @@ async function renderAgendaCombinadaAdmin() {
         (placas.length ? placas : [null]).forEach((placa, idx) => linhas.push({
           sistema: 'bora_la', placa, motorista: motoristas[idx] || motoristas[0] || null,
           data_viagem: a.trip_date, hora_saida: a.departure_time,
-          hora_retorno: a.return_time, detalhe: `${originName(a) || ''} → ${a.destination || ''}`, status: a.status,
+          hora_retorno: a.return_time, detalhe: `${originName(a) || ''} → ${a.destination || ''}`, status: a.status === 'completed' ? 'Concluída' : a.status === 'in_transit' ? 'Em trânsito' : (SITUACAO_LABELS[a.situacao] || statusLabel(a.status)),
         }));
       });
   }
@@ -5593,7 +5757,7 @@ async function renderAgendaCombinadaAdmin() {
       <td class="px-4 py-2">${l.motorista || '<span class="text-slate-400">—</span>'}</td>
       <td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full text-xs font-semibold ${l.sistema === 'bora_la' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}">${l.sistema === 'bora_la' ? 'Bora Lá' : 'MarkCarro'}</span></td>
       <td class="px-4 py-2">${l.detalhe || ''}</td>
-      <td class="px-4 py-2">${l.status || ''}</td>
+      <td class="px-4 py-2">${l.status ? `<span class="ac-status ${acStatusCor(l.status)}">${escapeHtml(String(l.status))}</span>` : ''}</td>
     </tr>
   `).join('');
 }
